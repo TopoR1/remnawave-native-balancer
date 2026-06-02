@@ -33,6 +33,10 @@
 docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
 ```
 
+Frontend currently uses ESLint 9 with `legacy-peer-deps=true` in `frontend/.npmrc` because
+`eslint-config-airbnb-base@15` declares an ESLint 7/8 peer range. This affects install-time
+peer resolution only.
+
 ## Установка на существующий сервер Remnawave
 
 Команды ниже рассчитаны на сервер, где Remnawave установлен в `/opt/remnawave`. Перед началом замените имена контейнеров, compose-файлов и домены на свои, если ваша установка отличается.
