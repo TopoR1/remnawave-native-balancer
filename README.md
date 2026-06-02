@@ -1,4 +1,4 @@
-# Remnawave Native Host Balancer
+# Remnawave Native Host Balancer (в разработке, могут быть ошибки или не рабочие сценарии)
 
 Это форк Remnawave с нативной балансировкой на уровне `Host`. Изменения находятся в backend и frontend Remnawave: оператор настраивает балансировку прямо в панели, а backend выбирает целевой узел до генерации подписки.
 
