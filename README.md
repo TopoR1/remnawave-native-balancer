@@ -26,6 +26,7 @@
 - `panel` - документация и сайт панели Remnawave.
 - `TESTING_HOST_BALANCER.md` - подробный русский регламент для проверки, диагностики и отката `Host Balancer`.
 - `Dockerfile` - корневой рабочий Dockerfile, который собирает локальный frontend и backend в один образ.
+- `Dockerfile.prebuilt-frontend` - вариант для слабого VPS: frontend собирается заранее, а Docker копирует готовый `frontend/dist`.
 
 Важно: рабочий Docker-образ для этого форка нужно собирать из корня репозитория. `backend/Dockerfile` оставлен как совместимый с upstream вариант и может скачать официальный frontend zip без секции `Balancing`.
 
@@ -33,9 +34,79 @@
 docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
 ```
 
+Если frontend уже собран заранее:
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
+```
+
 Frontend currently uses ESLint 9 with `legacy-peer-deps=true` in `frontend/.npmrc` because
 `eslint-config-airbnb-base@15` declares an ESLint 7/8 peer range. This affects install-time
 peer resolution only.
+
+## Сборка на слабом VPS
+
+На VPS с небольшим объемом памяти сборка frontend внутри Docker может завершиться так:
+
+```text
+✓ 11751 modules transformed
+Killed
+exit code 137
+```
+
+Обычно это означает, что Vite-сборку остановил OOM-killer: памяти и swap не хватило на финальную стадию сборки.
+
+Корневой `Dockerfile` ограничивает heap frontend-сборки значением `--max-old-space-size=3072`. При необходимости его можно переопределить:
+
+```bash
+docker build \
+  --build-arg FRONTEND_NODE_OPTIONS=--max-old-space-size=2048 \
+  -f Dockerfile \
+  -t topor/remnawave-backend:native-balancer .
+```
+
+Если сборка все равно получает `Killed`, временно добавьте swap на время сборки:
+
+```bash
+sudo fallocate -l 4G /swapfile-remnawave-build
+sudo chmod 600 /swapfile-remnawave-build
+sudo mkswap /swapfile-remnawave-build
+sudo swapon /swapfile-remnawave-build
+free -h
+
+docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
+
+sudo swapoff /swapfile-remnawave-build
+sudo rm /swapfile-remnawave-build
+```
+
+Более надежный режим для слабого VPS - собрать frontend заранее и использовать `Dockerfile.prebuilt-frontend`. Этот Dockerfile не запускает Vite внутри Docker, требует готовый `frontend/dist/index.html` и копирует `frontend/dist` в `/opt/app/frontend`:
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
+```
+
+Если Docker builder занял много места после неудачных сборок, очистите кэш:
+
+```bash
+docker builder prune
+```
+
+Проверять содержимое образа нужно с переопределенным entrypoint:
+
+```bash
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
+```
+
+Обычный `docker run topor/remnawave-backend:native-balancer ...` запускает `docker-entrypoint.sh`, который выполняет startup-логику Remnawave и требует `DATABASE_URL`.
 
 ## Установка на существующий сервер Remnawave
 
@@ -91,10 +162,20 @@ cd /opt/remnawave-native-balancer
 docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
 ```
 
-Проверьте, что в образ попал локальный frontend:
+Если frontend собран заранее или VPS не хватает памяти на Vite-сборку внутри Docker, используйте prebuilt-режим:
 
 ```bash
-docker run --rm topor/remnawave-backend:native-balancer sh -lc "find /opt/app/frontend -type f | grep -E 'assets|index.html' | head"
+cd frontend
+npm ci
+npm run build
+cd ..
+docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
+```
+
+Проверьте, что в образ попал локальный frontend. Используйте `--entrypoint sh`, иначе обычный запуск пойдет через `docker-entrypoint.sh` и потребует `DATABASE_URL`:
+
+```bash
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
 ```
 
 ### 4. Подключите образ через override
@@ -152,6 +233,22 @@ docker compose run --rm remnawave npm run setup
 
 ```bash
 docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
+```
+
+Если frontend уже собран заранее, можно собрать образ без Vite-сборки внутри Docker:
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
+```
+
+Проверьте frontend внутри образа:
+
+```bash
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
 ```
 
 В compose-файле или `docker-compose.override.yml` укажите этот образ для backend-сервиса и сначала задайте:

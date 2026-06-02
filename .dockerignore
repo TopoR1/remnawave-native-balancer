@@ -10,7 +10,6 @@ backend/.turbo
 backend/npm-debug.log*
 
 frontend/node_modules
-frontend/dist
 frontend/coverage
 frontend/.cache
 frontend/.turbo

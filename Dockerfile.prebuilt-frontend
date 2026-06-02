@@ -1,25 +1,20 @@
-FROM node:24.14-trixie-slim AS frontend-build
+FROM node:24.14-trixie-slim AS frontend-dist
 WORKDIR /opt/frontend
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY frontend/package*.json frontend/.npmrc ./
+COPY frontend ./frontend
 
-RUN npm ci
+RUN test -f frontend/dist/index.html \
+    || (echo "ERROR: frontend/dist/index.html is missing. Build the frontend first: cd frontend && npm ci && npm run build" >&2; exit 1)
 
-COPY frontend ./
-
-ARG FRONTEND_NODE_OPTIONS=--max-old-space-size=3072
-RUN NODE_OPTIONS="$FRONTEND_NODE_OPTIONS" npm run cb
-
-RUN test -f dist/index.html \
-    && mkdir -p dist/assets \
-    && curl -L https://validator.remna.dev/wasm_exec.js -o dist/assets/wasm_exec.js \
-    && curl -L https://validator.remna.dev/xray.schema.json -o dist/assets/xray.schema.json \
-    && curl -L https://validator.remna.dev/xray.schema.cn.json -o dist/assets/xray.schema.cn.json \
-    && curl -L https://validator.remna.dev/main.wasm -o dist/assets/main.wasm
+RUN mkdir -p frontend/dist/assets \
+    && curl -L https://validator.remna.dev/wasm_exec.js -o frontend/dist/assets/wasm_exec.js \
+    && curl -L https://validator.remna.dev/xray.schema.json -o frontend/dist/assets/xray.schema.json \
+    && curl -L https://validator.remna.dev/xray.schema.cn.json -o frontend/dist/assets/xray.schema.cn.json \
+    && curl -L https://validator.remna.dev/main.wasm -o frontend/dist/assets/main.wasm
 
 FROM node:24.14-trixie-slim AS backend-build
 WORKDIR /opt/app
@@ -82,7 +77,7 @@ ENV __RW_METADATA_BUILD_TIME=${__RW_METADATA_BUILD_TIME}
 ENV __RW_METADATA_BUILD_NUMBER=${__RW_METADATA_BUILD_NUMBER}
 
 COPY --from=backend-build /opt/app/dist ./dist
-COPY --from=frontend-build /opt/frontend/dist ./frontend
+COPY --from=frontend-dist /opt/frontend/frontend/dist ./frontend
 COPY --from=backend-build /opt/app/prisma ./prisma
 COPY --from=backend-build /opt/app/patches ./patches
 COPY --from=backend-build /opt/app/node_modules ./node_modules
