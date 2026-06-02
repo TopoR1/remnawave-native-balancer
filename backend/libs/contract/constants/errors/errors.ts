@@ -1179,4 +1179,9 @@ export const ERRORS = {
         message: 'Get host balancer stats error',
         httpCode: 500,
     },
+    GET_HOST_BALANCER_DECISIONS_ERROR: {
+        code: 'A235',
+        message: 'Get host balancer decisions error',
+        httpCode: 500,
+    },
 } as const;

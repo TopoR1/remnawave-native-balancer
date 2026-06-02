@@ -4,7 +4,8 @@ import {
     HostBalancerUnavailablePolicy,
 } from '@prisma/client';
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { fail, ok, TResult } from '@common/types';
 import { ERRORS } from '@libs/contracts/constants';
@@ -24,7 +25,9 @@ import {
 } from './repositories/host-balancers.repository';
 
 type TargetWithWarning = HostBalancerTarget & { warning?: string | null };
-type AssignmentAction = 'none' | 'reused' | 'created' | 'reassigned';
+type AssignmentAction = 'none' | 'reused' | 'created' | 'reassigned' | 'skipped';
+type DecisionAssignmentAction = Exclude<AssignmentAction, 'none'>;
+type PreviewUserLookup = string | { userUuid?: string; shortUuid?: string };
 type TargetDiagnostics = {
     targetUuid: string;
     nodeUuid?: string | null;
@@ -62,7 +65,10 @@ const TRAFFIC_FALLBACK_WARNING = 'Traffic data missing, fallback strategy used.'
 export class HostBalancerService {
     private readonly logger = new Logger(HostBalancerService.name);
 
-    constructor(private readonly hostBalancersRepository: HostBalancersRepository) {}
+    constructor(
+        private readonly hostBalancersRepository: HostBalancersRepository,
+        @Optional() private readonly configService?: ConfigService,
+    ) {}
 
     public async getSettings(hostUuid: string): Promise<TResult<HostBalancerWithTargets | null>> {
         try {
@@ -198,6 +204,8 @@ export class HostBalancerService {
                     persistAssignment: true,
                 });
 
+                await this.writeDecisionIfEnabled(user.uuid, inputHost, balancer, decision);
+
                 if (decision.host) {
                     result.push(decision.host);
                 }
@@ -216,13 +224,14 @@ export class HostBalancerService {
     }
 
     public async previewSelection(
-        userUuid: string,
+        userLookupInput: PreviewUserLookup,
         hostUuid: string,
     ): Promise<TResult<PreviewHostBalancerCommand.Response['response']>> {
         try {
+            const userLookup = this.normalizePreviewUserLookup(userLookupInput);
             const [host, user, settings] = await Promise.all([
                 this.hostBalancersRepository.findHost(hostUuid),
-                this.hostBalancersRepository.findUser(userUuid),
+                this.resolvePreviewUser(userLookup),
                 this.hostBalancersRepository.findByHostUuid(hostUuid),
             ]);
 
@@ -235,7 +244,7 @@ export class HostBalancerService {
 
             if (!settings) {
                 return ok(
-                    this.previewResponse(hostUuid, userUuid, null, {
+                    this.previewResponse(hostUuid, user.uuid, null, {
                         enabled: false,
                         strategy: 'LEAST_ASSIGNED',
                         unavailablePolicy: 'HIDE_HOST',
@@ -245,6 +254,8 @@ export class HostBalancerService {
                         reasons: ['Host balancer settings do not exist.'],
                         warnings: [],
                         wouldCreateAssignment: false,
+                        resolvedUserUuid: user.uuid,
+                        shortUuidMasked: this.maskShortUuid(user.shortUuid),
                         candidates: [],
                         excludedTargets: [],
                         selectedTarget: null,
@@ -258,7 +269,7 @@ export class HostBalancerService {
                 settings.targets.map((target) => target.uuid),
             );
             const assignments = await this.hostBalancersRepository.findAssignmentsForUser(
-                userUuid,
+                user.uuid,
                 [hostUuid],
             );
             const nodeStates = await this.loadNodeStates([settings]);
@@ -276,7 +287,7 @@ export class HostBalancerService {
             });
 
             const decision = await this.resolveHostTarget({
-                userUuid,
+                userUuid: user.uuid,
                 host: hostForPreview,
                 balancer: settings,
                 assignment: assignments.get(hostUuid) ?? null,
@@ -286,7 +297,7 @@ export class HostBalancerService {
             });
 
             return ok(
-                this.previewResponse(hostUuid, userUuid, decision.selectedTarget, {
+                this.previewResponse(hostUuid, user.uuid, decision.selectedTarget, {
                     enabled: settings.enabled,
                     strategy: settings.strategy,
                     unavailablePolicy: settings.unavailablePolicy,
@@ -297,6 +308,8 @@ export class HostBalancerService {
                         ? [`Selected target by ${settings.strategy}.`]
                         : ['No eligible target selected.'],
                     wouldCreateAssignment: false,
+                    resolvedUserUuid: user.uuid,
+                    shortUuidMasked: this.maskShortUuid(user.shortUuid),
                     ...decision.diagnostics,
                     warnings: [
                         ...decision.diagnostics.warnings,
@@ -327,6 +340,21 @@ export class HostBalancerService {
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_HOST_BALANCER_STATS_ERROR);
+        }
+    }
+
+    public async getDecisions(hostUuid: string, limit = 50) {
+        try {
+            const host = await this.hostBalancersRepository.findHost(hostUuid);
+            if (!host) {
+                return fail(ERRORS.HOST_NOT_FOUND);
+            }
+
+            const decisions = await this.hostBalancersRepository.listDecisions(hostUuid, limit);
+            return ok(decisions);
+        } catch (error) {
+            this.logger.error(error);
+            return fail(ERRORS.GET_HOST_BALANCER_DECISIONS_ERROR);
         }
     }
 
@@ -410,10 +438,12 @@ export class HostBalancerService {
                     excludedTargets,
                     selectedTarget: fallback.target ? { targetUuid: fallback.target.uuid } : null,
                     warnings: [],
-                    assignment: 'none',
+                    assignment: fallback.target ? 'reused' : 'skipped',
                     finalHostOverrides: fallback.target
                         ? this.resolveFinalHostOverrides(ctx.host, fallback.target)
-                        : null,
+                        : fallback.host
+                          ? this.resolveHostFields(fallback.host)
+                          : null,
                 },
             };
         }
@@ -746,6 +776,100 @@ export class HostBalancerService {
         };
     }
 
+    private resolveHostFields(host: HostWithRawInbound) {
+        return {
+            address: host.address,
+            port: host.port,
+            sni: host.sni,
+            host: host.host,
+            path: host.path,
+        };
+    }
+
+    private async writeDecisionIfEnabled(
+        userUuid: string,
+        host: HostWithRawInbound,
+        balancer: HostBalancerWithTargets,
+        decision: {
+            host: HostWithRawInbound | null;
+            selectedTarget: HostBalancerTarget | null;
+            diagnostics: HostApplyDiagnostics;
+        },
+    ): Promise<void> {
+        if (!this.isDecisionAuditEnabled()) {
+            return;
+        }
+
+        const assignmentAction = this.decisionAssignmentAction(decision.diagnostics.assignment);
+        const reason = this.resolveDecisionReason(balancer, decision, assignmentAction);
+
+        try {
+            await this.hostBalancersRepository.createDecision({
+                hostUuid: host.uuid,
+                userUuid,
+                targetUuid: decision.selectedTarget?.uuid ?? null,
+                strategy: balancer.strategy,
+                reason,
+                diagnostics: this.toJsonSafe({
+                    unavailablePolicy: balancer.unavailablePolicy,
+                    assignmentAction,
+                    excludedTargets: decision.diagnostics.excludedTargets.map((target) => ({
+                        targetUuid: target.targetUuid,
+                        nodeUuid: target.nodeUuid ?? null,
+                        reason: target.reason,
+                    })),
+                    candidates: decision.diagnostics.candidates,
+                    selectedTarget: decision.diagnostics.selectedTarget,
+                    warnings: decision.diagnostics.warnings,
+                    finalHostOverrides: decision.diagnostics.finalHostOverrides,
+                }),
+            });
+        } catch (error) {
+            this.logger.error(
+                `Host balancer decision audit failed for user=${this.maskUuid(userUuid)} host=${this.maskUuid(
+                    host.uuid,
+                )}`,
+                error instanceof Error ? error.stack : undefined,
+            );
+        }
+    }
+
+    private isDecisionAuditEnabled(): boolean {
+        return (
+            this.configService?.get<string>('HOST_BALANCER_DECISIONS_ENABLED', 'false') ??
+            process.env.HOST_BALANCER_DECISIONS_ENABLED ??
+            'false'
+        ) === 'true';
+    }
+
+    private decisionAssignmentAction(assignment: AssignmentAction): DecisionAssignmentAction {
+        return assignment === 'none' ? 'skipped' : assignment;
+    }
+
+    private resolveDecisionReason(
+        balancer: HostBalancerWithTargets,
+        decision: {
+            host: HostWithRawInbound | null;
+            selectedTarget: HostBalancerTarget | null;
+            diagnostics: HostApplyDiagnostics;
+        },
+        assignmentAction: DecisionAssignmentAction,
+    ): string {
+        if (decision.selectedTarget) {
+            return `selected:${balancer.strategy}:${assignmentAction}`;
+        }
+
+        if (decision.host) {
+            return `unavailable:${balancer.unavailablePolicy}:original_host`;
+        }
+
+        return `unavailable:${balancer.unavailablePolicy}:hidden`;
+    }
+
+    private toJsonSafe(value: unknown) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
     private previewResponse(
         hostUuid: string,
         userUuid: string,
@@ -758,6 +882,29 @@ export class HostBalancerService {
             target: target ? this.withWarning(target) : null,
             diagnostics,
         };
+    }
+
+    private normalizePreviewUserLookup(userLookupInput: PreviewUserLookup): {
+        userUuid?: string;
+        shortUuid?: string;
+    } {
+        if (typeof userLookupInput === 'string') {
+            return { userUuid: userLookupInput };
+        }
+
+        return userLookupInput;
+    }
+
+    private async resolvePreviewUser(userLookup: { userUuid?: string; shortUuid?: string }) {
+        if (userLookup.userUuid) {
+            return this.hostBalancersRepository.findUser(userLookup.userUuid);
+        }
+
+        if (userLookup.shortUuid) {
+            return this.hostBalancersRepository.findUserByShortUuid(userLookup.shortUuid);
+        }
+
+        return null;
     }
 
     private withTargetWarnings<T extends HostBalancerWithTargets>(settings: T): T {
@@ -792,5 +939,13 @@ export class HostBalancerService {
         }
 
         return `${uuid.slice(0, 8)}...${uuid.slice(-4)}`;
+    }
+
+    private maskShortUuid(shortUuid: string): string {
+        if (shortUuid.length <= 8) {
+            return '***';
+        }
+
+        return `${shortUuid.slice(0, 4)}...${shortUuid.slice(-4)}`;
     }
 }

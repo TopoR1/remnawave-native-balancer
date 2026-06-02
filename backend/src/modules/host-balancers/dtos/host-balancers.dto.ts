@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 
 import {
     GetHostBalancerCommand,
+    GetHostBalancerDecisionsCommand,
     GetHostBalancerStatsCommand,
     PreviewHostBalancerCommand,
     ToggleHostBalancerCommand,
@@ -61,4 +62,14 @@ export class GetHostBalancerStatsRequestDto extends createZodDto(
 ) {}
 export class GetHostBalancerStatsResponseDto extends createZodDto(
     GetHostBalancerStatsCommand.ResponseSchema,
+) {}
+
+export class GetHostBalancerDecisionsRequestDto extends createZodDto(
+    GetHostBalancerDecisionsCommand.RequestSchema,
+) {}
+export class GetHostBalancerDecisionsRequestQueryDto extends createZodDto(
+    GetHostBalancerDecisionsCommand.RequestQuerySchema,
+) {}
+export class GetHostBalancerDecisionsResponseDto extends createZodDto(
+    GetHostBalancerDecisionsCommand.ResponseSchema,
 ) {}

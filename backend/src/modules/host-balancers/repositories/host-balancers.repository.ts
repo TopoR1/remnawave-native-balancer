@@ -1,4 +1,10 @@
-import { HostBalancerAssignment, HostBalancerTrafficMetric, Prisma } from '@prisma/client';
+import {
+    HostBalancerAssignment,
+    HostBalancerStrategy,
+    HostBalancerTrafficMetric,
+    HostBalancerUnavailablePolicy,
+    Prisma,
+} from '@prisma/client';
 
 import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
 import { TransactionHost } from '@nestjs-cls/transactional';
@@ -27,6 +33,29 @@ export type HostBalancerNodeState = {
     activeInboundUuids: Set<string>;
 };
 
+export type CreateHostBalancerDecisionDto = {
+    hostUuid: string;
+    userUuid: string;
+    targetUuid: string | null;
+    strategy: HostBalancerStrategy;
+    reason: string;
+    diagnostics: Prisma.InputJsonValue;
+};
+
+type HostBalancerDecisionFinalOverrides = {
+    address: string;
+    port: number;
+    sni: string | null;
+    host: string | null;
+    path: string | null;
+};
+
+type HostBalancerDecisionExcludedTarget = {
+    targetUuid: string;
+    nodeUuid?: string | null;
+    reason?: string;
+};
+
 @Injectable()
 export class HostBalancersRepository {
     constructor(private readonly prisma: TransactionHost<TransactionalAdapterPrisma>) {}
@@ -41,7 +70,14 @@ export class HostBalancersRepository {
     public async findUser(userUuid: string) {
         return this.prisma.tx.users.findUnique({
             where: { uuid: userUuid },
-            select: { uuid: true },
+            select: { uuid: true, shortUuid: true },
+        });
+    }
+
+    public async findUserByShortUuid(shortUuid: string) {
+        return this.prisma.tx.users.findUnique({
+            where: { shortUuid },
+            select: { uuid: true, shortUuid: true },
         });
     }
 
@@ -294,6 +330,123 @@ export class HostBalancersRepository {
                 targetUuid: row.targetUuid,
                 assignedUsers: row._count.targetUuid,
             })),
+        };
+    }
+
+    public async createDecision(dto: CreateHostBalancerDecisionDto): Promise<void> {
+        await this.prisma.tx.hostBalancerDecision.create({
+            data: {
+                hostUuid: dto.hostUuid,
+                userUuid: dto.userUuid,
+                targetUuid: dto.targetUuid,
+                strategy: dto.strategy,
+                reason: dto.reason,
+                diagnostics: dto.diagnostics,
+            },
+        });
+    }
+
+    public async listDecisions(hostUuid: string, limit: number) {
+        const rows = await this.prisma.tx.hostBalancerDecision.findMany({
+            where: { hostUuid },
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+        });
+
+        return rows.map((row) => {
+            const diagnostics: Record<string, unknown> =
+                row.diagnostics && typeof row.diagnostics === 'object' && !Array.isArray(row.diagnostics)
+                    ? (row.diagnostics as Record<string, unknown>)
+                    : {};
+            const unavailablePolicy = this.isUnavailablePolicy(diagnostics['unavailablePolicy'])
+                ? diagnostics['unavailablePolicy']
+                : 'HIDE_HOST';
+            const assignmentAction = this.isDecisionAssignmentAction(
+                diagnostics['assignmentAction'],
+            )
+                ? diagnostics['assignmentAction']
+                : 'skipped';
+            const excludedTargets = this.resolveDecisionExcludedTargets(
+                diagnostics['excludedTargets'],
+            );
+            const finalHostOverrides = this.resolveDecisionFinalOverrides(
+                diagnostics['finalHostOverrides'],
+            );
+
+            return {
+                uuid: row.uuid,
+                hostUuid: row.hostUuid,
+                userUuid: row.userUuid,
+                targetUuid: row.targetUuid,
+                strategy: row.strategy,
+                reason: row.reason,
+                unavailablePolicy,
+                assignmentAction,
+                excludedTargets,
+                finalHostOverrides,
+                diagnostics,
+                createdAt: row.createdAt,
+            };
+        });
+    }
+
+    private isUnavailablePolicy(value: unknown): value is HostBalancerUnavailablePolicy {
+        return (
+            value === 'HIDE_HOST' ||
+            value === 'ORIGINAL_HOST' ||
+            value === 'KEEP_LAST_IF_POSSIBLE'
+        );
+    }
+
+    private isDecisionAssignmentAction(
+        value: unknown,
+    ): value is 'reused' | 'created' | 'reassigned' | 'skipped' {
+        return (
+            value === 'reused' ||
+            value === 'created' ||
+            value === 'reassigned' ||
+            value === 'skipped'
+        );
+    }
+
+    private resolveDecisionExcludedTargets(value: unknown): HostBalancerDecisionExcludedTarget[] {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+
+        return value
+            .filter((item): item is Record<string, unknown> => {
+                return !!item && typeof item === 'object' && !Array.isArray(item);
+            })
+            .filter((item) => typeof item['targetUuid'] === 'string')
+            .map((item) => ({
+                targetUuid: item['targetUuid'] as string,
+                nodeUuid:
+                    typeof item['nodeUuid'] === 'string' || item['nodeUuid'] === null
+                        ? item['nodeUuid']
+                        : undefined,
+                reason: typeof item['reason'] === 'string' ? item['reason'] : undefined,
+            }));
+    }
+
+    private resolveDecisionFinalOverrides(
+        value: unknown,
+    ): HostBalancerDecisionFinalOverrides | null {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return null;
+        }
+
+        const overrides = value as Record<string, unknown>;
+        if (typeof overrides['address'] !== 'string' || typeof overrides['port'] !== 'number') {
+            return null;
+        }
+
+        return {
+            address: overrides['address'],
+            port: overrides['port'],
+            sni: typeof overrides['sni'] === 'string' || overrides['sni'] === null ? overrides['sni'] : null,
+            host: typeof overrides['host'] === 'string' || overrides['host'] === null ? overrides['host'] : null,
+            path: typeof overrides['path'] === 'string' || overrides['path'] === null ? overrides['path'] : null,
         };
     }
 }

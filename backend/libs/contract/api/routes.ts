@@ -217,6 +217,10 @@ export const REST_API = {
             `${ROOT}/${CONTROLLERS.HOST_BALANCERS_CONTROLLER}/${CONTROLLERS.HOST_BALANCERS_ROUTES.STATS(
                 hostUuid,
             )}`,
+        DECISIONS: (hostUuid: string) =>
+            `${ROOT}/${CONTROLLERS.HOST_BALANCERS_CONTROLLER}/${CONTROLLERS.HOST_BALANCERS_ROUTES.DECISIONS(
+                hostUuid,
+            )}`,
     },
     SYSTEM: {
         HEALTH: `${ROOT}/${CONTROLLERS.SYSTEM_CONTROLLER}/${CONTROLLERS.SYSTEM_ROUTES.HEALTH}`,

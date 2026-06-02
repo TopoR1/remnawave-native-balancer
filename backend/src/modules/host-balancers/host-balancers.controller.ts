@@ -9,6 +9,7 @@ import { Endpoint } from '@common/decorators/base-endpoint';
 import { Roles } from '@common/decorators/roles/roles';
 import {
     GetHostBalancerCommand,
+    GetHostBalancerDecisionsCommand,
     GetHostBalancerStatsCommand,
     PreviewHostBalancerCommand,
     ToggleHostBalancerCommand,
@@ -21,6 +22,9 @@ import { ROLE } from '@libs/contracts/constants';
 import {
     GetHostBalancerRequestDto,
     GetHostBalancerResponseDto,
+    GetHostBalancerDecisionsRequestDto,
+    GetHostBalancerDecisionsRequestQueryDto,
+    GetHostBalancerDecisionsResponseDto,
     GetHostBalancerStatsRequestDto,
     GetHostBalancerStatsResponseDto,
     PreviewHostBalancerRequestDto,
@@ -113,9 +117,9 @@ export class HostBalancersController {
     })
     async preview(
         @Param() { hostUuid }: PreviewHostBalancerRequestDto,
-        @Query() { userUuid }: PreviewHostBalancerRequestQueryDto,
+        @Query() { userUuid, shortUuid }: PreviewHostBalancerRequestQueryDto,
     ): Promise<PreviewHostBalancerResponseDto> {
-        const result = await this.hostBalancerService.previewSelection(userUuid, hostUuid);
+        const result = await this.hostBalancerService.previewSelection({ userUuid, shortUuid }, hostUuid);
         return { response: errorHandler(result) };
     }
 
@@ -129,6 +133,20 @@ export class HostBalancersController {
         @Param() { hostUuid }: GetHostBalancerStatsRequestDto,
     ): Promise<GetHostBalancerStatsResponseDto> {
         const result = await this.hostBalancerService.getStats(hostUuid);
+        return { response: errorHandler(result) };
+    }
+
+    @ApiParam({ name: 'hostUuid', type: String, required: true })
+    @ApiOkResponse({ type: GetHostBalancerDecisionsResponseDto })
+    @Endpoint({
+        command: GetHostBalancerDecisionsCommand,
+        httpCode: HttpStatus.OK,
+    })
+    async getDecisions(
+        @Param() { hostUuid }: GetHostBalancerDecisionsRequestDto,
+        @Query() { limit }: GetHostBalancerDecisionsRequestQueryDto,
+    ): Promise<GetHostBalancerDecisionsResponseDto> {
+        const result = await this.hostBalancerService.getDecisions(hostUuid, limit);
         return { response: errorHandler(result) };
     }
 }

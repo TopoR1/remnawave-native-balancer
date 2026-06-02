@@ -7,6 +7,7 @@ import {
 } from '../../api';
 import { getEndpointDetails } from '../../constants';
 import {
+    HostBalancerDecisionSchema,
     HostBalancerPreviewSchema,
     HostBalancerSchema,
     HostBalancerStatsSchema,
@@ -113,11 +114,24 @@ export namespace PreviewHostBalancerCommand {
     export const endpointDetails = getEndpointDetails(
         HOST_BALANCERS_ROUTES.PREVIEW(':hostUuid'),
         'get',
-        'Preview host balancer target selection',
+        'Preview host balancer target selection. Accepts userUuid or shortUuid; userUuid wins if both are present.',
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
-    export const RequestQuerySchema = z.object({ userUuid: z.string().uuid() });
+    export const RequestQuerySchema = z
+        .object({
+            userUuid: z.string().uuid().optional(),
+            shortUuid: z.string().optional(),
+        })
+        .superRefine((value, ctx) => {
+            if (!value.userUuid && !value.shortUuid) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'Either userUuid or shortUuid must be provided',
+                    path: ['userUuid'],
+                });
+            }
+        });
     export type RequestQuery = z.infer<typeof RequestQuerySchema>;
     export const ResponseSchema = z.object({ response: HostBalancerPreviewSchema });
     export type Response = z.infer<typeof ResponseSchema>;
@@ -134,6 +148,24 @@ export namespace GetHostBalancerStatsCommand {
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
     export const ResponseSchema = z.object({ response: HostBalancerStatsSchema });
+    export type Response = z.infer<typeof ResponseSchema>;
+}
+
+export namespace GetHostBalancerDecisionsCommand {
+    export const url = REST_API.HOST_BALANCERS.DECISIONS;
+    export const TSQ_url = url;
+    export const endpointDetails = getEndpointDetails(
+        HOST_BALANCERS_ROUTES.DECISIONS(':hostUuid'),
+        'get',
+        'Get host balancer decisions',
+    );
+    export const RequestSchema = HostUuidSchema;
+    export type Request = z.infer<typeof RequestSchema>;
+    export const RequestQuerySchema = z.object({
+        limit: z.coerce.number().int().min(1).max(500).default(50),
+    });
+    export type RequestQuery = z.infer<typeof RequestQuerySchema>;
+    export const ResponseSchema = z.object({ response: z.array(HostBalancerDecisionSchema) });
     export type Response = z.infer<typeof ResponseSchema>;
 }
 

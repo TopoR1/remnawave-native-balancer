@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+    PreviewHostBalancerCommand,
     UpdateHostBalancerCommand,
     UpdateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
@@ -12,6 +13,7 @@ import { HostWithRawInbound } from '../hosts/entities/host-with-inbound-tag.enti
 
 const HOST_UUID = '11111111-1111-4111-8111-111111111111';
 const USER_UUID = '22222222-2222-4222-8222-222222222222';
+const SHORT_UUID = 'test-short-uuid';
 const BALANCER_UUID = '33333333-3333-4333-8333-333333333333';
 const TARGET_UUID = '44444444-4444-4444-8444-444444444444';
 const TARGET_UUID_2 = '66666666-6666-4666-8666-666666666666';
@@ -111,10 +113,11 @@ function createAssignment(overrides = {}) {
     };
 }
 
-function createService(overrides: Record<string, unknown> = {}) {
+function createService(overrides: Record<string, unknown> = {}, options: { decisionsEnabled?: boolean } = {}) {
     const repository = {
         findHost: async () => ({ uuid: HOST_UUID, address: 'origin.example.com' }),
-        findUser: async () => ({ uuid: USER_UUID }),
+        findUser: async () => ({ uuid: USER_UUID, shortUuid: SHORT_UUID }),
+        findUserByShortUuid: async () => ({ uuid: USER_UUID, shortUuid: SHORT_UUID }),
         findByHostUuid: async () => null,
         findManyByHostUuids: async () => [],
         upsertSettings: async (_hostUuid: string, dto: object) => createBalancer(dto),
@@ -150,10 +153,17 @@ function createService(overrides: Record<string, unknown> = {}) {
             ]),
         getNodeTrafficByMetric: async () => new Map([[NODE_UUID, 0n], [NODE_UUID_2, 0n]]),
         getStats: async () => ({ assignmentsCount: 0, targets: [] }),
+        createDecision: async () => undefined,
+        listDecisions: async () => [],
         ...overrides,
     };
 
-    return new HostBalancerService(repository as never);
+    return new HostBalancerService(repository as never, {
+        get: (key: string, defaultValue?: string) =>
+            key === 'HOST_BALANCER_DECISIONS_ENABLED'
+                ? String(options.decisionsEnabled ?? false)
+                : defaultValue,
+    } as never);
 }
 
 describe('HostBalancerService', () => {
@@ -226,7 +236,85 @@ describe('HostBalancerService', () => {
             assert.equal(result.response.diagnostics.wouldCreateAssignment, false);
             assert.equal(result.response.diagnostics.selectedTargetUuid, TARGET_UUID);
             assert.equal(result.response.diagnostics.assignment, 'created');
+            assert.equal(result.response.diagnostics.resolvedUserUuid, USER_UUID);
+            assert.equal(result.response.diagnostics.shortUuidMasked, 'test...uuid');
         }
+    });
+
+    it('previews by userUuid when both userUuid and shortUuid are present', async () => {
+        let foundByUuid = 0;
+        let foundByShortUuid = 0;
+        const service = createService({
+            findUser: async (userUuid) => {
+                foundByUuid += 1;
+                assert.equal(userUuid, USER_UUID);
+                return { uuid: USER_UUID, shortUuid: SHORT_UUID };
+            },
+            findUserByShortUuid: async () => {
+                foundByShortUuid += 1;
+                return {
+                    uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                    shortUuid: 'other-short',
+                };
+            },
+            findByHostUuid: async () =>
+                createBalancer({ enabled: true, targets: [createTarget()] }),
+        });
+
+        const result = await service.previewSelection(
+            { userUuid: USER_UUID, shortUuid: 'other-short' },
+            HOST_UUID,
+        );
+
+        assert.equal(result.isOk, true);
+        assert.equal(foundByUuid, 1);
+        assert.equal(foundByShortUuid, 0);
+        if (result.isOk) {
+            assert.equal(result.response.userUuid, USER_UUID);
+            assert.equal(result.response.diagnostics.resolvedUserUuid, USER_UUID);
+        }
+    });
+
+    it('previews by shortUuid', async () => {
+        let foundShortUuid = '';
+        const service = createService({
+            findUser: async () => {
+                throw new Error('userUuid lookup should not be used');
+            },
+            findUserByShortUuid: async (shortUuid) => {
+                foundShortUuid = shortUuid;
+                return { uuid: USER_UUID, shortUuid };
+            },
+            findByHostUuid: async () =>
+                createBalancer({ enabled: true, targets: [createTarget()] }),
+        });
+
+        const result = await service.previewSelection({ shortUuid: SHORT_UUID }, HOST_UUID);
+
+        assert.equal(result.isOk, true);
+        assert.equal(foundShortUuid, SHORT_UUID);
+        if (result.isOk) {
+            assert.equal(result.response.userUuid, USER_UUID);
+            assert.equal(result.response.diagnostics.resolvedUserUuid, USER_UUID);
+            assert.equal(result.response.diagnostics.shortUuidMasked, 'test...uuid');
+        }
+    });
+
+    it('returns user not found when preview user lookup does not resolve', async () => {
+        const service = createService({
+            findUserByShortUuid: async () => null,
+        });
+
+        const result = await service.previewSelection({ shortUuid: 'missing-short' }, HOST_UUID);
+
+        assert.equal(result.isOk, false);
+        assert.equal(result.code, 'A025');
+    });
+
+    it('rejects preview query without userUuid or shortUuid at schema level', () => {
+        const parsed = PreviewHostBalancerCommand.RequestQuerySchema.safeParse({});
+
+        assert.equal(parsed.success, false);
     });
 
     it('rejects traffic-aware settings when existing targets have no nodeUuid', async () => {
@@ -649,5 +737,116 @@ describe('HostBalancerService', () => {
 
         assert.equal(result[0], host);
         assert.equal(result[0].address, 'origin.example.com');
+    });
+
+    it('writes decision on selected target when audit is enabled', async () => {
+        let decisionRecord;
+        const service = createService(
+            {
+                findManyByHostUuids: async () =>
+                    [
+                        createBalancer({
+                            enabled: true,
+                            targets: [createTarget({ overrideAddress: 'audit.example.com' })],
+                        }),
+                    ],
+                createDecision: async (dto) => {
+                    decisionRecord = dto;
+                },
+            },
+            { decisionsEnabled: true },
+        );
+
+        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+
+        assert.equal(result.address, 'audit.example.com');
+        assert.equal(decisionRecord.hostUuid, HOST_UUID);
+        assert.equal(decisionRecord.userUuid, USER_UUID);
+        assert.equal(decisionRecord.targetUuid, TARGET_UUID);
+        assert.equal(decisionRecord.strategy, 'LEAST_ASSIGNED');
+        assert.equal(decisionRecord.reason, 'selected:LEAST_ASSIGNED:created');
+        assert.equal(decisionRecord.diagnostics.assignmentAction, 'created');
+        assert.equal(decisionRecord.diagnostics.unavailablePolicy, 'HIDE_HOST');
+        assert.equal(decisionRecord.diagnostics.finalHostOverrides.address, 'audit.example.com');
+    });
+
+    it('writes decision on HIDE_HOST when no targets are available', async () => {
+        let decisionRecord;
+        const service = createService(
+            {
+                findManyByHostUuids: async () =>
+                    [
+                        createBalancer({
+                            enabled: true,
+                            unavailablePolicy: 'HIDE_HOST',
+                            targets: [createTarget({ enabled: false })],
+                        }),
+                    ],
+                createDecision: async (dto) => {
+                    decisionRecord = dto;
+                },
+            },
+            { decisionsEnabled: true },
+        );
+
+        const result = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+
+        assert.equal(result.length, 0);
+        assert.equal(decisionRecord.targetUuid, null);
+        assert.equal(decisionRecord.reason, 'unavailable:HIDE_HOST:hidden');
+        assert.equal(decisionRecord.diagnostics.assignmentAction, 'skipped');
+        assert.equal(decisionRecord.diagnostics.excludedTargets[0].reason, 'target disabled');
+        assert.equal(decisionRecord.diagnostics.finalHostOverrides, null);
+    });
+
+    it('writes decision on ORIGINAL_HOST fallback when no targets are available', async () => {
+        let decisionRecord;
+        const service = createService(
+            {
+                findManyByHostUuids: async () =>
+                    [
+                        createBalancer({
+                            enabled: true,
+                            unavailablePolicy: 'ORIGINAL_HOST',
+                            targets: [createTarget({ status: 'DEAD' })],
+                        }),
+                    ],
+                createDecision: async (dto) => {
+                    decisionRecord = dto;
+                },
+            },
+            { decisionsEnabled: true },
+        );
+
+        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+
+        assert.equal(result.address, 'origin.example.com');
+        assert.equal(decisionRecord.targetUuid, null);
+        assert.equal(decisionRecord.reason, 'unavailable:ORIGINAL_HOST:original_host');
+        assert.equal(decisionRecord.diagnostics.assignmentAction, 'skipped');
+        assert.equal(decisionRecord.diagnostics.finalHostOverrides.address, 'origin.example.com');
+        assert.equal(decisionRecord.diagnostics.finalHostOverrides.port, 443);
+    });
+
+    it('does not throw when decision insert fails', async () => {
+        const service = createService(
+            {
+                findManyByHostUuids: async () =>
+                    [
+                        createBalancer({
+                            enabled: true,
+                            targets: [createTarget({ overrideAddress: 'safe.example.com' })],
+                        }),
+                    ],
+                createDecision: async () => {
+                    throw new Error('audit table unavailable');
+                },
+            },
+            { decisionsEnabled: true },
+        );
+
+        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+
+        assert.equal(result.address, 'safe.example.com');
     });
 });
