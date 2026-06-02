@@ -1,0 +1,397 @@
+#!/usr/bin/env node
+
+import { Prisma, PrismaClient } from '@prisma/client';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
+import consola from 'consola';
+import Redis from 'ioredis';
+import dayjs from 'dayjs';
+
+import { encodeCertPayload } from '@common/utils/certs/encode-node-payload';
+import { getRedisConnectionOptions } from '@common/utils';
+import { generateNodeCert } from '@common/utils/certs';
+import { CACHE_KEYS } from '@libs/contracts/constants';
+
+dayjs.extend(utc);
+dayjs.extend(relativeTime);
+dayjs.extend(timezone);
+
+const prisma = new PrismaClient({
+    datasources: {
+        db: {
+            url: process.env.DATABASE_URL,
+        },
+    },
+});
+
+const redisOptions = getRedisConnectionOptions(
+    process.env.REDIS_SOCKET,
+    process.env.REDIS_HOST,
+    process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT) : undefined,
+    'ioredis',
+);
+
+const redis = new Redis({
+    ...redisOptions,
+    password: process.env.REDIS_PASSWORD,
+    db: parseInt(process.env.REDIS_DB ?? '1'),
+    keyPrefix: 'rmnwv:',
+});
+
+const enum CLI_ACTIONS {
+    ENABLE_PASSWORD_AUTH = 'enable-password-auth',
+    EXIT = 'exit',
+    FIX_POSTGRES_COLLATION = 'fix-postgres-collation',
+    GET_SECRET_KEY_FOR_NODE = 'get-secret-key-for-node',
+    RESET_CERTS = 'reset-certs',
+    RESET_SUPERADMIN = 'reset-superadmin',
+    TRUNCATE_HWID_USER_DEVICES = 'truncate-hwid-user-devices',
+    TRUNCATE_SRH_TABLE = 'truncate-srh-table',
+}
+
+async function checkDatabaseConnection() {
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        return true;
+    } catch (error) {
+        consola.error('❌ Database connection error:', error);
+        return false;
+    }
+}
+
+async function checkRedisConnection() {
+    try {
+        await redis.ping();
+        return true;
+    } catch (error) {
+        consola.error('❌ Redis connection error:', error);
+        return false;
+    }
+}
+
+async function resetSuperadmin() {
+    const answer = await consola.prompt('Are you sure you want to delete the superadmin?', {
+        type: 'confirm',
+        required: true,
+    });
+
+    if (!answer) {
+        consola.error('❌ Aborted.');
+        process.exit(1);
+    }
+
+    consola.start('🔄 Deleting superadmin...');
+
+    const superadmin = await prisma.admin.findFirst();
+
+    if (!superadmin) {
+        consola.error('❌ Superadmin not found.');
+        process.exit(1);
+    }
+
+    try {
+        await prisma.admin.delete({
+            where: {
+                uuid: superadmin.uuid,
+            },
+        });
+
+        await redis.del(CACHE_KEYS.REMNAWAVE_SETTINGS);
+
+        consola.success(`✅ Superadmin ${superadmin.username} deleted successfully.`);
+    } catch (error) {
+        consola.error('❌ Failed to delete superadmin:', error);
+        process.exit(1);
+    }
+}
+
+async function resetCerts() {
+    const answer = await consola.prompt(
+        'Are you sure you want to delete the certs? You will need to add new certs to all nodes again.',
+        {
+            type: 'confirm',
+            required: true,
+        },
+    );
+
+    if (!answer) {
+        consola.error('❌ Aborted.');
+        process.exit(1);
+    }
+
+    consola.start('🔄 Deleting certs...');
+
+    const keygen = await prisma.keygen.findFirst();
+
+    if (!keygen) {
+        consola.error('❌ Certs not found.');
+        process.exit(1);
+    }
+
+    try {
+        await prisma.keygen.delete({
+            where: {
+                uuid: keygen.uuid,
+            },
+        });
+        consola.success(`✅ Certs deleted successfully.`);
+        consola.warn(
+            `Restart Remnawave to apply changes by running "docker compose down && docker compose up -d".`,
+        );
+    } catch (error) {
+        consola.error('❌ Failed to reset certs:', error);
+        process.exit(1);
+    }
+}
+
+async function getSecretKeyForNode() {
+    consola.start('🔑 Getting SECRET_KEY for node...');
+
+    try {
+        const keygen = await prisma.keygen.findFirst();
+
+        if (!keygen) {
+            consola.error('❌ Keygen not found. Reset SECRET_KEY first or restart Remnawave.');
+            process.exit(1);
+        }
+
+        if (!keygen.caCert || !keygen.caKey) {
+            consola.error('❌ Certs not found. Reset SECRET_KEY first or restart Remnawave.');
+            process.exit(1);
+        }
+
+        const { nodeCertPem, nodeKeyPem } = await generateNodeCert(keygen.caCert, keygen.caKey);
+
+        const nodePayload = encodeCertPayload({
+            nodeCertPem,
+            nodeKeyPem,
+            caCertPem: keygen.caCert,
+            jwtPublicKey: keygen.pubKey,
+        });
+
+        consola.success('✅ SECRET_KEY for node generated successfully.');
+
+        consola.info(`\nSECRET_KEY="${nodePayload}"`);
+
+        process.exit(0);
+    } catch (error) {
+        consola.error('❌ Failed to get SECRET_KEY for node:', error);
+        process.exit(1);
+    }
+}
+
+async function fixPostgresCollation() {
+    consola.start('🔄 Fixing Collation...');
+
+    const answer = await consola.prompt('Are you sure you want to fix Collation?', {
+        type: 'confirm',
+        required: true,
+    });
+
+    if (!answer) {
+        consola.error('❌ Aborted.');
+        process.exit(1);
+    }
+
+    try {
+        const result = await prisma.$queryRaw<
+            { dbname: string }[]
+        >`SELECT current_database() as dbname;`;
+        const dbName = result[0].dbname;
+
+        consola.info(`🔄 Refreshing Collation for database: ${dbName}`);
+
+        await prisma.$executeRaw`ALTER DATABASE ${Prisma.raw(dbName)} REFRESH COLLATION VERSION;`;
+        consola.success('✅ Collation fixed successfully.');
+        process.exit(0);
+    } catch (error) {
+        consola.error('❌ Failed to fix Collation:', error);
+        process.exit(1);
+    }
+}
+
+async function enablePasswordAuth() {
+    consola.start('🔄 Enabling password authentication...');
+
+    const answer = await consola.prompt(
+        'Are you sure you want to enable password authentication?',
+        {
+            type: 'confirm',
+            required: true,
+        },
+    );
+
+    if (!answer) {
+        consola.error('❌ Aborted.');
+        process.exit(1);
+    }
+
+    try {
+        await prisma.remnawaveSettings.update({
+            where: { id: 1 },
+            data: {
+                passwordSettings: {
+                    enabled: true,
+                },
+            },
+        });
+
+        await redis.del(CACHE_KEYS.REMNAWAVE_SETTINGS);
+
+        consola.success('✅ Password authentication enabled successfully.');
+        process.exit(0);
+    } catch (error) {
+        consola.error('❌ Failed to enable password authentication:', error);
+        process.exit(1);
+    }
+}
+
+async function truncateHwidUserDevices() {
+    consola.start('🔄 Cleaning up HWID Devices...');
+
+    const answer = await consola.prompt('Are you sure you want to clean up HWID Devices?', {
+        type: 'confirm',
+        required: true,
+    });
+
+    if (!answer) {
+        consola.error('❌ Aborted.');
+        process.exit(1);
+    }
+
+    try {
+        await prisma.$executeRaw`TRUNCATE hwid_user_devices;`;
+        consola.success('✅ HWID Devices cleaned up successfully.');
+        process.exit(0);
+    } catch (error) {
+        consola.error('❌ Failed to clean up HWID Devices:', error);
+        process.exit(1);
+    }
+}
+
+async function truncateSrhTable() {
+    consola.start('🔄 Cleaning up SRH Table...');
+
+    const answer = await consola.prompt('Are you sure you want to clean up SRH Table?', {
+        type: 'confirm',
+        required: true,
+    });
+
+    if (!answer) {
+        consola.error('❌ Aborted.');
+        process.exit(1);
+    }
+
+    try {
+        await prisma.$executeRaw`TRUNCATE user_subscription_request_history RESTART IDENTITY;`;
+        consola.success('✅ SRH Table cleaned up successfully.');
+        process.exit(0);
+    } catch (error) {
+        consola.error('❌ Failed to clean up SRH Table:', error);
+        process.exit(1);
+    }
+}
+
+async function main() {
+    consola.box('Remnawave Rescue CLI v0.4');
+
+    consola.start('🌱 Checking database connection...');
+    const isConnected = await checkDatabaseConnection();
+    if (!isConnected) {
+        consola.error('❌ Failed to connect to database. Exiting...');
+        process.exit(1);
+    }
+    consola.success('✅ Database connected!');
+
+    consola.start('🌱 Checking Redis connection...');
+    const isRedisConnected = await checkRedisConnection();
+    if (!isRedisConnected) {
+        consola.error('❌ Failed to connect to Redis. Exiting...');
+        process.exit(1);
+    }
+    consola.success('✅ Redis connected!');
+
+    const action = await consola.prompt('Select an action', {
+        type: 'select',
+        required: true,
+        options: [
+            {
+                value: CLI_ACTIONS.RESET_SUPERADMIN,
+                label: 'Reset superadmin',
+                hint: 'Fully reset superadmin',
+            },
+            {
+                value: CLI_ACTIONS.ENABLE_PASSWORD_AUTH,
+                label: 'Enable password authentication',
+                hint: 'Enable password authentication',
+            },
+            {
+                value: CLI_ACTIONS.RESET_CERTS,
+                label: 'Reset certs',
+                hint: 'Fully reset certs',
+            },
+            {
+                value: CLI_ACTIONS.GET_SECRET_KEY_FOR_NODE,
+                label: 'Get SECRET_KEY for a Remnawave Node',
+                hint: 'Get SECRET_KEY in cases, where you can not get from Panel',
+            },
+            {
+                value: CLI_ACTIONS.FIX_POSTGRES_COLLATION,
+                label: 'Fix Collation',
+                hint: 'Fix Collation issues for current database',
+            },
+            {
+                value: CLI_ACTIONS.TRUNCATE_HWID_USER_DEVICES,
+                label: 'Clean up HWID Devices',
+                hint: 'Remove all HWID Devices from the database',
+            },
+            {
+                value: CLI_ACTIONS.TRUNCATE_SRH_TABLE,
+                label: 'Clean up SRH Table',
+                hint: 'Remove all SRH data from the database',
+            },
+            {
+                value: CLI_ACTIONS.EXIT,
+                label: 'Exit',
+            },
+        ],
+        initial: CLI_ACTIONS.EXIT,
+    });
+
+    switch (action) {
+        case CLI_ACTIONS.RESET_SUPERADMIN:
+            await resetSuperadmin();
+            break;
+        case CLI_ACTIONS.RESET_CERTS:
+            await resetCerts();
+            break;
+        case CLI_ACTIONS.GET_SECRET_KEY_FOR_NODE:
+            await getSecretKeyForNode();
+            break;
+        case CLI_ACTIONS.FIX_POSTGRES_COLLATION:
+            await fixPostgresCollation();
+            break;
+        case CLI_ACTIONS.ENABLE_PASSWORD_AUTH:
+            await enablePasswordAuth();
+            break;
+        case CLI_ACTIONS.TRUNCATE_HWID_USER_DEVICES:
+            await truncateHwidUserDevices();
+            break;
+        case CLI_ACTIONS.TRUNCATE_SRH_TABLE:
+            await truncateSrhTable();
+            break;
+        case CLI_ACTIONS.EXIT:
+            consola.info('👋 Exiting...');
+            process.exit(0);
+    }
+}
+main()
+    .then(async () => {
+        await prisma.$disconnect();
+    })
+    .catch(async (e) => {
+        consola.error('❌ An error occurred:', e);
+        await prisma.$disconnect();
+        process.exit(1);
+    });
