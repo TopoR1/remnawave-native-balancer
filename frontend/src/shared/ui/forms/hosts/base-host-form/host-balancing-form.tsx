@@ -75,6 +75,7 @@ type IProps = {
 
 const TRAFFIC_STRATEGIES: HostBalancerStrategy[] = ['LEAST_TRAFFIC', 'WEIGHTED_LEAST_TRAFFIC']
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const HOST_BALANCER_BUILD_MARKER = 'Native Host Balancer UI'
 
 export function hostBalancerToDraft(settings: HostBalancer | null): HostBalancingDraft {
     if (!settings) {
@@ -119,7 +120,7 @@ export function sanitizeHostBalancingDraft(draft: HostBalancingDraft): {
             rebalanceExistingAssignmentsByTraffic: draft.rebalanceExistingAssignmentsByTraffic,
             unavailablePolicy: draft.unavailablePolicy,
             trafficMetric: TRAFFIC_STRATEGIES.includes(draft.strategy)
-                ? draft.trafficMetric ?? 'CURRENT_PERIOD'
+                ? (draft.trafficMetric ?? 'CURRENT_PERIOD')
                 : null
         },
         targets: draft.targets.map((target) => ({
@@ -231,6 +232,7 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
 
     return (
         <SectionCard.Root>
+            <span data-native-host-balancer-ui={HOST_BALANCER_BUILD_MARKER} hidden />
             <SectionCard.Section>
                 <Group justify="space-between">
                     <BaseOverlayHeader
@@ -347,7 +349,10 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                         value: 'CURRENT_PERIOD',
                                         label: t('base-host-form.metric-current-period')
                                     },
-                                    { value: 'LAST_24H', label: t('base-host-form.metric-last-24h') },
+                                    {
+                                        value: 'LAST_24H',
+                                        label: t('base-host-form.metric-last-24h')
+                                    },
                                     { value: 'LAST_6H', label: t('base-host-form.metric-last-6h') },
                                     { value: 'LAST_1H', label: t('base-host-form.metric-last-1h') }
                                 ]}
@@ -365,7 +370,11 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
 
                         <Group justify="space-between">
                             <Text fw={600}>{t('base-host-form.targets')}</Text>
-                            <Button leftSection={<PiPlus size={16} />} onClick={addTarget} size="xs">
+                            <Button
+                                leftSection={<PiPlus size={16} />}
+                                onClick={addTarget}
+                                size="xs"
+                            >
                                 {t('base-host-form.add-target')}
                             </Button>
                         </Group>
@@ -379,7 +388,9 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                         <Table.Th>{t('base-host-form.override-port')}</Table.Th>
                                         <Table.Th>{t('base-host-form.weight')}</Table.Th>
                                         <Table.Th>{t('base-host-form.priority')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.max-assigned-users')}</Table.Th>
+                                        <Table.Th>
+                                            {t('base-host-form.max-assigned-users')}
+                                        </Table.Th>
                                         <Table.Th>{t('base-host-form.traffic')}</Table.Th>
                                         <Table.Th>{t('base-host-form.assignments')}</Table.Th>
                                         <Table.Th>{t('base-host-form.status')}</Table.Th>
@@ -456,7 +467,9 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                                     onChange={(value) =>
                                                         updateTarget(target.localId, {
                                                             weight:
-                                                                typeof value === 'number' ? value : 1
+                                                                typeof value === 'number'
+                                                                    ? value
+                                                                    : 1
                                                         })
                                                     }
                                                     value={target.weight ?? 1}
@@ -496,7 +509,9 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                             </Table.Td>
                                             <Table.Td>{target.trafficBytes ?? '-'}</Table.Td>
                                             <Table.Td>{target.assignments ?? '-'}</Table.Td>
-                                            <Table.Td>{statusBadge(target.status ?? 'ACTIVE', t)}</Table.Td>
+                                            <Table.Td>
+                                                {statusBadge(target.status ?? 'ACTIVE', t)}
+                                            </Table.Td>
                                             <Table.Td>
                                                 <Group gap={4} wrap="nowrap">
                                                     <Tooltip label={t('base-host-form.set-active')}>
@@ -510,22 +525,32 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                                             <TbActivityHeartbeat size={16} />
                                                         </ActionIcon>
                                                     </Tooltip>
-                                                    <Tooltip label={t('base-host-form.set-draining')}>
+                                                    <Tooltip
+                                                        label={t('base-host-form.set-draining')}
+                                                    >
                                                         <ActionIcon
                                                             color="yellow"
                                                             onClick={() =>
-                                                                setStatus(target.localId, 'DRAINING')
+                                                                setStatus(
+                                                                    target.localId,
+                                                                    'DRAINING'
+                                                                )
                                                             }
                                                             variant="subtle"
                                                         >
                                                             <TbPlayerPause size={16} />
                                                         </ActionIcon>
                                                     </Tooltip>
-                                                    <Tooltip label={t('base-host-form.disable-target')}>
+                                                    <Tooltip
+                                                        label={t('base-host-form.disable-target')}
+                                                    >
                                                         <ActionIcon
                                                             color="gray"
                                                             onClick={() =>
-                                                                setStatus(target.localId, 'DISABLED')
+                                                                setStatus(
+                                                                    target.localId,
+                                                                    'DISABLED'
+                                                                )
                                                             }
                                                             variant="subtle"
                                                         >
@@ -543,7 +568,9 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                                             <TbSkull size={16} />
                                                         </ActionIcon>
                                                     </Tooltip>
-                                                    <Tooltip label={t('base-host-form.remove-target')}>
+                                                    <Tooltip
+                                                        label={t('base-host-form.remove-target')}
+                                                    >
                                                         <ActionIcon
                                                             color="red"
                                                             onClick={() =>
@@ -570,7 +597,9 @@ export function HostBalancingForm({ draft, hostUuid, nodes, onChange }: IProps) 
                                 <TextInput
                                     disabled={!hostUuid}
                                     label={t('base-host-form.user-uuid-or-short-uuid')}
-                                    onChange={(event) => setPreviewUserUuid(event.currentTarget.value)}
+                                    onChange={(event) =>
+                                        setPreviewUserUuid(event.currentTarget.value)
+                                    }
                                     placeholder={t('base-host-form.user-uuid-or-short-uuid')}
                                     value={previewUserUuid}
                                 />
@@ -610,11 +639,13 @@ function PreviewResult({ preview }: { preview: HostBalancerPreview }) {
                     <Text>{diagnostics.selectedTargetUuid ?? '-'}</Text>
                 </Group>
                 <Text size="sm">
-                    {diagnostics.reasons.join(' ') || t('base-host-form.no-selection-reason')}
+                    {diagnostics.reasons
+                        .map((reason) => translateDiagnosticText(reason, t))
+                        .join(' ') || t('base-host-form.no-selection-reason')}
                 </Text>
                 {diagnostics.warnings.map((warning) => (
                     <Text c="yellow" key={warning} size="sm">
-                        {warning}
+                        {translateDiagnosticText(warning, t)}
                     </Text>
                 ))}
                 <DiagnosticsTable
@@ -666,7 +697,9 @@ function DiagnosticsTable({
                             <Table.Td>
                                 {t('base-host-form.traffic')}: {row.trafficBytes ?? '-'}
                             </Table.Td>
-                            <Table.Td>{row.reason ?? ''}</Table.Td>
+                            <Table.Td>
+                                {row.reason ? translateDiagnosticText(row.reason, t) : ''}
+                            </Table.Td>
                         </Table.Tr>
                     ))}
                 </Table.Tbody>
@@ -688,6 +721,43 @@ function statusBadge(status: HostBalancerTargetStatus, t: TFunction) {
             {meta.label}
         </Badge>
     )
+}
+
+function translateDiagnosticText(message: string, t: TFunction): string {
+    const selectedByStrategy = message.match(/^Selected target by ([A-Z_]+)\.$/)
+    if (selectedByStrategy) {
+        return String(
+            t('base-host-form.diagnostic-selected-target-by-strategy', {
+                strategy: selectedByStrategy[1]
+            })
+        )
+    }
+
+    const targetStatus = message.match(/^target status ([A-Z_]+)$/)
+    if (targetStatus) {
+        return String(
+            t('base-host-form.diagnostic-target-status', {
+                status: targetStatus[1]
+            })
+        )
+    }
+
+    const diagnosticKeys = {
+        'Traffic data missing, fallback strategy used.':
+            'base-host-form.diagnostic-traffic-fallback',
+        'Host balancer settings do not exist.': 'base-host-form.diagnostic-settings-missing',
+        'No eligible target selected.': 'base-host-form.diagnostic-no-eligible-target',
+        'target disabled': 'base-host-form.diagnostic-target-disabled',
+        'target draining': 'base-host-form.diagnostic-target-draining',
+        'target node not found': 'base-host-form.diagnostic-target-node-not-found',
+        'target node disabled': 'base-host-form.diagnostic-target-node-disabled',
+        'target node disconnected': 'base-host-form.diagnostic-target-node-disconnected',
+        'target node lacks required inbound':
+            'base-host-form.diagnostic-target-node-lacks-required-inbound'
+    } as const
+
+    const key = diagnosticKeys[message as keyof typeof diagnosticKeys]
+    return key ? String(t(key)) : message
 }
 
 function emptyToNull(value?: string | null) {

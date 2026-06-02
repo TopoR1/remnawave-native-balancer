@@ -144,5 +144,7 @@ public/xray.schema.cn.json
 
 scripts
 scripts/**
+!scripts/
+!scripts/check-host-balancer-i18n.mjs
 
 public/assets/**

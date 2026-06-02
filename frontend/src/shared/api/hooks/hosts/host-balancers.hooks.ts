@@ -3,6 +3,7 @@ import { notifications } from '@mantine/notifications'
 import { z } from 'zod'
 
 import { createGetQueryHook, createMutationHook, errorHandler } from '../../tsq-helpers'
+import i18n from '../../../../app/i18n/i18n'
 
 const DateTimeSchema = z
     .string()
@@ -31,12 +32,7 @@ export const HostBalancerTrafficMetricSchema = z.enum([
     'LAST_1H'
 ])
 
-export const HostBalancerTargetStatusSchema = z.enum([
-    'ACTIVE',
-    'DRAINING',
-    'DISABLED',
-    'DEAD'
-])
+export const HostBalancerTargetStatusSchema = z.enum(['ACTIVE', 'DRAINING', 'DISABLED', 'DEAD'])
 
 export const HostBalancerTargetSchema = z.object({
     uuid: z.string().uuid(),
@@ -155,7 +151,7 @@ export const useGetHostBalancer = createGetQueryHook({
         enabled: false,
         refetchOnMount: true
     },
-    errorHandler: (error) => errorHandler(error, 'Get Host Balancer')
+    errorHandler: (error) => errorHandler(error, i18n.t('base-host-form.error-get-host-balancer'))
 })
 
 export const usePreviewHostBalancer = createGetQueryHook({
@@ -168,7 +164,8 @@ export const usePreviewHostBalancer = createGetQueryHook({
     rQueryParams: {
         enabled: false
     },
-    errorHandler: (error) => errorHandler(error, 'Preview Host Balancer')
+    errorHandler: (error) =>
+        errorHandler(error, i18n.t('base-host-form.error-preview-host-balancer'))
 })
 
 export const useUpdateHostBalancer = createMutationHook({
@@ -187,9 +184,11 @@ export const useUpdateHostBalancer = createMutationHook({
     rMutationParams: {
         onError: (error) => {
             notifications.show({
-                title: 'Update Host Balancer',
+                title: i18n.t('base-host-form.error-update-host-balancer'),
                 message:
-                    error instanceof Error ? error.message : 'Request failed with unknown error.',
+                    error instanceof Error
+                        ? error.message
+                        : i18n.t('base-host-form.request-failed-with-unknown-error'),
                 color: 'red'
             })
         }
@@ -205,9 +204,11 @@ export const useUpdateHostBalancerTargets = createMutationHook({
     rMutationParams: {
         onError: (error) => {
             notifications.show({
-                title: 'Update Host Balancer Targets',
+                title: i18n.t('base-host-form.error-update-host-balancer-targets'),
                 message:
-                    error instanceof Error ? error.message : 'Request failed with unknown error.',
+                    error instanceof Error
+                        ? error.message
+                        : i18n.t('base-host-form.request-failed-with-unknown-error'),
                 color: 'red'
             })
         }
