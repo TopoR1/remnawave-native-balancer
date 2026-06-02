@@ -6,11 +6,7 @@
 
 Пользователь при этом продолжает видеть публичный remark исходного `Host`. Меняется только техническая цель подключения: адрес, порт и при необходимости TLS/WebSocket поля берутся из выбранного target.
 
-## Отличие от remnawave-subscription-page-with-balancer
-
-`remnawave-subscription-page-with-balancer` работает снаружи Remnawave: отдельная страница подписки получает или отдает подписку и меняет ее на своем уровне.
-
-Этот форк работает внутри Remnawave:
+## Этот форк работает внутри Remnawave:
 
 - выбор target происходит в backend до сборки подписки;
 - панель Remnawave содержит секцию `Balancing` в форме `Host`;
@@ -24,7 +20,7 @@
 - `frontend` - панель Remnawave с секцией `Balancing` в форме создания и редактирования `Host`.
 - `node` - код Remnawave Node, в этом форке не является основной точкой балансировки.
 - `panel` - документация и сайт панели Remnawave.
-- `TESTING_HOST_BALANCER.md` - подробный русский регламент для проверки, диагностики и отката `Host Balancer`.
+- `TESTING_HOST_BALANCER.md` - подробный регламент для проверки, диагностики и отката `Host Balancer`.
 - `Dockerfile` - корневой рабочий Dockerfile, который собирает локальный frontend и backend в один образ.
 - `Dockerfile.prebuilt-frontend` - вариант для слабого VPS: frontend собирается заранее, а Docker копирует готовый `frontend/dist`.
 
@@ -134,26 +130,7 @@ docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > /o
 PGPASSWORD='<password>' pg_dump -h <db-host> -p <db-port> -U <db-user> -d <db-name> -Fc -f /opt/remnawave-backups/remnawave-db-before-native-balancer.dump
 ```
 
-### 2. Отключите старый внешний балансировщик
-
-Остановите и удалите старый `remnawave-subscription-page-with-balancer`, если он был установлен отдельным compose-проектом:
-
-```bash
-cd /opt/remnawave-subscription-page-with-balancer
-docker compose down
-```
-
-Временно сохраните старый volume `topor-balancer`, пока новый вариант не проверен:
-
-```bash
-docker volume ls | grep topor-balancer
-```
-
-Не удаляйте этот volume на этапе миграции. Он может пригодиться для ручной сверки старых настроек.
-
-Верните маршрут `subs.topornet.com` на обычную `remnawave-subscription-page` или на стандартный endpoint подписки Remnawave. После перехода на нативный балансировщик домен подписки не должен вести на старый внешний балансировщик.
-
-### 3. Склонируйте форк и соберите образ
+### 2. Склонируйте форк и соберите образ
 
 ```bash
 cd /opt
@@ -178,7 +155,7 @@ docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-b
 docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
 ```
 
-### 4. Подключите образ через override
+### 3. Подключите образ через override
 
 Создайте `/opt/remnawave/docker-compose.override.yml`:
 
@@ -200,7 +177,7 @@ docker compose config --services
 
 На первом запуске оставьте `HOST_BALANCER_ENABLED=false`. Это глобальный аварийный выключатель: при значении `false` генерация подписки идет как в обычном Remnawave.
 
-### 5. Запустите Remnawave и проверьте панель
+### 4. Запустите Remnawave и проверьте панель
 
 ```bash
 cd /opt/remnawave
@@ -434,10 +411,6 @@ docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
 ```
 
 После пересборки перезапустите backend и очистите кэш браузера.
-
-### API уходит в restart loop с JwtDefaultGuard или QueryBus
-
-Это обычно означает проблему dependency injection в NestJS: модуль, где используется guard, controller, query или service, не импортирует нужный module/provider. Проверьте, что модуль `Host Balancer` подключен в backend-модулях Remnawave, а зависимости вроде `CqrsModule`, guard-модулей и сервисов доступны в том NestJS module, где они используются.
 
 ### Подписка не изменилась
 
