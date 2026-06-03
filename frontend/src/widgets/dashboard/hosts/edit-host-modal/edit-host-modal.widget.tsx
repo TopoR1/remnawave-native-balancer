@@ -1,7 +1,7 @@
 import { UpdateHostCommand } from '@remnawave/backend-contract'
 import { zodResolver } from 'mantine-form-zod-resolver'
 import { notifications } from '@mantine/notifications'
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PiListChecks } from 'react-icons/pi'
 import { modals } from '@mantine/modals'
@@ -28,7 +28,8 @@ import {
     DEFAULT_HOST_BALANCING_DRAFT,
     HostBalancingDraft,
     hostBalancerToDraft,
-    sanitizeHostBalancingDraft
+    sanitizeHostBalancingDraft,
+    translateValidationReason
 } from '@shared/ui/forms/hosts/base-host-form/host-balancing-form'
 import { saveHostBalancingDraft } from '@shared/ui/forms/hosts/base-host-form/host-balancing-save-flow'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
@@ -48,6 +49,7 @@ export const EditHostModalWidget = memo(() => {
     const [hostBalancingDraft, setHostBalancingDraft] = useState<HostBalancingDraft>(
         DEFAULT_HOST_BALANCING_DRAFT
     )
+    const hydratedHostBalancerUuidRef = useRef<string | null>(null)
     const [hostBalancingValidation, setHostBalancingValidation] =
         useState<HostBalancerTargetsValidation | null>(null)
 
@@ -83,6 +85,7 @@ export const EditHostModalWidget = memo(() => {
             form.resetTouched()
             setHostBalancingDraft(DEFAULT_HOST_BALANCING_DRAFT)
             setHostBalancingValidation(null)
+            hydratedHostBalancerUuidRef.current = null
             setAdvancedOpened(false)
         }, 200)
     }
@@ -188,7 +191,17 @@ export const EditHostModalWidget = memo(() => {
 
     useEffect(() => {
         if (host) {
-            setHostBalancingDraft(hostBalancerToDraft(hostBalancer ?? null))
+            setHostBalancingDraft((currentDraft) => {
+                const isSameHost = hydratedHostBalancerUuidRef.current === host.uuid
+
+                if (isSameHost && currentDraft.touched) {
+                    return currentDraft
+                }
+
+                hydratedHostBalancerUuidRef.current = host.uuid
+
+                return hostBalancerToDraft(hostBalancer ?? null)
+            })
         }
     }, [host, hostBalancer])
 
@@ -201,10 +214,29 @@ export const EditHostModalWidget = memo(() => {
             })
             setHostBalancingValidation(validation)
 
-            if (validation.targets.some((target) => target.severity === 'error')) {
+            const hasActiveInvalidTarget = validation.targets.some(
+                (target, index) =>
+                    target.severity === 'error' &&
+                    targets[index]?.enabled !== false &&
+                    targets[index]?.status === 'ACTIVE'
+            )
+
+            if (hasActiveInvalidTarget) {
+                const errors = validation.targets.flatMap((target, index) => {
+                    if (
+                        target.severity !== 'error' ||
+                        targets[index]?.enabled === false ||
+                        targets[index]?.status !== 'ACTIVE'
+                    ) {
+                        return []
+                    }
+
+                    return target.reasons.map((reason) => translateValidationReason(reason, t))
+                })
+
                 notifications.show({
                     title: t('edit-host-modal.widget.error'),
-                    message: t('base-host-form.cannot-save-active-invalid-targets'),
+                    message: `${t('base-host-form.cannot-save-active-invalid-targets')}\n${errors.join('\n')}\n${t('base-host-form.fix-or-disable-invalid-targets')}`,
                     color: 'red'
                 })
                 throw new Error('Host balancer targets validation failed')

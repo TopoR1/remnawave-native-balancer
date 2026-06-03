@@ -15,12 +15,15 @@ import {
     useGetNodes,
     useGetSubscriptionTemplates,
     useUpdateHostBalancer,
-    useUpdateHostBalancerTargets
+    useUpdateHostBalancerTargets,
+    useValidateHostBalancerTargets
 } from '@shared/api/hooks'
 import { MODALS, useModalClose, useModalState } from '@entities/dashboard/modal-store'
 import {
     DEFAULT_HOST_BALANCING_DRAFT,
-    HostBalancingDraft
+    HostBalancingDraft,
+    sanitizeHostBalancingDraft,
+    translateValidationReason
 } from '@shared/ui/forms/hosts/base-host-form/host-balancing-form'
 import { saveHostBalancingDraft } from '@shared/ui/forms/hosts/base-host-form/host-balancing-save-flow'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
@@ -91,8 +94,47 @@ export const CreateHostModalWidget = () => {
         mutateAsync: updateHostBalancerTargets,
         isPending: isUpdateHostBalancerTargetsPending
     } = useUpdateHostBalancerTargets()
+    const {
+        mutateAsync: validateHostBalancerTargets,
+        isPending: isValidateHostBalancerTargetsPending
+    } = useValidateHostBalancerTargets()
 
     const saveHostBalancing = async (hostUuid: string) => {
+        if (hostBalancingDraft.touched) {
+            const { targets } = sanitizeHostBalancingDraft(hostBalancingDraft)
+            const validation = await validateHostBalancerTargets({
+                route: { hostUuid },
+                variables: { targets }
+            })
+            const hasActiveInvalidTarget = validation.targets.some(
+                (target, index) =>
+                    target.severity === 'error' &&
+                    targets[index]?.enabled !== false &&
+                    targets[index]?.status === 'ACTIVE'
+            )
+
+            if (hasActiveInvalidTarget) {
+                const errors = validation.targets.flatMap((target, index) => {
+                    if (
+                        target.severity !== 'error' ||
+                        targets[index]?.enabled === false ||
+                        targets[index]?.status !== 'ACTIVE'
+                    ) {
+                        return []
+                    }
+
+                    return target.reasons.map((reason) => translateValidationReason(reason, t))
+                })
+
+                notifications.show({
+                    title: t('create-host-modal.widget.error'),
+                    message: `${t('base-host-form.cannot-save-active-invalid-targets')}\n${errors.join('\n')}\n${t('base-host-form.fix-or-disable-invalid-targets')}`,
+                    color: 'red'
+                })
+                throw new Error('Host balancer targets validation failed')
+            }
+        }
+
         await saveHostBalancingDraft({
             draft: hostBalancingDraft,
             hostUuid,
@@ -245,7 +287,8 @@ export const CreateHostModalWidget = () => {
                 isSubmitting={
                     isCreateHostPending ||
                     isUpdateHostBalancerPending ||
-                    isUpdateHostBalancerTargetsPending
+                    isUpdateHostBalancerTargetsPending ||
+                    isValidateHostBalancerTargetsPending
                 }
                 nodes={nodes!}
                 onHostBalancingDraftChange={setHostBalancingDraft}

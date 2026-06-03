@@ -73,6 +73,7 @@ export class HostBalancersRepository {
             where: { uuid: hostUuid },
             select: {
                 uuid: true,
+                remark: true,
                 address: true,
                 port: true,
                 configProfileInboundUuid: true,
@@ -365,7 +366,7 @@ export class HostBalancersRepository {
                 diagnostics: dto.diagnostics,
             },
         });
-        await this.pruneDecisionRetention(5_000);
+        void this.pruneDecisionRetention(5_000).catch(() => undefined);
     }
 
     public async listDecisions(hostUuid: string, limit: number) {
@@ -418,7 +419,8 @@ export class HostBalancersRepository {
             return {
                 uuid: row.uuid,
                 hostUuid: row.hostUuid,
-                userUuid: row.userUuid,
+                userUuid: this.maskUuid(row.userUuid),
+                userUuidMasked: this.maskUuid(row.userUuid),
                 targetUuid: row.targetUuid,
                 strategy: row.strategy,
                 reason: row.reason,
@@ -451,6 +453,14 @@ export class HostBalancersRepository {
         });
 
         return result.count;
+    }
+
+    private maskUuid(uuid: string): string {
+        if (uuid.length <= 12) {
+            return '***';
+        }
+
+        return `${uuid.slice(0, 8)}...${uuid.slice(-4)}`;
     }
 
     private isUnavailablePolicy(value: unknown): value is HostBalancerUnavailablePolicy {

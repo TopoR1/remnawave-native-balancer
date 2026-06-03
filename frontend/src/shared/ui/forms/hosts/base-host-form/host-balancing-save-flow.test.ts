@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import {
     DEFAULT_HOST_BALANCING_DRAFT,
     HostBalancingDraft,
+    patchHostBalancingDraft,
+    updateHostBalancingTarget,
     shouldEnableHostSave
 } from './host-balancing-form'
 
@@ -39,31 +41,94 @@ function draftWithTarget(patch: Partial<HostBalancingDraft> = {}): HostBalancing
 
 describe('host balancing save flow', () => {
     it('enables Save when strategy changes', () => {
-        const draft = draftWithTarget({ strategy: 'WEIGHTED', touched: true })
+        const draft = patchHostBalancingDraft(draftWithTarget({ touched: false }), {
+            strategy: 'WEIGHTED'
+        })
+
+        assert.equal(shouldEnableHostSave(false, draft.touched), true)
+    })
+
+    it('enables Save when unavailable policy changes', () => {
+        const draft = patchHostBalancingDraft(draftWithTarget({ touched: false }), {
+            unavailablePolicy: 'ORIGINAL_HOST'
+        })
+
+        assert.equal(shouldEnableHostSave(false, draft.touched), true)
+    })
+
+    it('enables Save when sticky is toggled', () => {
+        const draft = patchHostBalancingDraft(draftWithTarget({ touched: false }), {
+            stickyEnabled: false
+        })
 
         assert.equal(shouldEnableHostSave(false, draft.touched), true)
     })
 
     it('enables Save when a target is added', () => {
-        const draft = draftWithTarget({ touched: true })
+        const draft = patchHostBalancingDraft(
+            {
+                ...DEFAULT_HOST_BALANCING_DRAFT,
+                enabled: true,
+                touched: false
+            },
+            {
+                targets: draftWithTarget().targets
+            }
+        )
+
+        assert.equal(shouldEnableHostSave(false, draft.touched), true)
+    })
+
+    it('enables Save when target node UUID changes', () => {
+        const draft = updateHostBalancingTarget(
+            draftWithTarget({ touched: false }),
+            'local-target',
+            {
+                nodeUuid: '33333333-3333-4333-8333-333333333333'
+            }
+        )
 
         assert.equal(shouldEnableHostSave(false, draft.touched), true)
     })
 
     it('enables Save when target weight, priority, or status changes', () => {
-        const draft = draftWithTarget({
-            touched: true,
-            targets: [
-                {
-                    ...draftWithTarget().targets[0],
-                    weight: 10,
-                    priority: 5,
-                    status: 'DRAINING'
-                }
-            ]
-        })
+        const draft = updateHostBalancingTarget(
+            draftWithTarget({ touched: false }),
+            'local-target',
+            {
+                weight: 10,
+                priority: 5,
+                status: 'DRAINING'
+            }
+        )
 
         assert.equal(shouldEnableHostSave(false, draft.touched), true)
+    })
+
+    it('marks every target field change as touched', () => {
+        const patches = [
+            { enabled: false },
+            { status: 'DISABLED' as const },
+            { weight: 2 },
+            { priority: 10 },
+            { maxAssignedUsers: 50 },
+            { overrideAddress: 'edge.example.com' },
+            { overridePort: 443 },
+            { overrideSni: 'sni.example.com' },
+            { overrideHost: 'host.example.com' },
+            { overridePath: '/balancer' }
+        ]
+
+        for (const patch of patches) {
+            const draft = updateHostBalancingTarget(
+                draftWithTarget({ touched: false }),
+                'local-target',
+                patch
+            )
+
+            assert.equal(draft.touched, true)
+            assert.equal(shouldEnableHostSave(false, draft.touched), true)
+        }
     })
 
     it('saves only balancing through settings and targets PUT flow', async () => {

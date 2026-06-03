@@ -122,6 +122,7 @@ function createService(
     const repository = {
         findHost: async () => ({
             uuid: HOST_UUID,
+            remark: 'Original Remark',
             address: 'origin.example.com',
             port: 443,
             configProfileInboundUuid: INBOUND_UUID,
@@ -256,6 +257,13 @@ describe('HostBalancerService', () => {
         assert.equal(assignmentWrites, 0);
         if (result.isOk) {
             assert.equal(result.response.target?.uuid, TARGET_UUID);
+            assert.equal(result.response.resolvedUserUuid, USER_UUID);
+            assert.equal(result.response.shortUuid, SHORT_UUID);
+            assert.equal(result.response.hostRemark, 'Original Remark');
+            assert.equal(result.response.balancerEnabled, true);
+            assert.equal(result.response.assignmentAction, 'would_create');
+            assert.equal(result.response.selectedTarget?.nodeName, 'Node A');
+            assert.equal(result.response.selectedTarget?.assignments, 0);
             assert.equal(result.response.diagnostics.wouldCreateAssignment, false);
             assert.equal(result.response.diagnostics.selectedTargetUuid, TARGET_UUID);
             assert.equal(result.response.diagnostics.assignment, 'created');
@@ -367,6 +375,8 @@ describe('HostBalancerService', () => {
         assert.equal(result.isOk, true);
         if (result.isOk) {
             assert.equal(result.response.target, null);
+            assert.equal(result.response.assignmentAction, 'would_fallback');
+            assert.equal(result.response.fallbackPolicyResult?.result, 'hidden');
             assert.equal(result.response.diagnostics.selectedTargetUuid, null);
             assert.equal(result.response.diagnostics.assignmentAction, 'preview_only');
             assert.equal(result.response.diagnostics.candidates.length, 0);
@@ -432,6 +442,7 @@ describe('HostBalancerService', () => {
         assert.equal(assignmentWrites, 0);
         if (result.isOk) {
             assert.equal(result.response.target?.uuid, TARGET_UUID);
+            assert.equal(result.response.assignmentAction, 'would_reuse');
             assert.equal(result.response.diagnostics.assignmentAction, 'reused');
             assert.equal(result.response.diagnostics.existingAssignment?.targetUuid, TARGET_UUID);
         }
@@ -474,6 +485,8 @@ describe('HostBalancerService', () => {
         assert.equal(result.isOk, true);
         if (result.isOk) {
             assert.equal(result.response.length, 1);
+            assert.equal(result.response[0].userUuid, '22222222...2222');
+            assert.equal(result.response[0].userUuidMasked, '22222222...2222');
             assert.equal(result.response[0].reason, 'selected:LEAST_ASSIGNED:created');
             assert.equal(result.response[0].finalHostOverrides.address, 'decision.example.com');
         }
@@ -515,6 +528,16 @@ describe('HostBalancerService', () => {
                             },
                             createdAt: new Date('2026-01-01T00:00:00.000Z'),
                         },
+                        {
+                            uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                            hostUuid: HOST_UUID,
+                            userUuid: USER_UUID,
+                            targetUuid: null,
+                            strategy: 'LEAST_ASSIGNED',
+                            reason: 'unavailable:HIDE_HOST:hidden',
+                            diagnostics: 'malformed',
+                            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+                        },
                     ],
                 },
             },
@@ -522,7 +545,9 @@ describe('HostBalancerService', () => {
 
         const decisions = await repository.listDecisions(HOST_UUID, 50);
 
-        assert.equal(decisions.length, 1);
+        assert.equal(decisions.length, 2);
+        assert.equal(decisions[0].userUuid, '22222222...2222');
+        assert.equal(decisions[0].userUuidMasked, '22222222...2222');
         assert.equal(decisions[0].candidates[0].targetUuid, TARGET_UUID);
         assert.equal(decisions[0].excludedTargets[0].reason, 'target node lacks required inbound');
         assert.equal(decisions[0].diagnostics.password, undefined);
@@ -546,6 +571,15 @@ describe('HostBalancerService', () => {
                 host: null,
                 path: null,
             },
+        });
+        assert.deepEqual(JSON.parse(JSON.stringify(decisions[1].diagnostics)), {
+            unavailablePolicy: 'HIDE_HOST',
+            assignmentAction: 'skipped',
+            candidates: [],
+            excludedTargets: [],
+            selectedTarget: null,
+            warnings: [],
+            finalHostOverrides: null,
         });
     });
 
@@ -575,11 +609,24 @@ describe('HostBalancerService', () => {
         const service = createService();
 
         const result = await service.validateTargets(HOST_UUID, {
-            targets: [{ nodeUuid: NODE_UUID, overrideAddress: 'node-a.example.com' }],
+            targets: [
+                {
+                    localId: 'target-local-1',
+                    uuid: TARGET_UUID,
+                    nodeUuid: NODE_UUID,
+                    overrideAddress: 'node-a.example.com',
+                },
+            ],
         });
 
         assert.equal(result.isOk, true);
         if (result.isOk) {
+            assert.equal(result.response.summary.total, 1);
+            assert.equal(result.response.summary.valid, 1);
+            assert.equal(result.response.summary.warnings, 0);
+            assert.equal(result.response.summary.errors, 0);
+            assert.equal(result.response.targets[0].localId, 'target-local-1');
+            assert.equal(result.response.targets[0].uuid, TARGET_UUID);
             assert.equal(result.response.targets[0].valid, true);
             assert.equal(result.response.targets[0].severity, 'ok');
             assert.equal(result.response.targets[0].hasRequiredInbound, true);
@@ -616,6 +663,7 @@ describe('HostBalancerService', () => {
         if (result.isOk) {
             assert.equal(result.response.targets[0].valid, false);
             assert.equal(result.response.targets[0].severity, 'error');
+            assert.equal(result.response.summary.errors, 1);
             assert.equal(result.response.targets[0].hasRequiredInbound, false);
             assert.equal(
                 result.response.targets[0].reasons.includes('target node lacks required inbound'),
@@ -698,9 +746,46 @@ describe('HostBalancerService', () => {
         }
     });
 
+    it('validates disconnected target node as error', async () => {
+        const service = createService({
+            getNodeStates: async () =>
+                new Map([
+                    [
+                        NODE_UUID,
+                        {
+                            uuid: NODE_UUID,
+                            name: 'Node A',
+                            address: 'node-a.example.com',
+                            port: 8443,
+                            isConnected: false,
+                            isConnecting: false,
+                            isDisabled: false,
+                            activeInboundUuids: new Set([INBOUND_UUID]),
+                        },
+                    ],
+                ]),
+        });
+
+        const result = await service.validateTargets(HOST_UUID, {
+            targets: [{ nodeUuid: NODE_UUID, status: 'ACTIVE' }],
+        });
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.targets[0].valid, false);
+            assert.equal(result.response.targets[0].severity, 'error');
+            assert.equal(result.response.targets[0].nodeStatus, 'disconnected');
+            assert.equal(result.response.summary.errors, 1);
+            assert.equal(
+                result.response.targets[0].reasons.includes('target node disconnected'),
+                true,
+            );
+        }
+    });
+
     it('validates target validation command schema', () => {
         const parsed = ValidateHostBalancerTargetsCommand.RequestBodySchema.safeParse({
-            targets: [{ nodeUuid: NODE_UUID, overridePort: 443 }],
+            targets: [{ localId: 'target-local-1', nodeUuid: NODE_UUID, overridePort: 443 }],
         });
 
         assert.equal(parsed.success, true);

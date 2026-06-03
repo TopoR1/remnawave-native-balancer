@@ -29,6 +29,7 @@ const UpdateSettingsSchema = z.object({
 });
 
 const TargetInputSchema = z.object({
+    localId: z.string().optional(),
     uuid: z.string().uuid().optional(),
     nodeUuid: z.string().uuid().nullable().optional(),
     enabled: z.boolean().optional(),

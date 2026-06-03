@@ -3,11 +3,15 @@ import {
     Alert,
     Badge,
     Button,
+    Card,
+    Checkbox,
     Divider,
     Group,
+    Modal,
     NumberInput,
     ScrollArea,
     Select,
+    SimpleGrid,
     Stack,
     Switch,
     Table,
@@ -22,7 +26,7 @@ import { TFunction } from 'i18next'
 import { PiFlaskDuotone, PiPlus, PiScalesDuotone, PiTrashDuotone } from 'react-icons/pi'
 import { TbActivityHeartbeat, TbAlertTriangle, TbPlayerPause, TbSkull } from 'react-icons/tb'
 import { nanoid } from 'nanoid'
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { GetAllNodesCommand } from '@remnawave/backend-contract'
 
 import {
@@ -44,6 +48,7 @@ import {
 import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
 import { instance } from '@shared/api'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import { HelpTooltip } from '@shared/ui/help-tooltip'
 import { SectionCard } from '@shared/ui/section-card'
 
 type DraftTarget = HostBalancerTargetInput & {
@@ -52,6 +57,43 @@ type DraftTarget = HostBalancerTargetInput & {
     trafficBytes?: string | null
 }
 type HostBalancerNode = GetAllNodesCommand.Response['response'][number]
+type PreviewSimulatorAction =
+    | 'preview_only'
+    | 'would_create'
+    | 'would_reuse'
+    | 'would_reassign'
+    | 'would_fallback'
+type LegacyPreviewAction = 'preview_only' | 'reused' | 'would_create' | 'would_reassign'
+type PreviewFallbackResult = 'hidden' | 'original_host' | 'last_assignment' | 'none'
+type PreviewDiagnosticsRow = NonNullable<NonNullable<HostBalancerPreview['candidates']>[number]>
+type HostBalancerHelpKey =
+    | 'base-host-form.help-policy-hide-host-description'
+    | 'base-host-form.help-policy-keep-last-description'
+    | 'base-host-form.help-policy-original-host-description'
+    | 'base-host-form.help-priority-description'
+    | 'base-host-form.help-rebalance-existing-assignments-description'
+    | 'base-host-form.help-sticky-assignments-description'
+    | 'base-host-form.help-strategy-description'
+    | 'base-host-form.help-strategy-least-assigned-description'
+    | 'base-host-form.help-strategy-least-traffic-description'
+    | 'base-host-form.help-strategy-priority-failover-description'
+    | 'base-host-form.help-strategy-random-description'
+    | 'base-host-form.help-strategy-weighted-description'
+    | 'base-host-form.help-strategy-weighted-least-traffic-description'
+    | 'base-host-form.help-subscription-address-description'
+    | 'base-host-form.help-subscription-port-description'
+    | 'base-host-form.help-traffic-strategy-description'
+    | 'base-host-form.help-unavailable-policy-description'
+    | 'base-host-form.help-weight-description'
+    | 'base-host-form.priority'
+    | 'base-host-form.rebalance-existing-assignments-by-traffic'
+    | 'base-host-form.sticky-assignments'
+    | 'base-host-form.strategy'
+    | 'base-host-form.subscription-address'
+    | 'base-host-form.subscription-port'
+    | 'base-host-form.traffic-metric'
+    | 'base-host-form.unavailable-policy'
+    | 'base-host-form.weight'
 
 export type HostBalancingDraft = {
     enabled: boolean
@@ -79,6 +121,29 @@ export function shouldEnableHostSave(hostFormChanged: boolean, hostBalancingTouc
     return hostFormChanged || hostBalancingTouched
 }
 
+export function patchHostBalancingDraft(
+    draft: HostBalancingDraft,
+    patch: Partial<HostBalancingDraft>
+): HostBalancingDraft {
+    return {
+        ...draft,
+        ...patch,
+        touched: true
+    }
+}
+
+export function updateHostBalancingTarget(
+    draft: HostBalancingDraft,
+    localId: string,
+    patch: Partial<DraftTarget>
+): HostBalancingDraft {
+    return patchHostBalancingDraft(draft, {
+        targets: draft.targets.map((target) =>
+            target.localId === localId ? { ...target, ...patch } : target
+        )
+    })
+}
+
 type IProps = {
     draft: HostBalancingDraft
     hostPort?: number
@@ -86,6 +151,7 @@ type IProps = {
     nodes: GetAllNodesCommand.Response['response']
     onChange: (draft: HostBalancingDraft) => void
     onValidationChange?: (validation: HostBalancerTargetsValidation | null) => void
+    requiredInboundUuid?: string
 }
 
 const TRAFFIC_STRATEGIES: HostBalancerStrategy[] = ['LEAST_TRAFFIC', 'WEIGHTED_LEAST_TRAFFIC']
@@ -106,6 +172,7 @@ export function hostBalancerToDraft(settings: HostBalancer | null): HostBalancin
         trafficMetric: settings.trafficMetric ?? 'CURRENT_PERIOD',
         targets:
             settings.targets?.map((target) => ({
+                uuid: target.uuid,
                 localId: target.uuid,
                 nodeUuid: target.nodeUuid,
                 enabled: target.enabled,
@@ -139,6 +206,8 @@ export function sanitizeHostBalancingDraft(draft: HostBalancingDraft): {
                 : null
         },
         targets: draft.targets.map((target) => ({
+            localId: target.localId,
+            uuid: target.uuid,
             nodeUuid: target.nodeUuid || null,
             enabled: target.enabled ?? true,
             status: target.status ?? 'ACTIVE',
@@ -160,7 +229,8 @@ export function HostBalancingForm({
     hostUuid,
     nodes,
     onChange,
-    onValidationChange
+    onValidationChange,
+    requiredInboundUuid
 }: IProps) {
     const { t } = useTranslation()
     const [previewUserUuid, setPreviewUserUuid] = useState('')
@@ -168,6 +238,10 @@ export function HostBalancingForm({
     const [previewError, setPreviewError] = useState<string | null>(null)
     const [validation, setValidation] = useState<HostBalancerTargetsValidation | null>(null)
     const [isPreviewLoading, setPreviewLoading] = useState(false)
+    const [isTargetPickerOpen, setTargetPickerOpen] = useState(false)
+    const [targetSearch, setTargetSearch] = useState('')
+    const [showOnlyCompatible, setShowOnlyCompatible] = useState(false)
+    const [editingTargetLocalId, setEditingTargetLocalId] = useState<string | null>(null)
     const { mutateAsync: validateTargetsAsync } = useValidateHostBalancerTargets()
     const { data: remnawaveSettings } = useGetRemnawaveSettings()
     const decisionsQuery = useGetHostBalancerDecisions({
@@ -178,14 +252,6 @@ export function HostBalancingForm({
         }
     })
 
-    const nodeOptions = useMemo(
-        () =>
-            nodes.map((node) => ({
-                value: node.uuid,
-                label: `${node.name} (${node.address})`
-            })),
-        [nodes]
-    )
     const nodeByUuid = useMemo(() => new Map(nodes.map((node) => [node.uuid, node])), [nodes])
 
     const isTrafficStrategy = TRAFFIC_STRATEGIES.includes(draft.strategy)
@@ -204,68 +270,94 @@ export function HostBalancingForm({
         let isCurrent = true
         const targets = JSON.parse(validationPayload) as HostBalancerTargetInput[]
 
-        validateTargetsAsync({
-            route: { hostUuid },
-            variables: { targets }
-        })
-            .then((response) => {
-                if (!isCurrent) {
-                    return
-                }
-
-                setValidation(response)
-                onValidationChange?.(response)
+        const timeout = window.setTimeout(() => {
+            validateTargetsAsync({
+                route: { hostUuid },
+                variables: { targets }
             })
-            .catch(() => {
-                if (!isCurrent) {
-                    return
-                }
+                .then((response) => {
+                    if (!isCurrent) {
+                        return
+                    }
 
-                setValidation(null)
-                onValidationChange?.(null)
-            })
+                    setValidation(response)
+                    onValidationChange?.(response)
+                })
+                .catch(() => {
+                    if (!isCurrent) {
+                        return
+                    }
+
+                    setValidation(null)
+                    onValidationChange?.(null)
+                })
+        }, 400)
 
         return () => {
             isCurrent = false
+            window.clearTimeout(timeout)
         }
     }, [hostUuid, onValidationChange, validateTargetsAsync, validationPayload])
 
     const patchDraft = (patch: Partial<HostBalancingDraft>) => {
-        onChange({
-            ...draft,
-            ...patch,
-            touched: true
-        })
+        onChange(patchHostBalancingDraft(draft, patch))
     }
 
     const updateTarget = (localId: string, patch: Partial<DraftTarget>) => {
-        patchDraft({
-            targets: draft.targets.map((target) =>
-                target.localId === localId ? { ...target, ...patch } : target
-            )
-        })
+        onChange(updateHostBalancingTarget(draft, localId, patch))
     }
 
-    const addTarget = () => {
+    const filteredNodes = useMemo(() => {
+        const search = targetSearch.trim().toLowerCase()
+
+        return nodes.filter((node) => {
+            const hasRequiredInbound = nodeHasRequiredInbound(node, requiredInboundUuid)
+            const matchesSearch =
+                !search ||
+                node.name.toLowerCase().includes(search) ||
+                node.address.toLowerCase().includes(search) ||
+                node.uuid.toLowerCase().includes(search)
+
+            return matchesSearch && (!showOnlyCompatible || hasRequiredInbound === true)
+        })
+    }, [nodes, requiredInboundUuid, showOnlyCompatible, targetSearch])
+
+    const targetSummary = useMemo(() => {
+        const activeTargets = draft.targets.filter(
+            (target) => target.enabled !== false && (target.status ?? 'ACTIVE') === 'ACTIVE'
+        )
+
+        return {
+            total: draft.targets.length,
+            active: activeTargets.length,
+            valid: validation?.summary.valid ?? draft.targets.length,
+            errors: validation?.summary.errors ?? 0,
+            assignments: draft.targets.reduce((sum, target) => sum + (target.assignments ?? 0), 0)
+        }
+    }, [draft.targets, validation])
+
+    const addTarget = (node: HostBalancerNode) => {
         patchDraft({
             targets: [
                 ...draft.targets,
                 {
                     localId: nanoid(),
-                    nodeUuid: null,
+                    nodeUuid: node.uuid,
                     enabled: true,
                     status: 'ACTIVE',
                     weight: 1,
                     priority: 100,
                     maxAssignedUsers: null,
-                    overrideAddress: null,
-                    overridePort: null,
+                    overrideAddress: node.address,
+                    overridePort: hostPort ?? node.port ?? null,
                     overrideSni: null,
                     overrideHost: null,
                     overridePath: null
                 }
             ]
         })
+        setTargetPickerOpen(false)
+        setTargetSearch('')
     }
 
     const removeTarget = (localId: string) => {
@@ -317,18 +409,31 @@ export function HostBalancingForm({
         }
     }
 
+    const helpLabel = (labelKey: HostBalancerHelpKey, descriptionKey: HostBalancerHelpKey) => (
+        <Group gap={4} wrap="nowrap">
+            <span>{t(labelKey)}</span>
+            <HelpTooltip description={String(t(descriptionKey))} label={String(t(labelKey))} />
+        </Group>
+    )
+
     return (
         <SectionCard.Root>
             <span data-native-host-balancer-ui={HOST_BALANCER_BUILD_MARKER} hidden />
             <SectionCard.Section>
                 <Group justify="space-between">
-                    <BaseOverlayHeader
-                        iconColor="teal"
-                        IconComponent={PiScalesDuotone}
-                        iconVariant="soft"
-                        title={t('base-host-form.balancing')}
-                        titleOrder={5}
-                    />
+                    <Group gap="xs">
+                        <BaseOverlayHeader
+                            iconColor="teal"
+                            IconComponent={PiScalesDuotone}
+                            iconVariant="soft"
+                            title={t('base-host-form.balancing')}
+                            titleOrder={5}
+                        />
+                        <HelpTooltip
+                            description={String(t('base-host-form.help-balancing-description'))}
+                            label={String(t('base-host-form.balancing'))}
+                        />
+                    </Group>
                     <Switch
                         checked={draft.enabled}
                         color="teal.8"
@@ -371,7 +476,11 @@ export function HostBalancingForm({
                                         label: t('base-host-form.strategy-random')
                                     }
                                 ]}
-                                label={t('base-host-form.strategy')}
+                                description={t(strategyHelpKey(draft.strategy))}
+                                label={helpLabel(
+                                    'base-host-form.strategy',
+                                    'base-host-form.help-strategy-description'
+                                )}
                                 onChange={(value) =>
                                     patchDraft({ strategy: value as HostBalancerStrategy })
                                 }
@@ -393,7 +502,11 @@ export function HostBalancingForm({
                                         label: t('base-host-form.policy-keep-last')
                                     }
                                 ]}
-                                label={t('base-host-form.unavailable-policy')}
+                                description={t(policyHelpKey(draft.unavailablePolicy))}
+                                label={helpLabel(
+                                    'base-host-form.unavailable-policy',
+                                    'base-host-form.help-unavailable-policy-description'
+                                )}
                                 onChange={(value) =>
                                     patchDraft({
                                         unavailablePolicy: value as HostBalancerUnavailablePolicy
@@ -407,7 +520,10 @@ export function HostBalancingForm({
                             <Switch
                                 checked={draft.stickyEnabled}
                                 color="teal.8"
-                                label={t('base-host-form.sticky-assignments')}
+                                label={helpLabel(
+                                    'base-host-form.sticky-assignments',
+                                    'base-host-form.help-sticky-assignments-description'
+                                )}
                                 onChange={(event) =>
                                     patchDraft({ stickyEnabled: event.currentTarget.checked })
                                 }
@@ -416,8 +532,9 @@ export function HostBalancingForm({
                                 <Switch
                                     checked={draft.rebalanceExistingAssignmentsByTraffic}
                                     color="teal.8"
-                                    label={t(
-                                        'base-host-form.rebalance-existing-assignments-by-traffic'
+                                    label={helpLabel(
+                                        'base-host-form.rebalance-existing-assignments-by-traffic',
+                                        'base-host-form.help-rebalance-existing-assignments-description'
                                     )}
                                     onChange={(event) =>
                                         patchDraft({
@@ -444,7 +561,10 @@ export function HostBalancingForm({
                                     { value: 'LAST_6H', label: t('base-host-form.metric-last-6h') },
                                     { value: 'LAST_1H', label: t('base-host-form.metric-last-1h') }
                                 ]}
-                                label={t('base-host-form.traffic-metric')}
+                                label={helpLabel(
+                                    'base-host-form.traffic-metric',
+                                    'base-host-form.help-traffic-strategy-description'
+                                )}
                                 onChange={(value) =>
                                     patchDraft({
                                         trafficMetric: value as HostBalancerTrafficMetric
@@ -456,361 +576,608 @@ export function HostBalancingForm({
 
                         <Divider />
 
-                        <Group justify="space-between">
-                            <Text fw={600}>{t('base-host-form.targets')}</Text>
-                            <Button
-                                leftSection={<PiPlus size={16} />}
-                                onClick={addTarget}
-                                size="xs"
-                            >
-                                {t('base-host-form.add-target')}
-                            </Button>
-                        </Group>
+                        <Stack gap="sm">
+                            <Group align="flex-start" justify="space-between">
+                                <Stack gap={4}>
+                                    <Group gap={4}>
+                                        <Text fw={600}>{t('base-host-form.targets')}</Text>
+                                        <HelpTooltip
+                                            description={String(
+                                                t('base-host-form.help-target-nodes-description')
+                                            )}
+                                            label={String(t('base-host-form.targets'))}
+                                        />
+                                    </Group>
+                                    <Text c="dimmed" size="sm">
+                                        {t('base-host-form.target-nodes-description')}
+                                    </Text>
+                                </Stack>
+                                <Button
+                                    leftSection={<PiPlus size={16} />}
+                                    onClick={() => setTargetPickerOpen(true)}
+                                    size="xs"
+                                >
+                                    {t('base-host-form.add-target')}
+                                </Button>
+                            </Group>
 
-                        <ScrollArea>
-                            <Table miw={1960} striped withTableBorder>
-                                <Table.Thead>
-                                    <Table.Tr>
-                                        <Table.Th>{t('base-host-form.target-node')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.node-name')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.node-address')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.override-address')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.override-port')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.override-sni')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.override-host')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.override-path')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.weight')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.priority')}</Table.Th>
-                                        <Table.Th>
-                                            {t('base-host-form.max-assigned-users')}
-                                        </Table.Th>
-                                        <Table.Th>{t('base-host-form.traffic')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.assignments')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.node-status')}</Table.Th>
-                                        <Table.Th>
-                                            {t('base-host-form.inbound-compatibility')}
-                                        </Table.Th>
-                                        <Table.Th>{t('base-host-form.validation')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.target-enabled')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.status')}</Table.Th>
-                                        <Table.Th>{t('base-host-form.actions')}</Table.Th>
-                                    </Table.Tr>
-                                </Table.Thead>
-                                <Table.Tbody>
-                                    {draft.targets.length === 0 && (
-                                        <Table.Tr>
-                                            <Table.Td colSpan={19}>
-                                                <Text c="dimmed" ta="center">
-                                                    {t('base-host-form.no-balancer-targets')}
-                                                </Text>
-                                            </Table.Td>
-                                        </Table.Tr>
-                                    )}
+                            <Group gap="xs">
+                                <Badge color="gray" variant="light">
+                                    {t('base-host-form.targets-total', {
+                                        count: targetSummary.total
+                                    })}
+                                </Badge>
+                                <Badge color="teal" variant="light">
+                                    {t('base-host-form.targets-active', {
+                                        count: targetSummary.active
+                                    })}
+                                </Badge>
+                                <Badge color="green" variant="light">
+                                    {t('base-host-form.targets-valid', {
+                                        count: targetSummary.valid
+                                    })}
+                                </Badge>
+                                <Badge
+                                    color={targetSummary.errors > 0 ? 'red' : 'gray'}
+                                    variant="light"
+                                >
+                                    {t('base-host-form.targets-errors', {
+                                        count: targetSummary.errors
+                                    })}
+                                </Badge>
+                                <Badge color="blue" variant="light">
+                                    {t('base-host-form.targets-assignments', {
+                                        count: targetSummary.assignments
+                                    })}
+                                </Badge>
+                            </Group>
 
-                                    {draft.targets.map((target, index) => (
-                                        <Table.Tr key={target.localId}>
-                                            <Table.Td>
-                                                <Select
-                                                    clearable
-                                                    data={nodeOptions}
-                                                    onChange={(value) => {
-                                                        const node = value
-                                                            ? nodeByUuid.get(value)
-                                                            : null
-                                                        updateTarget(target.localId, {
-                                                            nodeUuid: value || null,
-                                                            overrideAddress:
-                                                                node?.address ??
-                                                                target.overrideAddress ??
-                                                                null,
-                                                            overridePort:
-                                                                hostPort ??
-                                                                node?.port ??
-                                                                target.overridePort ??
-                                                                null
-                                                        })
-                                                    }}
-                                                    placeholder={t('base-host-form.select-node')}
-                                                    value={target.nodeUuid ?? null}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                {validation?.targets[index]?.nodeName ??
-                                                    (target.nodeUuid
-                                                        ? (nodeByUuid.get(target.nodeUuid)?.name ??
-                                                          '-')
-                                                        : '-')}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                {validation?.targets[index]?.nodeAddress ??
-                                                    (target.nodeUuid
-                                                        ? (nodeByUuid.get(target.nodeUuid)
-                                                              ?.address ?? '-')
-                                                        : '-')}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <TextInput
-                                                    onChange={(event) =>
-                                                        updateTarget(target.localId, {
-                                                            overrideAddress:
-                                                                event.currentTarget.value
-                                                        })
-                                                    }
-                                                    value={target.overrideAddress ?? ''}
-                                                />
-                                                {target.nodeUuid &&
-                                                    target.overrideAddress &&
-                                                    nodeByUuid.get(target.nodeUuid)?.address &&
-                                                    target.overrideAddress !==
-                                                        nodeByUuid.get(target.nodeUuid)
-                                                            ?.address && (
-                                                        <Text c="yellow" mt={4} size="xs">
-                                                            {t(
-                                                                'base-host-form.override-address-mismatch-warning'
+                            {draft.targets.length === 0 && (
+                                <Alert color="gray" variant="light">
+                                    {t('base-host-form.no-balancer-targets')}
+                                </Alert>
+                            )}
+
+                            <SimpleGrid cols={{ base: 1, xl: 2 }}>
+                                {draft.targets.map((target, index) => {
+                                    const targetValidation = validation?.targets[index] ?? null
+                                    const node = target.nodeUuid
+                                        ? nodeByUuid.get(target.nodeUuid)
+                                        : undefined
+                                    const nodeName =
+                                        targetValidation?.nodeName ??
+                                        node?.name ??
+                                        t('base-host-form.target-node-not-selected')
+                                    const nodeAddress =
+                                        targetValidation?.nodeAddress ?? node?.address ?? '-'
+                                    const subscriptionAddress =
+                                        target.overrideAddress ||
+                                        t('base-host-form.original-host-address')
+                                    const subscriptionPort = target.overridePort ?? hostPort ?? '-'
+                                    const nodeStatus =
+                                        targetValidation?.nodeStatus ?? resolveLocalNodeStatus(node)
+                                    const isActiveTarget =
+                                        target.enabled !== false &&
+                                        (target.status ?? 'ACTIVE') === 'ACTIVE'
+                                    const participates =
+                                        isActiveTarget &&
+                                        (targetValidation?.severity ?? 'warning') === 'ok'
+                                    const hasMissingInbound =
+                                        targetValidation?.hasRequiredInbound === false
+                                    const hasAddressMismatch =
+                                        !!target.overrideAddress &&
+                                        !!node?.address &&
+                                        target.overrideAddress !== node.address
+                                    const isEditing = editingTargetLocalId === target.localId
+
+                                    return (
+                                        <Card
+                                            key={target.localId}
+                                            padding="md"
+                                            radius="sm"
+                                            withBorder
+                                        >
+                                            <Stack gap="sm">
+                                                <Group align="flex-start" justify="space-between">
+                                                    <Stack gap={2}>
+                                                        <Group gap="xs">
+                                                            <Text fw={700}>{nodeName}</Text>
+                                                            {target.nodeUuid && (
+                                                                <Badge variant="light">
+                                                                    {maskUuid(target.nodeUuid)}
+                                                                </Badge>
                                                             )}
+                                                        </Group>
+                                                        <Text c="dimmed" size="sm">
+                                                            {nodeAddress}
                                                         </Text>
-                                                    )}
-                                                {target.nodeUuid && !target.overrideAddress && (
-                                                    <Text c="yellow" mt={4} size="xs">
-                                                        {t(
-                                                            'base-host-form.target-original-address-warning'
-                                                        )}
-                                                    </Text>
-                                                )}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <NumberInput
-                                                    allowDecimal={false}
-                                                    allowNegative={false}
-                                                    hideControls
-                                                    max={65535}
-                                                    min={1}
-                                                    onChange={(value) =>
-                                                        updateTarget(target.localId, {
-                                                            overridePort:
-                                                                typeof value === 'number'
-                                                                    ? value
-                                                                    : null
-                                                        })
-                                                    }
-                                                    value={target.overridePort ?? undefined}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <TextInput
-                                                    onChange={(event) =>
-                                                        updateTarget(target.localId, {
-                                                            overrideSni: event.currentTarget.value
-                                                        })
-                                                    }
-                                                    value={target.overrideSni ?? ''}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <TextInput
-                                                    onChange={(event) =>
-                                                        updateTarget(target.localId, {
-                                                            overrideHost: event.currentTarget.value
-                                                        })
-                                                    }
-                                                    value={target.overrideHost ?? ''}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <TextInput
-                                                    onChange={(event) =>
-                                                        updateTarget(target.localId, {
-                                                            overridePath: event.currentTarget.value
-                                                        })
-                                                    }
-                                                    value={target.overridePath ?? ''}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <NumberInput
-                                                    allowDecimal={false}
-                                                    allowNegative={false}
-                                                    min={1}
-                                                    onChange={(value) =>
-                                                        updateTarget(target.localId, {
-                                                            weight:
-                                                                typeof value === 'number'
-                                                                    ? value
-                                                                    : 1
-                                                        })
-                                                    }
-                                                    value={target.weight ?? 1}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <NumberInput
-                                                    allowDecimal={false}
-                                                    allowNegative={false}
-                                                    min={0}
-                                                    onChange={(value) =>
-                                                        updateTarget(target.localId, {
-                                                            priority:
-                                                                typeof value === 'number'
-                                                                    ? value
-                                                                    : 100
-                                                        })
-                                                    }
-                                                    value={target.priority ?? 100}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <NumberInput
-                                                    allowDecimal={false}
-                                                    allowNegative={false}
-                                                    min={1}
-                                                    onChange={(value) =>
-                                                        updateTarget(target.localId, {
-                                                            maxAssignedUsers:
-                                                                typeof value === 'number'
-                                                                    ? value
-                                                                    : null
-                                                        })
-                                                    }
-                                                    value={target.maxAssignedUsers ?? undefined}
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>{target.trafficBytes ?? '-'}</Table.Td>
-                                            <Table.Td>{target.assignments ?? '-'}</Table.Td>
-                                            <Table.Td>
-                                                {nodeStatusBadge(
-                                                    validation?.targets[index]?.nodeStatus ??
-                                                        resolveLocalNodeStatus(
-                                                            target.nodeUuid
-                                                                ? nodeByUuid.get(target.nodeUuid)
-                                                                : undefined
-                                                        ),
-                                                    t
-                                                )}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                {inboundCompatibilityBadge(
-                                                    validation?.targets[index] ?? null,
-                                                    t
-                                                )}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                {validationBadge(
-                                                    validation?.targets[index] ?? null,
-                                                    t
-                                                )}
-                                                {validation?.targets[index]?.reasons.map(
-                                                    (reason) => (
-                                                        <Text
-                                                            c={
-                                                                validation.targets[index]
-                                                                    .severity === 'error'
-                                                                    ? 'red'
-                                                                    : 'yellow'
-                                                            }
-                                                            key={reason}
-                                                            mt={4}
-                                                            size="xs"
+                                                    </Stack>
+                                                    <Stack align="flex-end" gap={4}>
+                                                        <Group gap={4} justify="flex-end">
+                                                            {statusBadge(
+                                                                target.status ?? 'ACTIVE',
+                                                                t
+                                                            )}
+                                                            <HelpTooltip
+                                                                description={String(
+                                                                    t(
+                                                                        'base-host-form.help-target-status-description'
+                                                                    )
+                                                                )}
+                                                                label={String(
+                                                                    t('base-host-form.status')
+                                                                )}
+                                                            />
+                                                        </Group>
+                                                        {validationBadge(targetValidation, t)}
+                                                        <Badge
+                                                            color={participates ? 'teal' : 'red'}
+                                                            variant="light"
                                                         >
-                                                            {translateValidationReason(reason, t)}
-                                                        </Text>
-                                                    )
+                                                            {participates
+                                                                ? t(
+                                                                      'base-host-form.target-participates'
+                                                                  )
+                                                                : t(
+                                                                      'base-host-form.target-not-participating'
+                                                                  )}
+                                                        </Badge>
+                                                    </Stack>
+                                                </Group>
+
+                                                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                                                    <TargetInfo
+                                                        label={helpLabel(
+                                                            'base-host-form.subscription-address',
+                                                            'base-host-form.help-subscription-address-description'
+                                                        )}
+                                                        value={subscriptionAddress}
+                                                    />
+                                                    <TargetInfo
+                                                        label={helpLabel(
+                                                            'base-host-form.subscription-port',
+                                                            'base-host-form.help-subscription-port-description'
+                                                        )}
+                                                        value={subscriptionPort}
+                                                    />
+                                                    <TargetInfo
+                                                        label={t('base-host-form.node-status')}
+                                                        value={nodeStatusBadge(nodeStatus, t)}
+                                                    />
+                                                    <TargetInfo
+                                                        label={t(
+                                                            'base-host-form.inbound-compatibility'
+                                                        )}
+                                                        value={inboundCompatibilityBadge(
+                                                            targetValidation,
+                                                            t
+                                                        )}
+                                                    />
+                                                    <TargetInfo
+                                                        label={t('base-host-form.assignments')}
+                                                        value={target.assignments ?? 0}
+                                                    />
+                                                    <TargetInfo
+                                                        label={t('base-host-form.traffic')}
+                                                        value={target.trafficBytes ?? '-'}
+                                                    />
+                                                    <TargetInfo
+                                                        label={helpLabel(
+                                                            'base-host-form.weight',
+                                                            'base-host-form.help-weight-description'
+                                                        )}
+                                                        value={target.weight ?? 1}
+                                                    />
+                                                    <TargetInfo
+                                                        label={helpLabel(
+                                                            'base-host-form.priority',
+                                                            'base-host-form.help-priority-description'
+                                                        )}
+                                                        value={target.priority ?? 100}
+                                                    />
+                                                </SimpleGrid>
+
+                                                {hasAddressMismatch && (
+                                                    <Alert color="yellow" variant="light">
+                                                        {t(
+                                                            'base-host-form.override-address-mismatch-warning'
+                                                        )}
+                                                    </Alert>
                                                 )}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <Switch
-                                                    checked={target.enabled ?? true}
-                                                    color="teal.8"
-                                                    onChange={(event) =>
-                                                        updateTarget(target.localId, {
-                                                            enabled: event.currentTarget.checked
-                                                        })
-                                                    }
-                                                />
-                                            </Table.Td>
-                                            <Table.Td>
-                                                {statusBadge(target.status ?? 'ACTIVE', t)}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <Group gap={4} wrap="nowrap">
-                                                    <Tooltip label={t('base-host-form.set-active')}>
-                                                        <ActionIcon
+                                                {hasMissingInbound && isActiveTarget && (
+                                                    <Alert color="red" variant="light">
+                                                        {t(
+                                                            'base-host-form.validation-reason-missing-inbound'
+                                                        )}
+                                                    </Alert>
+                                                )}
+                                                {hasMissingInbound && !isActiveTarget && (
+                                                    <Alert color="yellow" variant="light">
+                                                        {t(
+                                                            'base-host-form.disabled-target-missing-inbound-warning'
+                                                        )}
+                                                    </Alert>
+                                                )}
+                                                {nodeStatus !== 'connected' && (
+                                                    <Alert
+                                                        color={
+                                                            nodeStatus === 'connecting'
+                                                                ? 'yellow'
+                                                                : 'red'
+                                                        }
+                                                        variant="light"
+                                                    >
+                                                        {t('base-host-form.node-state-warning')}
+                                                    </Alert>
+                                                )}
+                                                {targetValidation?.reasons.map((reason) => (
+                                                    <Text
+                                                        c={
+                                                            targetValidation.severity === 'error'
+                                                                ? 'red'
+                                                                : 'yellow'
+                                                        }
+                                                        key={reason}
+                                                        size="xs"
+                                                    >
+                                                        {translateValidationReason(reason, t)}
+                                                    </Text>
+                                                ))}
+
+                                                {isEditing && (
+                                                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                                                        <TextInput
+                                                            label={t(
+                                                                'base-host-form.override-address'
+                                                            )}
+                                                            onChange={(event) =>
+                                                                updateTarget(target.localId, {
+                                                                    overrideAddress:
+                                                                        event.currentTarget.value
+                                                                })
+                                                            }
+                                                            value={target.overrideAddress ?? ''}
+                                                        />
+                                                        <NumberInput
+                                                            allowDecimal={false}
+                                                            allowNegative={false}
+                                                            label={t(
+                                                                'base-host-form.override-port'
+                                                            )}
+                                                            max={65535}
+                                                            min={1}
+                                                            onChange={(value) =>
+                                                                updateTarget(target.localId, {
+                                                                    overridePort:
+                                                                        typeof value === 'number'
+                                                                            ? value
+                                                                            : null
+                                                                })
+                                                            }
+                                                            value={target.overridePort ?? undefined}
+                                                        />
+                                                        <TextInput
+                                                            label={t('base-host-form.override-sni')}
+                                                            onChange={(event) =>
+                                                                updateTarget(target.localId, {
+                                                                    overrideSni:
+                                                                        event.currentTarget.value
+                                                                })
+                                                            }
+                                                            value={target.overrideSni ?? ''}
+                                                        />
+                                                        <TextInput
+                                                            label={t(
+                                                                'base-host-form.override-host'
+                                                            )}
+                                                            onChange={(event) =>
+                                                                updateTarget(target.localId, {
+                                                                    overrideHost:
+                                                                        event.currentTarget.value
+                                                                })
+                                                            }
+                                                            value={target.overrideHost ?? ''}
+                                                        />
+                                                        <TextInput
+                                                            label={t(
+                                                                'base-host-form.override-path'
+                                                            )}
+                                                            onChange={(event) =>
+                                                                updateTarget(target.localId, {
+                                                                    overridePath:
+                                                                        event.currentTarget.value
+                                                                })
+                                                            }
+                                                            value={target.overridePath ?? ''}
+                                                        />
+                                                        <NumberInput
+                                                            allowDecimal={false}
+                                                            allowNegative={false}
+                                                            label={t('base-host-form.weight')}
+                                                            min={1}
+                                                            onChange={(value) =>
+                                                                updateTarget(target.localId, {
+                                                                    weight:
+                                                                        typeof value === 'number'
+                                                                            ? value
+                                                                            : 1
+                                                                })
+                                                            }
+                                                            value={target.weight ?? 1}
+                                                        />
+                                                        <NumberInput
+                                                            allowDecimal={false}
+                                                            allowNegative={false}
+                                                            label={t('base-host-form.priority')}
+                                                            min={0}
+                                                            onChange={(value) =>
+                                                                updateTarget(target.localId, {
+                                                                    priority:
+                                                                        typeof value === 'number'
+                                                                            ? value
+                                                                            : 100
+                                                                })
+                                                            }
+                                                            value={target.priority ?? 100}
+                                                        />
+                                                        <NumberInput
+                                                            allowDecimal={false}
+                                                            allowNegative={false}
+                                                            label={t(
+                                                                'base-host-form.max-assigned-users'
+                                                            )}
+                                                            min={1}
+                                                            onChange={(value) =>
+                                                                updateTarget(target.localId, {
+                                                                    maxAssignedUsers:
+                                                                        typeof value === 'number'
+                                                                            ? value
+                                                                            : null
+                                                                })
+                                                            }
+                                                            value={
+                                                                target.maxAssignedUsers ?? undefined
+                                                            }
+                                                        />
+                                                        <Switch
+                                                            checked={target.enabled ?? true}
+                                                            color="teal.8"
+                                                            label={t(
+                                                                'base-host-form.target-enabled'
+                                                            )}
+                                                            onChange={(event) =>
+                                                                updateTarget(target.localId, {
+                                                                    enabled:
+                                                                        event.currentTarget.checked
+                                                                })
+                                                            }
+                                                        />
+                                                    </SimpleGrid>
+                                                )}
+
+                                                <Group gap="xs">
+                                                    <Button
+                                                        onClick={() =>
+                                                            setEditingTargetLocalId(
+                                                                isEditing ? null : target.localId
+                                                            )
+                                                        }
+                                                        size="xs"
+                                                        variant="light"
+                                                    >
+                                                        {t('base-host-form.configure-target')}
+                                                    </Button>
+                                                    <Button
+                                                        color="yellow"
+                                                        leftSection={<TbPlayerPause size={16} />}
+                                                        onClick={() =>
+                                                            setStatus(target.localId, 'DRAINING')
+                                                        }
+                                                        size="xs"
+                                                        variant="light"
+                                                    >
+                                                        {t('base-host-form.set-draining-short')}
+                                                    </Button>
+                                                    <Button
+                                                        color="gray"
+                                                        leftSection={<TbAlertTriangle size={16} />}
+                                                        onClick={() =>
+                                                            setStatus(target.localId, 'DISABLED')
+                                                        }
+                                                        size="xs"
+                                                        variant="light"
+                                                    >
+                                                        {t('base-host-form.disable-target')}
+                                                    </Button>
+                                                    <Button
+                                                        color="red"
+                                                        leftSection={<TbSkull size={16} />}
+                                                        onClick={() =>
+                                                            setStatus(target.localId, 'DEAD')
+                                                        }
+                                                        size="xs"
+                                                        variant="light"
+                                                    >
+                                                        {t('base-host-form.mark-dead-short')}
+                                                    </Button>
+                                                    <Button
+                                                        color="red"
+                                                        leftSection={<PiTrashDuotone size={16} />}
+                                                        onClick={() => removeTarget(target.localId)}
+                                                        size="xs"
+                                                        variant="subtle"
+                                                    >
+                                                        {t('base-host-form.remove-target-short')}
+                                                    </Button>
+                                                    {(target.status ?? 'ACTIVE') !== 'ACTIVE' && (
+                                                        <Button
                                                             color="teal"
+                                                            leftSection={
+                                                                <TbActivityHeartbeat size={16} />
+                                                            }
                                                             onClick={() =>
                                                                 setStatus(target.localId, 'ACTIVE')
                                                             }
-                                                            variant="subtle"
+                                                            size="xs"
+                                                            variant="light"
                                                         >
-                                                            <TbActivityHeartbeat size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
-                                                    <Tooltip
-                                                        label={t('base-host-form.set-draining')}
-                                                    >
-                                                        <ActionIcon
-                                                            color="yellow"
-                                                            onClick={() =>
-                                                                setStatus(
-                                                                    target.localId,
-                                                                    'DRAINING'
-                                                                )
-                                                            }
-                                                            variant="subtle"
-                                                        >
-                                                            <TbPlayerPause size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
-                                                    <Tooltip
-                                                        label={t('base-host-form.disable-target')}
-                                                    >
-                                                        <ActionIcon
-                                                            color="gray"
-                                                            onClick={() =>
-                                                                setStatus(
-                                                                    target.localId,
-                                                                    'DISABLED'
-                                                                )
-                                                            }
-                                                            variant="subtle"
-                                                        >
-                                                            <TbAlertTriangle size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
-                                                    <Tooltip label={t('base-host-form.mark-dead')}>
-                                                        <ActionIcon
-                                                            color="red"
-                                                            onClick={() =>
-                                                                setStatus(target.localId, 'DEAD')
-                                                            }
-                                                            variant="subtle"
-                                                        >
-                                                            <TbSkull size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
-                                                    <Tooltip
-                                                        label={t('base-host-form.remove-target')}
-                                                    >
-                                                        <ActionIcon
-                                                            color="red"
-                                                            onClick={() =>
-                                                                removeTarget(target.localId)
-                                                            }
-                                                            variant="subtle"
-                                                        >
-                                                            <PiTrashDuotone size={16} />
-                                                        </ActionIcon>
-                                                    </Tooltip>
+                                                            {t('base-host-form.set-active-short')}
+                                                        </Button>
+                                                    )}
                                                 </Group>
-                                            </Table.Td>
-                                        </Table.Tr>
-                                    ))}
-                                </Table.Tbody>
-                            </Table>
-                        </ScrollArea>
+                                            </Stack>
+                                        </Card>
+                                    )
+                                })}
+                            </SimpleGrid>
+                        </Stack>
+
+                        <Modal
+                            onClose={() => setTargetPickerOpen(false)}
+                            opened={isTargetPickerOpen}
+                            size="xl"
+                            title={t('base-host-form.add-target-node')}
+                        >
+                            <Stack gap="md">
+                                <Group align="flex-end">
+                                    <TextInput
+                                        label={t('base-host-form.search-target-nodes')}
+                                        onChange={(event) =>
+                                            setTargetSearch(event.currentTarget.value)
+                                        }
+                                        placeholder={t(
+                                            'base-host-form.search-target-nodes-placeholder'
+                                        )}
+                                        value={targetSearch}
+                                    />
+                                    <Checkbox
+                                        checked={showOnlyCompatible}
+                                        label={t('base-host-form.show-compatible-only')}
+                                        onChange={(event) =>
+                                            setShowOnlyCompatible(event.currentTarget.checked)
+                                        }
+                                    />
+                                </Group>
+
+                                {!requiredInboundUuid && (
+                                    <Alert color="yellow" variant="light">
+                                        {t(
+                                            'base-host-form.select-inbound-before-filtering-targets'
+                                        )}
+                                    </Alert>
+                                )}
+
+                                <Stack gap="sm">
+                                    {filteredNodes.length === 0 && (
+                                        <Alert color="gray" variant="light">
+                                            {t('base-host-form.no-target-nodes-found')}
+                                        </Alert>
+                                    )}
+
+                                    {filteredNodes.map((node) => {
+                                        const nodeStatus = resolveLocalNodeStatus(node)
+                                        const hasRequiredInbound = nodeHasRequiredInbound(
+                                            node,
+                                            requiredInboundUuid
+                                        )
+                                        const existingTarget = draft.targets.find(
+                                            (target) => target.nodeUuid === node.uuid
+                                        )
+                                        const canAdd =
+                                            !existingTarget && hasRequiredInbound !== false
+
+                                        return (
+                                            <Card
+                                                key={node.uuid}
+                                                padding="md"
+                                                radius="sm"
+                                                withBorder
+                                            >
+                                                <Group align="flex-start" justify="space-between">
+                                                    <Stack gap={6}>
+                                                        <Group gap="xs">
+                                                            <Text fw={700}>{node.name}</Text>
+                                                            <Badge variant="light">
+                                                                {maskUuid(node.uuid)}
+                                                            </Badge>
+                                                        </Group>
+                                                        <Text c="dimmed" size="sm">
+                                                            {node.address}
+                                                        </Text>
+                                                        <Group gap="xs">
+                                                            {nodeStatusBadge(nodeStatus, t)}
+                                                            {localInboundCompatibilityBadge(
+                                                                hasRequiredInbound,
+                                                                t
+                                                            )}
+                                                            {existingTarget && (
+                                                                <Badge color="gray" variant="light">
+                                                                    {t(
+                                                                        'base-host-form.target-node-already-added'
+                                                                    )}
+                                                                </Badge>
+                                                            )}
+                                                        </Group>
+                                                        <Group gap="md">
+                                                            <Text size="sm">
+                                                                {t('base-host-form.assignments')}:{' '}
+                                                                {existingTarget?.assignments ?? 0}
+                                                            </Text>
+                                                            <Text size="sm">
+                                                                {t('base-host-form.traffic')}:{' '}
+                                                                {existingTarget?.trafficBytes ??
+                                                                    '-'}
+                                                            </Text>
+                                                        </Group>
+                                                        {hasRequiredInbound === false && (
+                                                            <Text c="red" size="sm">
+                                                                {t(
+                                                                    'base-host-form.validation-reason-missing-inbound'
+                                                                )}
+                                                            </Text>
+                                                        )}
+                                                        {nodeStatus !== 'connected' && (
+                                                            <Text
+                                                                c={
+                                                                    nodeStatus === 'connecting'
+                                                                        ? 'yellow'
+                                                                        : 'red'
+                                                                }
+                                                                size="sm"
+                                                            >
+                                                                {t(
+                                                                    'base-host-form.node-state-warning'
+                                                                )}
+                                                            </Text>
+                                                        )}
+                                                    </Stack>
+                                                    <Button
+                                                        disabled={!canAdd}
+                                                        onClick={() => addTarget(node)}
+                                                        size="xs"
+                                                    >
+                                                        {t('base-host-form.select-target-node')}
+                                                    </Button>
+                                                </Group>
+                                            </Card>
+                                        )
+                                    })}
+                                </Stack>
+                            </Stack>
+                        </Modal>
 
                         <Divider />
 
                         <Stack gap="xs">
-                            <Text fw={600}>{t('base-host-form.preview-selection')}</Text>
+                            <Group gap={4}>
+                                <Text fw={600}>{t('base-host-form.preview-selection')}</Text>
+                                <HelpTooltip
+                                    description={String(
+                                        t('base-host-form.help-preview-selection-description')
+                                    )}
+                                    label={String(t('base-host-form.preview-selection'))}
+                                />
+                            </Group>
                             <Group align="flex-end">
                                 <TextInput
                                     disabled={!hostUuid}
@@ -907,13 +1274,17 @@ function DecisionsAuditBlock({
 }) {
     const { t } = useTranslation()
     const [expandedDecisionUuid, setExpandedDecisionUuid] = useState<string | null>(null)
-    const expandedDecision =
-        decisions.find((decision) => decision.uuid === expandedDecisionUuid) ?? null
 
     return (
         <Stack gap="xs">
             <Group justify="space-between">
-                <Text fw={600}>{t('base-host-form.decisions-audit')}</Text>
+                <Group gap={4}>
+                    <Text fw={600}>{t('base-host-form.decisions-audit')}</Text>
+                    <HelpTooltip
+                        description={String(t('base-host-form.help-decisions-audit-description'))}
+                        label={String(t('base-host-form.decisions-audit'))}
+                    />
+                </Group>
                 <Button
                     disabled={!hostUuid}
                     loading={isLoading}
@@ -938,115 +1309,150 @@ function DecisionsAuditBlock({
             )}
 
             {decisions.length > 0 && (
-                <ScrollArea>
-                    <Table miw={1100} withRowBorders>
-                        <Table.Thead>
-                            <Table.Tr>
-                                <Table.Th>{t('base-host-form.decision-time')}</Table.Th>
-                                <Table.Th>{t('base-host-form.decision-user')}</Table.Th>
-                                <Table.Th>{t('base-host-form.decision-target')}</Table.Th>
-                                <Table.Th>{t('base-host-form.strategy')}</Table.Th>
-                                <Table.Th>{t('base-host-form.decision-reason')}</Table.Th>
-                                <Table.Th>
-                                    {t('base-host-form.decision-assignment-action')}
-                                </Table.Th>
-                                <Table.Th>{t('base-host-form.decision-final-address')}</Table.Th>
-                                <Table.Th>{t('base-host-form.candidates')}</Table.Th>
-                                <Table.Th>{t('base-host-form.excluded-targets')}</Table.Th>
-                                <Table.Th>{t('base-host-form.decision-warnings')}</Table.Th>
-                            </Table.Tr>
-                        </Table.Thead>
-                        <Table.Tbody>
-                            {decisions.map((decision) => (
-                                <Table.Tr
-                                    key={decision.uuid}
-                                    onClick={() =>
-                                        setExpandedDecisionUuid((current) =>
-                                            current === decision.uuid ? null : decision.uuid
-                                        )
-                                    }
-                                    style={{ cursor: 'pointer' }}
-                                >
-                                    <Table.Td>{decision.createdAt.toLocaleString()}</Table.Td>
-                                    <Table.Td>{maskUuid(decision.userUuid)}</Table.Td>
-                                    <Table.Td>{decision.targetUuid ?? '-'}</Table.Td>
-                                    <Table.Td>{decision.strategy}</Table.Td>
-                                    <Table.Td>
-                                        {translateDecisionReason(decision.reason, t)}
-                                    </Table.Td>
-                                    <Table.Td>
-                                        {translateDecisionAssignmentAction(
-                                            decision.assignmentAction,
-                                            t
-                                        )}
-                                    </Table.Td>
-                                    <Table.Td>
-                                        {decision.finalHostOverrides
-                                            ? `${decision.finalHostOverrides.address}:${decision.finalHostOverrides.port}`
-                                            : '-'}
-                                    </Table.Td>
-                                    <Table.Td>{decision.candidates.length}</Table.Td>
-                                    <Table.Td>{decision.excludedTargets.length}</Table.Td>
-                                    <Table.Td>
-                                        {decision.warnings.length > 0
-                                            ? decision.warnings
-                                                  .map((warning) =>
-                                                      translateDecisionReason(warning, t)
-                                                  )
-                                                  .join(', ')
-                                            : '-'}
-                                    </Table.Td>
-                                </Table.Tr>
-                            ))}
-                        </Table.Tbody>
-                    </Table>
-                </ScrollArea>
-            )}
+                <Stack gap="xs">
+                    {decisions.map((decision) => {
+                        const selectedTarget = decision.selectedTarget
+                        const selectedTargetLabel =
+                            selectedTarget?.nodeName ??
+                            selectedTarget?.targetUuid ??
+                            decision.targetUuid ??
+                            '-'
+                        const finalAddress = decision.finalHostOverrides
+                            ? `${decision.finalHostOverrides.address}:${decision.finalHostOverrides.port}`
+                            : '-'
+                        const expanded = expandedDecisionUuid === decision.uuid
 
-            {expandedDecision && <DecisionDetail decision={expandedDecision} />}
+                        return (
+                            <Card
+                                key={decision.uuid}
+                                onClick={() =>
+                                    setExpandedDecisionUuid((current) =>
+                                        current === decision.uuid ? null : decision.uuid
+                                    )
+                                }
+                                padding="sm"
+                                radius="sm"
+                                style={{ cursor: 'pointer' }}
+                                withBorder
+                            >
+                                <Stack gap="xs">
+                                    <Group align="flex-start" justify="space-between">
+                                        <Stack gap={2}>
+                                            <Group gap="xs">
+                                                <Text fw={700} size="sm">
+                                                    {selectedTargetLabel}
+                                                </Text>
+                                                <Badge
+                                                    color={
+                                                        decision.assignmentAction === 'skipped'
+                                                            ? 'gray'
+                                                            : 'teal'
+                                                    }
+                                                    variant="light"
+                                                >
+                                                    {translateDecisionAssignmentAction(
+                                                        decision.assignmentAction,
+                                                        t
+                                                    )}
+                                                </Badge>
+                                            </Group>
+                                            <Text c="dimmed" size="xs">
+                                                {decision.createdAt.toLocaleString()} ·{' '}
+                                                {decision.userUuidMasked ?? decision.userUuid}
+                                            </Text>
+                                        </Stack>
+                                        <Badge color={expanded ? 'blue' : 'gray'} variant="light">
+                                            {decision.candidates.length} /{' '}
+                                            {decision.excludedTargets.length}
+                                        </Badge>
+                                    </Group>
+
+                                    <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                                        <TargetInfo
+                                            label={t('base-host-form.decision-final-address')}
+                                            value={finalAddress}
+                                        />
+                                        <TargetInfo
+                                            label={t('base-host-form.strategy')}
+                                            value={translateStrategyName(decision.strategy, t)}
+                                        />
+                                        <TargetInfo
+                                            label={t('base-host-form.decision-reason')}
+                                            value={translateDecisionReason(decision.reason, t)}
+                                        />
+                                    </SimpleGrid>
+
+                                    {expanded && <DecisionDetail decision={decision} />}
+                                </Stack>
+                            </Card>
+                        )
+                    })}
+                </Stack>
+            )}
         </Stack>
     )
 }
 
 function DecisionDetail({ decision }: { decision: HostBalancerDecision }) {
     const { t } = useTranslation()
+    const selectedTarget = decision.selectedTarget
 
     return (
         <Alert color="blue" variant="light">
-            <Stack gap="xs">
-                <Group>
-                    <Text fw={600}>{t('base-host-form.unavailable-policy')}:</Text>
-                    <Text>{decision.unavailablePolicy}</Text>
-                </Group>
-                <Group>
-                    <Text fw={600}>{t('base-host-form.selected-target')}:</Text>
-                    <Text>{decision.selectedTarget?.targetUuid ?? decision.targetUuid ?? '-'}</Text>
-                </Group>
+            <Stack gap="sm">
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <TargetInfo
+                        label={t('base-host-form.unavailable-policy')}
+                        value={translateUnavailablePolicyName(decision.unavailablePolicy, t)}
+                    />
+                    <TargetInfo
+                        label={t('base-host-form.selected-target')}
+                        value={
+                            selectedTarget
+                                ? `${targetDisplayName(selectedTarget)} · ${targetAddressPort(selectedTarget)}`
+                                : (decision.targetUuid ?? '-')
+                        }
+                    />
+                </SimpleGrid>
                 {decision.finalHostOverrides && (
-                    <Group gap="lg">
-                        <Text size="sm">
-                            {t('base-host-form.preview-final-address')}:{' '}
-                            {decision.finalHostOverrides.address}
-                        </Text>
-                        <Text size="sm">
-                            {t('base-host-form.preview-final-port')}:{' '}
-                            {decision.finalHostOverrides.port}
-                        </Text>
-                    </Group>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                        <TargetInfo
+                            label={t('base-host-form.preview-final-address')}
+                            value={decision.finalHostOverrides.address}
+                        />
+                        <TargetInfo
+                            label={t('base-host-form.preview-final-port')}
+                            value={decision.finalHostOverrides.port}
+                        />
+                    </SimpleGrid>
+                )}
+                {selectedTarget && (
+                    <DiagnosticsTable
+                        rows={[selectedTarget]}
+                        title={t('base-host-form.selected-target')}
+                    />
                 )}
                 <DiagnosticsTable
                     rows={decision.candidates}
                     title={t('base-host-form.candidates')}
                 />
                 <DiagnosticsTable
+                    excluded
                     rows={decision.excludedTargets}
                     title={t('base-host-form.excluded-targets')}
                 />
-                {decision.warnings.map((warning, index) => (
-                    <Text c="yellow" key={`${warning}-${index}`} size="sm">
-                        {translateDecisionReason(warning, t)}
-                    </Text>
-                ))}
+                {decision.warnings.length > 0 && (
+                    <Stack gap={4}>
+                        <Text fw={600} size="sm">
+                            {t('base-host-form.decision-warnings')}
+                        </Text>
+                        {decision.warnings.map((warning, index) => (
+                            <Text c="yellow" key={`${warning}-${index}`} size="sm">
+                                {translateDecisionReason(warning, t)}
+                            </Text>
+                        ))}
+                    </Stack>
+                )}
             </Stack>
         </Alert>
     )
@@ -1055,66 +1461,88 @@ function DecisionDetail({ decision }: { decision: HostBalancerDecision }) {
 function PreviewResult({ preview }: { preview: HostBalancerPreview }) {
     const { t } = useTranslation()
     const diagnostics = preview.diagnostics
-    const selectedTargetLabel =
-        diagnostics.selectedTarget?.targetUuid ?? diagnostics.selectedTargetUuid ?? null
-    const finalHostOverrides = diagnostics.finalHostOverrides
+    const selectedTarget = preview.selectedTarget ?? diagnostics.selectedTarget ?? null
+    const finalHostOverrides = preview.finalHostOverrides ?? diagnostics.finalHostOverrides
     const resultMessage = resolvePreviewResultMessage(preview, t)
+    const assignmentAction =
+        preview.assignmentAction ?? mapLegacyPreviewAction(diagnostics.assignmentAction)
+    const candidates = preview.candidates ?? diagnostics.candidates ?? []
+    const excludedTargets = preview.excludedTargets ?? diagnostics.excludedTargets ?? []
+    const fallbackPolicyResult = preview.fallbackPolicyResult ?? null
 
     return (
-        <Alert color={diagnostics.selectedTargetUuid ? 'teal' : 'yellow'} variant="light">
-            <Stack gap="xs">
-                <Group>
-                    <Text fw={600}>{t('base-host-form.selected-target')}:</Text>
-                    <Text>{selectedTargetLabel ?? '-'}</Text>
-                </Group>
-                <Text fw={600} size="sm">
-                    {resultMessage}
-                </Text>
-                <Group>
-                    <Text fw={600} size="sm">
-                        {t('base-host-form.preview-assignment-action')}:
-                    </Text>
-                    <Badge
-                        color={diagnostics.assignmentAction === 'preview_only' ? 'gray' : 'teal'}
-                    >
-                        {t(`base-host-form.preview-action-${diagnostics.assignmentAction}`)}
+        <Alert color={selectedTarget ? 'teal' : 'yellow'} variant="light">
+            <Stack gap="md">
+                <Group justify="space-between">
+                    <Text fw={700}>{t('base-host-form.preview-result')}</Text>
+                    <Badge color={assignmentAction === 'would_fallback' ? 'yellow' : 'teal'}>
+                        {translatePreviewAssignmentAction(assignmentAction, t)}
                     </Badge>
                 </Group>
-                {diagnostics.existingAssignment && (
-                    <Group>
-                        <Text fw={600} size="sm">
-                            {t('base-host-form.preview-existing-assignment')}:
-                        </Text>
-                        <Text size="sm">{diagnostics.existingAssignment.targetUuid}</Text>
-                    </Group>
+
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <TargetInfo
+                        label={t('base-host-form.preview-user')}
+                        value={`${preview.shortUuidMasked ?? preview.shortUuid ?? '-'} / ${maskUuid(preview.resolvedUserUuid ?? preview.userUuid)}`}
+                    />
+                    <TargetInfo
+                        label={t('base-host-form.preview-host')}
+                        value={preview.hostRemark ?? preview.hostUuid}
+                    />
+                    <TargetInfo
+                        label={t('base-host-form.strategy')}
+                        value={translateStrategyName(preview.strategy ?? diagnostics.strategy, t)}
+                    />
+                    <TargetInfo
+                        label={t('base-host-form.preview-selection-reason')}
+                        value={resultMessage}
+                    />
+                </SimpleGrid>
+
+                {selectedTarget ? (
+                    <Card padding="sm" radius="sm" withBorder>
+                        <Stack gap={4}>
+                            <Text fw={600}>{t('base-host-form.selected-target')}</Text>
+                            <Text size="sm">
+                                {targetDisplayName(selectedTarget)} ·{' '}
+                                {targetAddressPort(selectedTarget)}
+                            </Text>
+                            <Text c="dimmed" size="xs">
+                                {maskUuid(selectedTarget.targetUuid)}
+                            </Text>
+                        </Stack>
+                    </Card>
+                ) : (
+                    <Alert color="yellow" variant="light">
+                        {fallbackPolicyResult
+                            ? translateFallbackPolicyResult(fallbackPolicyResult.result, t)
+                            : t('base-host-form.preview-no-candidates')}
+                    </Alert>
                 )}
-                <Text size="sm">
-                    {diagnostics.reasons
-                        .map((reason) => translateDiagnosticText(reason, t))
-                        .join(' ') || t('base-host-form.no-selection-reason')}
-                </Text>
-                {diagnostics.warnings.map((warning, index) => (
+
+                {finalHostOverrides && (
+                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                        <TargetInfo
+                            label={t('base-host-form.preview-final-address')}
+                            value={finalHostOverrides.address}
+                        />
+                        <TargetInfo
+                            label={t('base-host-form.preview-final-port')}
+                            value={finalHostOverrides.port}
+                        />
+                    </SimpleGrid>
+                )}
+
+                {(preview.warnings ?? diagnostics.warnings).map((warning, index) => (
                     <Text c="yellow" key={`${warning}-${index}`} size="sm">
                         {translateDiagnosticText(warning, t)}
                     </Text>
                 ))}
-                {finalHostOverrides && (
-                    <Group gap="lg">
-                        <Text size="sm">
-                            {t('base-host-form.preview-final-address')}:{' '}
-                            {finalHostOverrides.address}
-                        </Text>
-                        <Text size="sm">
-                            {t('base-host-form.preview-final-port')}: {finalHostOverrides.port}
-                        </Text>
-                    </Group>
-                )}
+
+                <DiagnosticsTable rows={candidates} title={t('base-host-form.candidates')} />
                 <DiagnosticsTable
-                    rows={diagnostics.candidates ?? []}
-                    title={t('base-host-form.candidates')}
-                />
-                <DiagnosticsTable
-                    rows={diagnostics.excludedTargets ?? []}
+                    excluded
+                    rows={excludedTargets}
                     title={t('base-host-form.excluded-targets')}
                 />
             </Stack>
@@ -1125,34 +1553,28 @@ function PreviewResult({ preview }: { preview: HostBalancerPreview }) {
 function resolvePreviewResultMessage(preview: HostBalancerPreview, t: TFunction) {
     const diagnostics = preview.diagnostics
     const selectedTargetUuid =
-        diagnostics.selectedTarget?.targetUuid ?? diagnostics.selectedTargetUuid ?? null
+        preview.selectedTarget?.targetUuid ??
+        diagnostics.selectedTarget?.targetUuid ??
+        diagnostics.selectedTargetUuid ??
+        null
 
     if (selectedTargetUuid) {
-        return String(
-            t('base-host-form.preview-will-select-target', {
-                targetUuid: selectedTargetUuid
-            })
-        )
+        return translateSelectionReason(preview.strategy ?? diagnostics.strategy, diagnostics, t)
     }
 
-    if ((diagnostics.candidates ?? []).length === 0) {
-        if (diagnostics.unavailablePolicy === 'ORIGINAL_HOST' && diagnostics.finalHostOverrides) {
-            return String(t('base-host-form.preview-original-host'))
-        }
-        if (diagnostics.unavailablePolicy === 'HIDE_HOST') {
-            return String(t('base-host-form.preview-host-hidden'))
-        }
-
-        return String(t('base-host-form.preview-no-candidates'))
+    if (preview.fallbackPolicyResult) {
+        return translateFallbackPolicyResult(preview.fallbackPolicyResult.result, t)
     }
 
     return String(t('base-host-form.preview-no-candidates'))
 }
 
 function DiagnosticsTable({
+    excluded = false,
     rows,
     title
 }: {
+    excluded?: boolean
     rows: HostBalancerPreview['diagnostics']['candidates']
     title: string
 }) {
@@ -1172,15 +1594,40 @@ function DiagnosticsTable({
                     {rows.map((row) => (
                         <Table.Tr key={row.targetUuid}>
                             <Table.Td>
-                                <Badge color={row.selected ? 'teal' : 'gray'} variant="light">
-                                    {row.selected
-                                        ? t('base-host-form.selected')
-                                        : t('base-host-form.candidate')}
+                                <Badge
+                                    color={
+                                        excluded
+                                            ? row.severity === 'error'
+                                                ? 'red'
+                                                : 'yellow'
+                                            : row.selected
+                                              ? 'teal'
+                                              : 'gray'
+                                    }
+                                    variant="light"
+                                >
+                                    {excluded
+                                        ? translatePreviewSeverity(row.severity, t)
+                                        : row.selected
+                                          ? t('base-host-form.selected')
+                                          : t('base-host-form.candidate')}
                                 </Badge>
                             </Table.Td>
-                            <Table.Td>{row.targetUuid}</Table.Td>
                             <Table.Td>
-                                {t('base-host-form.traffic-score')}: {row.score ?? '-'}
+                                <Stack gap={2}>
+                                    <Text fw={600} size="sm">
+                                        {targetDisplayName(row)}
+                                    </Text>
+                                    <Text c="dimmed" size="xs">
+                                        {targetAddressPort(row)} · {maskUuid(row.targetUuid)}
+                                    </Text>
+                                </Stack>
+                            </Table.Td>
+                            <Table.Td>
+                                {t('base-host-form.traffic-score')}: {formatPreviewScore(row.score)}
+                            </Table.Td>
+                            <Table.Td>
+                                {t('base-host-form.assignments')}: {row.assignments ?? 0}
                             </Table.Td>
                             <Table.Td>
                                 {t('base-host-form.traffic')}: {row.trafficBytes ?? '-'}
@@ -1192,6 +1639,104 @@ function DiagnosticsTable({
                     ))}
                 </Table.Tbody>
             </Table>
+        </Stack>
+    )
+}
+
+function mapLegacyPreviewAction(action: LegacyPreviewAction): PreviewSimulatorAction {
+    if (action === 'reused') {
+        return 'would_reuse'
+    }
+
+    return action
+}
+
+function translatePreviewAssignmentAction(action: PreviewSimulatorAction, t: TFunction) {
+    const keys = {
+        preview_only: 'base-host-form.preview-action-preview_only',
+        would_create: 'base-host-form.preview-action-would_create',
+        would_reuse: 'base-host-form.preview-action-would_reuse',
+        would_reassign: 'base-host-form.preview-action-would_reassign',
+        would_fallback: 'base-host-form.preview-action-would_fallback'
+    } as const
+
+    return String(t(keys[action]))
+}
+
+function translateFallbackPolicyResult(result: PreviewFallbackResult, t: TFunction) {
+    const keys = {
+        hidden: 'base-host-form.preview-host-hidden',
+        original_host: 'base-host-form.preview-original-host',
+        last_assignment: 'base-host-form.preview-last-assignment',
+        none: 'base-host-form.preview-no-candidates'
+    } as const
+
+    return String(t(keys[result]))
+}
+
+function translatePreviewSeverity(
+    severity: 'info' | 'warning' | 'error' | undefined,
+    t: TFunction
+) {
+    if (severity === 'error') {
+        return t('base-host-form.validation-error')
+    }
+    if (severity === 'warning') {
+        return t('base-host-form.validation-warning')
+    }
+
+    return t('base-host-form.validation-unknown')
+}
+
+function translateSelectionReason(
+    strategy: HostBalancerStrategy,
+    diagnostics: HostBalancerPreview['diagnostics'],
+    t: TFunction
+) {
+    if (diagnostics.assignmentAction === 'reused') {
+        return String(t('base-host-form.preview-reason-sticky'))
+    }
+
+    const keys = {
+        LEAST_ASSIGNED: 'base-host-form.preview-reason-least-assigned',
+        WEIGHTED: 'base-host-form.preview-reason-weighted',
+        LEAST_TRAFFIC: 'base-host-form.preview-reason-least-traffic',
+        WEIGHTED_LEAST_TRAFFIC: 'base-host-form.preview-reason-weighted-traffic',
+        PRIORITY_FAILOVER: 'base-host-form.preview-reason-priority',
+        RANDOM: 'base-host-form.preview-reason-random'
+    } as const
+
+    return String(t(keys[strategy]))
+}
+
+function targetDisplayName(row: PreviewDiagnosticsRow) {
+    return row.nodeName ?? row.nodeUuid ?? row.targetUuid
+}
+
+function targetAddressPort(row: PreviewDiagnosticsRow) {
+    const address = row.address ?? row.nodeAddress ?? '-'
+    const port = row.port ?? '-'
+
+    return `${address}:${port}`
+}
+
+function formatPreviewScore(score: number | undefined) {
+    if (score === undefined) {
+        return '-'
+    }
+
+    return Number.isInteger(score) ? String(score) : score.toFixed(4)
+}
+
+function TargetInfo({ label, value }: { label: ReactNode; value: ReactNode }) {
+    return (
+        <Stack gap={2}>
+            <Text c="dimmed" size="xs">
+                {label}
+            </Text>
+            <Text component="div" fw={600} size="sm">
+                {value}
+            </Text>
         </Stack>
     )
 }
@@ -1226,6 +1771,24 @@ function nodeStatusBadge(
     return (
         <Badge color={meta.color} variant="light">
             {meta.label}
+        </Badge>
+    )
+}
+
+function localInboundCompatibilityBadge(hasRequiredInbound: boolean | null, t: TFunction) {
+    if (hasRequiredInbound === null) {
+        return (
+            <Badge color="gray" variant="light">
+                {t('base-host-form.compatibility-unknown')}
+            </Badge>
+        )
+    }
+
+    return (
+        <Badge color={hasRequiredInbound ? 'teal' : 'red'} variant="light">
+            {hasRequiredInbound
+                ? t('base-host-form.compatibility-compatible')
+                : t('base-host-form.compatibility-missing-inbound')}
         </Badge>
     )
 }
@@ -1282,6 +1845,37 @@ function resolveLocalNodeStatus(
     return 'disconnected'
 }
 
+function nodeHasRequiredInbound(node: HostBalancerNode, requiredInboundUuid?: string) {
+    if (!requiredInboundUuid) {
+        return null
+    }
+
+    return node.configProfile.activeInbounds.some((inbound) => inbound.uuid === requiredInboundUuid)
+}
+
+function strategyHelpKey(strategy: HostBalancerStrategy): HostBalancerHelpKey {
+    const keys = {
+        LEAST_ASSIGNED: 'base-host-form.help-strategy-least-assigned-description',
+        WEIGHTED: 'base-host-form.help-strategy-weighted-description',
+        LEAST_TRAFFIC: 'base-host-form.help-strategy-least-traffic-description',
+        WEIGHTED_LEAST_TRAFFIC: 'base-host-form.help-strategy-weighted-least-traffic-description',
+        PRIORITY_FAILOVER: 'base-host-form.help-strategy-priority-failover-description',
+        RANDOM: 'base-host-form.help-strategy-random-description'
+    } satisfies Record<HostBalancerStrategy, HostBalancerHelpKey>
+
+    return keys[strategy]
+}
+
+function policyHelpKey(policy: HostBalancerUnavailablePolicy): HostBalancerHelpKey {
+    const keys = {
+        HIDE_HOST: 'base-host-form.help-policy-hide-host-description',
+        ORIGINAL_HOST: 'base-host-form.help-policy-original-host-description',
+        KEEP_LAST_IF_POSSIBLE: 'base-host-form.help-policy-keep-last-description'
+    } satisfies Record<HostBalancerUnavailablePolicy, HostBalancerHelpKey>
+
+    return keys[policy]
+}
+
 function translateDiagnosticText(message: string, t: TFunction): string {
     const selectedByStrategy = message.match(/^Selected target by ([A-Z_]+)\.$/)
     if (selectedByStrategy) {
@@ -1321,10 +1915,31 @@ function translateDiagnosticText(message: string, t: TFunction): string {
 function translateDecisionReason(message: string, t: TFunction): string {
     const selected = message.match(/^selected:([A-Z_]+):([a-z_]+)$/)
     if (selected) {
+        const strategy = translateStrategyName(selected[1], t)
+        const action = selected[2]
+
+        if (action === 'reused') {
+            return String(t('base-host-form.decision-reason-selected-reused'))
+        }
+        if (action === 'created') {
+            return String(
+                t('base-host-form.decision-reason-selected-created', {
+                    strategy
+                })
+            )
+        }
+        if (action === 'reassigned') {
+            return String(
+                t('base-host-form.decision-reason-selected-reassigned', {
+                    strategy
+                })
+            )
+        }
+
         return String(
             t('base-host-form.decision-reason-selected', {
-                strategy: translateStrategyName(selected[1], t),
-                action: translateDecisionAssignmentAction(selected[2], t)
+                strategy,
+                action: translateDecisionAssignmentAction(action, t)
             })
         )
     }
@@ -1370,6 +1985,17 @@ function translateStrategyName(strategy: string, t: TFunction): string {
     return key ? String(t(key)) : strategy
 }
 
+function translateUnavailablePolicyName(policy: string, t: TFunction): string {
+    const policyKeys = {
+        HIDE_HOST: 'base-host-form.policy-hide-host',
+        ORIGINAL_HOST: 'base-host-form.policy-original-host',
+        KEEP_LAST_IF_POSSIBLE: 'base-host-form.policy-keep-last'
+    } as const
+
+    const key = policyKeys[policy as keyof typeof policyKeys]
+    return key ? String(t(key)) : policy
+}
+
 function maskUuid(uuid: string): string {
     if (uuid.length <= 13) {
         return uuid
@@ -1405,7 +2031,7 @@ function resolvePreviewErrorMessage(error: unknown, t: TFunction): string {
     return String(t('base-host-form.preview-error-generic'))
 }
 
-function translateValidationReason(message: string, t: TFunction): string {
+export function translateValidationReason(message: string, t: TFunction): string {
     const validationKeys = {
         'target node lacks required inbound': 'base-host-form.validation-reason-missing-inbound',
         'overrideAddress differs from selected node address':

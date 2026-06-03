@@ -33,12 +33,19 @@ type PreviewUserLookup = string | { userUuid?: string; shortUuid?: string };
 type TargetDiagnostics = {
     targetUuid: string;
     nodeUuid?: string | null;
+    nodeName?: string | null;
+    nodeAddress?: string | null;
+    address?: string | null;
+    port?: number | null;
     trafficBytes?: string | null;
     weight?: number;
+    priority?: number;
+    assignments?: number;
     score?: number;
     selected?: boolean;
     fallbackUsed?: boolean;
     reason?: string;
+    severity?: 'info' | 'warning' | 'error';
 };
 type HostApplyDiagnostics = {
     candidates: TargetDiagnostics[];
@@ -177,10 +184,18 @@ export class HostBalancerService {
             const nodeStates = await this.hostBalancersRepository.getNodeStates(nodeUuids);
             const hostForValidation = this.hostRecordToRawInbound(host);
 
+            const targets = dto.targets.map((target) =>
+                this.validateDraftTargetForHost(target, hostForValidation, nodeStates),
+            );
+
             return ok({
-                targets: dto.targets.map((target) =>
-                    this.validateDraftTargetForHost(target, hostForValidation, nodeStates),
-                ),
+                targets,
+                summary: {
+                    total: targets.length,
+                    valid: targets.filter((target) => target.valid).length,
+                    warnings: targets.filter((target) => target.severity === 'warning').length,
+                    errors: targets.filter((target) => target.severity === 'error').length,
+                },
             });
         } catch (error) {
             this.logger.error(error);
@@ -278,7 +293,7 @@ export class HostBalancerService {
 
             if (!settings) {
                 return ok(
-                    this.previewResponse(hostUuid, user.uuid, null, {
+                    this.previewResponse(host, user, null, {
                         enabled: false,
                         strategy: 'LEAST_ASSIGNED',
                         unavailablePolicy: 'HIDE_HOST',
@@ -323,35 +338,47 @@ export class HostBalancerService {
             });
 
             return ok(
-                this.previewResponse(hostUuid, user.uuid, decision.selectedTarget, {
-                    enabled: settings.enabled,
-                    strategy: settings.strategy,
-                    unavailablePolicy: settings.unavailablePolicy,
-                    stickyEnabled: settings.stickyEnabled,
-                    candidatesCount: decision.diagnostics.candidates.length,
-                    selectedTargetUuid: decision.selectedTarget?.uuid ?? null,
-                    reasons: decision.selectedTarget
-                        ? [`Selected target by ${settings.strategy}.`]
-                        : ['No eligible target selected.'],
-                    wouldCreateAssignment: false,
-                    resolvedUserUuid: user.uuid,
-                    shortUuidMasked: this.maskShortUuid(user.shortUuid),
-                    existingAssignment: existingAssignment
-                        ? {
-                              targetUuid: existingAssignment.targetUuid,
-                              reason: existingAssignment.reason,
-                              lastUsedAt: existingAssignment.lastUsedAt,
-                          }
-                        : null,
-                    assignmentAction: this.previewAssignmentAction(decision.diagnostics.assignment),
-                    ...decision.diagnostics,
-                    warnings: [
-                        ...decision.diagnostics.warnings,
-                        ...decision.diagnostics.excludedTargets
-                            .map((target) => target.reason ?? '')
-                            .filter(Boolean),
-                    ],
-                }),
+                this.previewResponse(
+                    host,
+                    user,
+                    decision.selectedTarget,
+                    this.enrichPreviewDiagnostics(
+                        {
+                            enabled: settings.enabled,
+                            strategy: settings.strategy,
+                            unavailablePolicy: settings.unavailablePolicy,
+                            stickyEnabled: settings.stickyEnabled,
+                            candidatesCount: decision.diagnostics.candidates.length,
+                            selectedTargetUuid: decision.selectedTarget?.uuid ?? null,
+                            reasons: decision.selectedTarget
+                                ? [`Selected target by ${settings.strategy}.`]
+                                : ['No eligible target selected.'],
+                            wouldCreateAssignment: false,
+                            resolvedUserUuid: user.uuid,
+                            shortUuidMasked: this.maskShortUuid(user.shortUuid),
+                            existingAssignment: existingAssignment
+                                ? {
+                                      targetUuid: existingAssignment.targetUuid,
+                                      reason: existingAssignment.reason,
+                                      lastUsedAt: existingAssignment.lastUsedAt,
+                                  }
+                                : null,
+                            assignmentAction: this.previewAssignmentAction(
+                                decision.diagnostics.assignment,
+                            ),
+                            ...decision.diagnostics,
+                            warnings: [
+                                ...decision.diagnostics.warnings,
+                                ...decision.diagnostics.excludedTargets
+                                    .map((target) => target.reason ?? '')
+                                    .filter(Boolean),
+                            ],
+                        },
+                        settings.targets,
+                        nodeStates,
+                        assignmentCounts,
+                    ),
+                ),
             );
         } catch (error) {
             this.logger.error(error);
@@ -385,7 +412,15 @@ export class HostBalancerService {
             }
 
             const decisions = await this.hostBalancersRepository.listDecisions(hostUuid, limit);
-            return ok(decisions);
+            return ok(
+                decisions.map((decision) => ({
+                    ...decision,
+                    userUuid: this.maskUuidIfNeeded(decision.userUuid),
+                    userUuidMasked: this.maskUuidIfNeeded(
+                        decision.userUuidMasked ?? decision.userUuid,
+                    ),
+                })),
+            );
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_HOST_BALANCER_DECISIONS_ERROR);
@@ -752,6 +787,8 @@ export class HostBalancerService {
         const severity = this.validationSeverityFromRank(severityRank);
 
         return {
+            localId: input.localId ?? null,
+            uuid: input.uuid ?? null,
             nodeUuid: target.nodeUuid,
             valid: severity !== 'error',
             severity,
@@ -787,6 +824,7 @@ export class HostBalancerService {
 
     private hostRecordToRawInbound(host: {
         uuid: string;
+        remark?: string;
         address: string;
         port: number;
         configProfileInboundUuid: string | null;
@@ -794,7 +832,7 @@ export class HostBalancerService {
         return new HostWithRawInbound({
             uuid: host.uuid,
             viewPosition: 0,
-            remark: '',
+            remark: host.remark ?? '',
             address: host.address,
             port: host.port,
             path: null,
@@ -1106,17 +1144,160 @@ export class HostBalancerService {
     }
 
     private previewResponse(
-        hostUuid: string,
-        userUuid: string,
+        host: {
+            uuid: string;
+            remark: string;
+        },
+        user: {
+            uuid: string;
+            shortUuid: string | null;
+        },
         target: HostBalancerTarget | null,
         diagnostics: PreviewHostBalancerCommand.Response['response']['diagnostics'],
     ): PreviewHostBalancerCommand.Response['response'] {
+        const fallbackPolicyResult = this.previewFallbackPolicyResult(
+            diagnostics.unavailablePolicy,
+            diagnostics.assignmentAction,
+            diagnostics.finalHostOverrides ?? null,
+            diagnostics.selectedTarget ?? null,
+            diagnostics.candidatesCount,
+        );
+
         return {
-            hostUuid,
-            userUuid,
+            hostUuid: host.uuid,
+            userUuid: user.uuid,
+            resolvedUserUuid: user.uuid,
+            shortUuid: user.shortUuid,
+            shortUuidMasked: this.maskShortUuid(user.shortUuid),
+            hostRemark: host.remark,
+            balancerEnabled: diagnostics.enabled,
+            strategy: diagnostics.strategy,
+            stickyEnabled: diagnostics.stickyEnabled,
+            unavailablePolicy: diagnostics.unavailablePolicy,
+            existingAssignment: diagnostics.existingAssignment,
+            assignmentAction: this.previewAssignmentActionForSimulator(
+                diagnostics.assignmentAction,
+                fallbackPolicyResult?.result ?? 'none',
+            ),
+            selectedTarget: diagnostics.selectedTarget ?? null,
+            candidates: diagnostics.candidates ?? [],
+            excludedTargets: diagnostics.excludedTargets ?? [],
+            warnings: diagnostics.warnings,
+            finalHostOverrides: diagnostics.finalHostOverrides ?? null,
+            fallbackPolicyResult,
             target: target ? this.withWarning(target) : null,
             diagnostics,
         };
+    }
+
+    private previewAssignmentActionForSimulator(
+        assignmentAction: PreviewAssignmentAction,
+        fallbackResult: 'hidden' | 'original_host' | 'last_assignment' | 'none',
+    ): 'preview_only' | 'would_create' | 'would_reuse' | 'would_reassign' | 'would_fallback' {
+        if (fallbackResult !== 'none') {
+            return 'would_fallback';
+        }
+        if (assignmentAction === 'reused') {
+            return 'would_reuse';
+        }
+        if (assignmentAction === 'would_create' || assignmentAction === 'would_reassign') {
+            return assignmentAction;
+        }
+
+        return 'preview_only';
+    }
+
+    private previewFallbackPolicyResult(
+        policy: HostBalancerUnavailablePolicy,
+        assignmentAction: PreviewAssignmentAction,
+        finalHostOverrides: HostApplyDiagnostics['finalHostOverrides'],
+        selectedTarget: TargetDiagnostics | null,
+        candidatesCount: number,
+    ): PreviewHostBalancerCommand.Response['response']['fallbackPolicyResult'] {
+        if (selectedTarget) {
+            if (assignmentAction === 'reused' && finalHostOverrides && candidatesCount === 0) {
+                return {
+                    policy,
+                    result: 'last_assignment',
+                    message: 'Last assignment will be used.',
+                };
+            }
+
+            return null;
+        }
+
+        if (assignmentAction === 'reused') {
+            return {
+                policy,
+                result: 'last_assignment',
+                message: 'Last assignment will be used.',
+            };
+        }
+
+        if (policy === 'ORIGINAL_HOST' && finalHostOverrides) {
+            return {
+                policy,
+                result: 'original_host',
+                message: 'Original Host will be used.',
+            };
+        }
+
+        if (policy === 'HIDE_HOST') {
+            return {
+                policy,
+                result: 'hidden',
+                message: 'Host will be hidden.',
+            };
+        }
+
+        return { policy, result: 'none' };
+    }
+
+    private enrichPreviewDiagnostics(
+        diagnostics: PreviewHostBalancerCommand.Response['response']['diagnostics'],
+        targets: HostBalancerTarget[],
+        nodeStates: Map<string, HostBalancerNodeState>,
+        assignmentCounts: Map<string, number>,
+    ): PreviewHostBalancerCommand.Response['response']['diagnostics'] {
+        const targetByUuid = new Map(targets.map((target) => [target.uuid, target]));
+        const enrich = (target: TargetDiagnostics): TargetDiagnostics => {
+            const source = targetByUuid.get(target.targetUuid);
+            const node = source?.nodeUuid ? nodeStates.get(source.nodeUuid) : null;
+
+            return {
+                ...target,
+                nodeUuid: target.nodeUuid ?? source?.nodeUuid ?? null,
+                nodeName: node?.name ?? null,
+                nodeAddress: node?.address ?? null,
+                address: source?.overrideAddress ?? node?.address ?? null,
+                port: source?.overridePort ?? node?.port ?? null,
+                weight: source?.weight ?? target.weight,
+                priority: source?.priority,
+                assignments: assignmentCounts.get(target.targetUuid) ?? 0,
+                severity: target.reason ? this.previewTargetSeverity(target.reason) : 'info',
+            };
+        };
+
+        return {
+            ...diagnostics,
+            candidates: (diagnostics.candidates ?? []).map(enrich),
+            excludedTargets: (diagnostics.excludedTargets ?? []).map(enrich),
+            selectedTarget: diagnostics.selectedTarget ? enrich(diagnostics.selectedTarget) : null,
+        };
+    }
+
+    private previewTargetSeverity(reason: string): 'info' | 'warning' | 'error' {
+        if (
+            reason === 'target node lacks required inbound' ||
+            reason === 'target disabled' ||
+            reason === 'target node disconnected' ||
+            reason === 'target node disabled' ||
+            reason === 'maxAssignedUsers reached'
+        ) {
+            return 'error';
+        }
+
+        return 'warning';
     }
 
     private normalizePreviewUserLookup(userLookupInput: PreviewUserLookup): {
@@ -1176,7 +1357,19 @@ export class HostBalancerService {
         return `${uuid.slice(0, 8)}...${uuid.slice(-4)}`;
     }
 
-    private maskShortUuid(shortUuid: string): string {
+    private maskUuidIfNeeded(uuid: string): string {
+        if (uuid.includes('...')) {
+            return uuid;
+        }
+
+        return this.maskUuid(uuid);
+    }
+
+    private maskShortUuid(shortUuid: string | null): string | null {
+        if (!shortUuid) {
+            return null;
+        }
+
         if (shortUuid.length <= 8) {
             return '***';
         }

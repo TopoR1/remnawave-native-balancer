@@ -591,6 +591,9 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                     nodes={nodes ?? []}
                                     onChange={onHostBalancingDraftChange}
                                     onValidationChange={onHostBalancingValidationChange}
+                                    requiredInboundUuid={
+                                        form.getValues().inbound?.configProfileInboundUuid
+                                    }
                                 />
                             </Stack>
                         )}
