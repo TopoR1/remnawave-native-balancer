@@ -26,7 +26,7 @@ Native Host Balancer встроен в backend Remnawave.
 5. Sticky assignment сохраняется как `userUuid + hostUuid -> targetUuid`.
 6. Decision audit записывает, почему target выбран или исключен.
 
-Отличие от `remnawave-subscription-page-with-balancer`: старый balancer-page был внешней точкой подписки. Native Balancer работает внутри Remnawave backend, поэтому обычная subscription-page может оставаться обычной.
+Native Balancer работает внутри Remnawave backend, поэтому штатная subscription-page может оставаться обычной.
 
 ## 1. План безопасного теста
 
@@ -34,18 +34,17 @@ Native Host Balancer встроен в backend Remnawave.
 
 1. Сделать backup файлов `/opt/remnawave`.
 2. Сделать backup PostgreSQL.
-3. Остановить старый `remnawave-subscription-page-with-balancer`.
-4. Вернуть обычную subscription-page.
-5. Собрать новый image из root `Dockerfile`.
-6. Запустить новый image с `HOST_BALANCER_ENABLED=false`.
-7. Проверить, что UI и обычные подписки работают как раньше.
-8. Включить `HOST_BALANCER_ENABLED=true`.
-9. Включить global UI setting.
-10. Включить Balancing только на тестовом Host.
-11. Проверить preview.
-12. Сделать реальный запрос подписки.
-13. Проверить assignments и decision audit.
-14. При проблемах откатиться одним из мягких способов.
+3. Проверить, что subscription-page и route подписок работают по штатной схеме.
+4. Собрать новый image из root `Dockerfile`.
+5. Запустить новый image с `HOST_BALANCER_ENABLED=false`.
+6. Проверить, что UI и обычные подписки работают как раньше.
+7. Включить `HOST_BALANCER_ENABLED=true`.
+8. Включить global UI setting.
+9. Включить Balancing только на тестовом Host.
+10. Проверить preview.
+11. Сделать реальный запрос подписки.
+12. Проверить assignments и decision audit.
+13. При проблемах откатиться одним из мягких способов.
 
 ## 2. Backup перед установкой
 
@@ -92,7 +91,7 @@ PGPASSWORD='<password>' pg_dump \
 ls -lh remnawave-before-native-balancer.dump
 ```
 
-## 3. Убрать старый внешний balancer-page
+## 3. Проверить subscription-page и route подписок
 
 Посмотрите сервисы:
 
@@ -101,16 +100,9 @@ cd /opt/remnawave
 docker compose config --services
 ```
 
-Если есть `remnawave-subscription-page-with-balancer`, остановите:
+Убедитесь, что подписки обслуживаются штатной subscription-page или backend Remnawave согласно вашей схеме.
 
-```bash
-docker compose stop remnawave-subscription-page-with-balancer
-docker compose rm -f remnawave-subscription-page-with-balancer
-```
-
-Если сервис называется иначе, остановите соответствующий старый balancer-page.
-
-Верните обычную subscription-page и route к ней. Если Caddy/Nginx был направлен на внешний balancer-page, верните route на обычную subscription-page или штатный backend Remnawave согласно вашей схеме.
+Если Caddy/Nginx route для подписок менялся вручную, проверьте его перед включением Balancer.
 
 Проверка:
 

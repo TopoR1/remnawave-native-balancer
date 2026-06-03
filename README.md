@@ -37,11 +37,9 @@ userUuid + hostUuid -> targetUuid
 
 Это означает, что один и тот же пользователь для одного и того же Host может стабильно получать одну target-ноду, пока assignment валиден и включен sticky mode.
 
-## Отличие от remnawave-subscription-page-with-balancer
+## Особенности native Host Balancer
 
-`remnawave-subscription-page-with-balancer` работает как внешняя subscription page и балансирует уже снаружи Remnawave.
-
-Native Host Balancer работает иначе:
+Native Host Balancer работает внутри Remnawave backend:
 
 - не требует отдельной subscription page для балансировки;
 - не переписывает готовый текст подписки после генерации;
@@ -50,7 +48,7 @@ Native Host Balancer работает иначе:
 - показывает preview и decision audit прямо в UI Host;
 - может использовать ту же subscription page, что и обычный Remnawave.
 
-Практический вывод: внешний balancer-page нужно остановить и вернуть обычную subscription-page. Балансировку теперь выполняет backend Remnawave.
+Практический вывод: балансировка выполняется backend Remnawave, а subscription-page остается обычной точкой выдачи подписки.
 
 ## Как это работает
 
@@ -177,27 +175,9 @@ PGPASSWORD='<password>' pg_dump \
   -f remnawave-before-native-balancer.dump
 ```
 
-### 3. Остановить старый remnawave-subscription-page-with-balancer
+### 3. Проверить subscription-page
 
-Если у вас был внешний balancer-page, остановите его:
-
-```bash
-cd /opt/remnawave
-docker compose stop remnawave-subscription-page-with-balancer
-docker compose rm -f remnawave-subscription-page-with-balancer
-```
-
-Если сервис называется иначе:
-
-```bash
-docker compose config --services
-```
-
-Найдите сервис старой subscription page с balancer и остановите его.
-
-### 4. Вернуть обычную subscription-page
-
-В compose должна остаться обычная subscription-page Remnawave, без внешнего balancer.
+В compose должна быть штатная subscription-page Remnawave.
 
 Проверьте:
 
@@ -205,15 +185,36 @@ docker compose config --services
 docker compose config | grep -i subscription
 ```
 
-Если вы ранее меняли Caddy/Nginx route на внешний balancer-page, верните route на обычную subscription-page или backend Remnawave согласно вашей схеме.
+Если вы ранее меняли Caddy/Nginx route для подписок, проверьте, что маршрут ведет на штатную subscription-page или backend Remnawave согласно вашей схеме.
 
-### 5. Собрать image из root Dockerfile
+### 4. Собрать image из root Dockerfile
 
 ```bash
 cd /opt
 git clone https://github.com/TopoR1/remnawave-native-balancer.git
 cd /opt/remnawave-native-balancer
 docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
+```
+
+### 5. Обновление через git pull
+
+Если репозиторий уже был склонирован ранее, обновите его перед сборкой:
+
+```bash
+cd /opt/remnawave-native-balancer
+git status
+git pull --ff-only
+docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
+```
+
+Если `git status` показывает локальные изменения, сначала сохраните их в отдельный commit или stash. Для серверной установки обычно ожидается чистое состояние рабочей копии.
+
+После сборки перезапустите compose с тем же тегом image:
+
+```bash
+cd /opt/remnawave
+docker compose up -d
+docker compose logs --tail=100 remnawave
 ```
 
 ### 6. Подключить image
