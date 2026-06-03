@@ -81,6 +81,28 @@ const TargetInputSchema = z.object({
     overridePath: z.string().nullable().optional()
 })
 
+const HostBalancerTargetValidationSeveritySchema = z.enum(['ok', 'warning', 'error'])
+const HostBalancerNodeStatusSchema = z.enum([
+    'connected',
+    'connecting',
+    'disabled',
+    'disconnected',
+    'unknown'
+])
+const HostBalancerTargetValidationSchema = z.object({
+    nodeUuid: z.string().uuid().nullable(),
+    valid: z.boolean(),
+    severity: HostBalancerTargetValidationSeveritySchema,
+    reasons: z.array(z.string()),
+    nodeName: z.string().nullable(),
+    nodeAddress: z.string().nullable(),
+    nodeStatus: HostBalancerNodeStatusSchema,
+    hasRequiredInbound: z.boolean().nullable()
+})
+const HostBalancerTargetsValidationSchema = z.object({
+    targets: z.array(HostBalancerTargetValidationSchema)
+})
+
 const DiagnosticsTargetSchema = z.object({
     targetUuid: z.string().uuid(),
     nodeUuid: z.string().uuid().nullable().optional(),
@@ -106,6 +128,16 @@ export const HostBalancerPreviewSchema = z.object({
         reasons: z.array(z.string()),
         warnings: z.array(z.string()),
         wouldCreateAssignment: z.literal(false),
+        resolvedUserUuid: z.string().uuid(),
+        shortUuidMasked: z.string().nullable().optional(),
+        existingAssignment: z
+            .object({
+                targetUuid: z.string().uuid(),
+                reason: z.string().nullable(),
+                lastUsedAt: z.coerce.date()
+            })
+            .nullable(),
+        assignmentAction: z.enum(['preview_only', 'reused', 'would_create', 'would_reassign']),
         candidates: z.array(DiagnosticsTargetSchema).optional(),
         excludedTargets: z.array(DiagnosticsTargetSchema).optional(),
         selectedTarget: DiagnosticsTargetSchema.nullable().optional(),
@@ -123,6 +155,34 @@ export const HostBalancerPreviewSchema = z.object({
     })
 })
 
+const HostBalancerDecisionFinalOverridesSchema = z
+    .object({
+        address: z.string(),
+        port: z.number().int(),
+        sni: z.string().nullable(),
+        host: z.string().nullable(),
+        path: z.string().nullable()
+    })
+    .nullable()
+
+export const HostBalancerDecisionSchema = z.object({
+    uuid: z.string().uuid(),
+    hostUuid: z.string().uuid(),
+    userUuid: z.string().uuid(),
+    targetUuid: z.string().uuid().nullable(),
+    strategy: HostBalancerStrategySchema,
+    reason: z.string(),
+    unavailablePolicy: HostBalancerUnavailablePolicySchema,
+    assignmentAction: z.enum(['reused', 'created', 'reassigned', 'skipped']),
+    candidates: z.array(DiagnosticsTargetSchema),
+    excludedTargets: z.array(DiagnosticsTargetSchema),
+    selectedTarget: DiagnosticsTargetSchema.nullable(),
+    warnings: z.array(z.string()),
+    finalHostOverrides: HostBalancerDecisionFinalOverridesSchema,
+    diagnostics: z.record(z.unknown()),
+    createdAt: DateTimeSchema
+})
+
 const HostUuidSchema = z.object({ hostUuid: z.string().uuid() })
 
 export const hostBalancersQueryKeys = createQueryKeys('hostBalancers', {
@@ -131,16 +191,22 @@ export const hostBalancersQueryKeys = createQueryKeys('hostBalancers', {
     }),
     preview: (hostUuid: string, userUuid?: string) => ({
         queryKey: [hostUuid, userUuid]
+    }),
+    decisions: (hostUuid: string, limit: number) => ({
+        queryKey: [hostUuid, 'decisions', limit]
     })
 })
 
 export type HostBalancer = z.infer<typeof HostBalancerSchema>
 export type HostBalancerPreview = z.infer<typeof HostBalancerPreviewSchema>
+export type HostBalancerDecision = z.infer<typeof HostBalancerDecisionSchema>
 export type HostBalancerStrategy = z.infer<typeof HostBalancerStrategySchema>
 export type HostBalancerTrafficMetric = z.infer<typeof HostBalancerTrafficMetricSchema>
 export type HostBalancerUnavailablePolicy = z.infer<typeof HostBalancerUnavailablePolicySchema>
 export type HostBalancerTargetStatus = z.infer<typeof HostBalancerTargetStatusSchema>
 export type HostBalancerTargetInput = z.infer<typeof TargetInputSchema>
+export type HostBalancerTargetValidation = z.infer<typeof HostBalancerTargetValidationSchema>
+export type HostBalancerTargetsValidation = z.infer<typeof HostBalancerTargetsValidationSchema>
 
 export const useGetHostBalancer = createGetQueryHook({
     endpoint: '/api/host-balancers/:hostUuid',
@@ -166,6 +232,20 @@ export const usePreviewHostBalancer = createGetQueryHook({
     },
     errorHandler: (error) =>
         errorHandler(error, i18n.t('base-host-form.error-preview-host-balancer'))
+})
+
+export const useGetHostBalancerDecisions = createGetQueryHook({
+    endpoint: '/api/host-balancers/:hostUuid/decisions',
+    routeParamsSchema: HostUuidSchema,
+    requestQuerySchema: z.object({ limit: z.number().int().min(1).max(500).default(50) }),
+    responseSchema: z.object({ response: z.array(HostBalancerDecisionSchema) }),
+    getQueryKey: ({ route, query }) =>
+        hostBalancersQueryKeys.decisions(route!.hostUuid, query?.limit ?? 50).queryKey,
+    rQueryParams: {
+        enabled: false
+    },
+    errorHandler: (error) =>
+        errorHandler(error, i18n.t('base-host-form.error-get-host-balancer-decisions'))
 })
 
 export const useUpdateHostBalancer = createMutationHook({
@@ -205,6 +285,26 @@ export const useUpdateHostBalancerTargets = createMutationHook({
         onError: (error) => {
             notifications.show({
                 title: i18n.t('base-host-form.error-update-host-balancer-targets'),
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : i18n.t('base-host-form.request-failed-with-unknown-error'),
+                color: 'red'
+            })
+        }
+    }
+})
+
+export const useValidateHostBalancerTargets = createMutationHook({
+    endpoint: '/api/host-balancers/:hostUuid/targets/validate',
+    routeParamsSchema: HostUuidSchema,
+    bodySchema: z.object({ targets: z.array(TargetInputSchema) }),
+    responseSchema: z.object({ response: HostBalancerTargetsValidationSchema }),
+    requestMethod: 'post',
+    rMutationParams: {
+        onError: (error) => {
+            notifications.show({
+                title: i18n.t('base-host-form.error-validate-host-balancer-targets'),
                 message:
                     error instanceof Error
                         ? error.message

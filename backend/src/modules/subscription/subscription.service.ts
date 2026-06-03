@@ -18,6 +18,7 @@ import { THwidSettings } from '@libs/contracts/models';
 import { UserHwidDeviceEvent } from '@integration-modules/notifications/interfaces';
 
 import { GetCachedSubscriptionSettingsQuery } from '@modules/subscription-settings/queries/get-cached-subscrtipion-settings';
+import { GetCachedRemnawaveSettingsQuery } from '@modules/remnawave-settings/queries/get-cached-remnawave-settings';
 import { ResponseRulesMatcherService } from '@modules/subscription-response-rules/services/response-rules-matcher.service';
 import { GetCachedExternalSquadSettingsQuery } from '@modules/external-squads/queries/get-cached-external-squad-settings';
 import { ResolveProxyConfigService } from '@modules/subscription-template/resolve-proxy/resolve-proxy-config.service';
@@ -248,10 +249,7 @@ export class SubscriptionService {
                 hosts.response = _.shuffle(hosts.response);
             }
 
-            hosts.response = await this.applyHostBalancersIfEnabled(
-                user.response,
-                hosts.response,
-            );
+            hosts.response = await this.applyHostBalancersIfEnabled(user.response, hosts.response);
 
             await this.updateAndReportSubscriptionRequest(
                 user.response.uuid,
@@ -373,10 +371,7 @@ export class SubscriptionService {
                 hosts.response = _.shuffle(hosts.response);
             }
 
-            hosts.response = await this.applyHostBalancersIfEnabled(
-                user,
-                hosts.response,
-            );
+            hosts.response = await this.applyHostBalancersIfEnabled(user, hosts.response);
 
             await this.updateAndReportSubscriptionRequest(user.uuid, userAgent, requestIp);
 
@@ -906,7 +901,17 @@ export class SubscriptionService {
         user: UserEntity,
         hosts: HostWithRawInbound[],
     ): Promise<HostWithRawInbound[]> {
-        if (this.configService.get<string>('HOST_BALANCER_ENABLED', 'false') !== 'true') {
+        if (this.configService.get<string>('HOST_BALANCER_ENABLED', 'true') !== 'true') {
+            return hosts;
+        }
+
+        try {
+            const settings = await this.queryBus.execute(new GetCachedRemnawaveSettingsQuery());
+            if (!settings?.hostBalancerGlobalEnabled) {
+                return hosts;
+            }
+        } catch (error) {
+            this.logger.error(`Error getting Host Balancer global settings: ${error}`);
             return hosts;
         }
 

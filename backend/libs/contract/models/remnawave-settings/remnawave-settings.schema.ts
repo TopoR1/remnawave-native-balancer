@@ -10,6 +10,8 @@ export const RemnawaveSettingsSchema = z.object({
     oauth2Settings: z.nullable(Oauth2SettingsSchema),
     passwordSettings: z.nullable(PasswordAuthSettingsSchema),
     brandingSettings: z.nullable(BrandingSettingsSchema),
+    hostBalancerGlobalEnabled: z.boolean(),
+    hostBalancerEnvEnabled: z.boolean(),
 });
 
 export type TRemnawaveSettings = z.infer<typeof RemnawaveSettingsSchema>;

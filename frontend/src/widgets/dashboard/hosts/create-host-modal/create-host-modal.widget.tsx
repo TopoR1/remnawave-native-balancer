@@ -20,9 +20,9 @@ import {
 import { MODALS, useModalClose, useModalState } from '@entities/dashboard/modal-store'
 import {
     DEFAULT_HOST_BALANCING_DRAFT,
-    HostBalancingDraft,
-    sanitizeHostBalancingDraft
+    HostBalancingDraft
 } from '@shared/ui/forms/hosts/base-host-form/host-balancing-form'
+import { saveHostBalancingDraft } from '@shared/ui/forms/hosts/base-host-form/host-balancing-save-flow'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { BaseHostForm } from '@shared/ui/forms/hosts/base-host-form'
 import { queryClient } from '@shared/api'
@@ -87,23 +87,29 @@ export const CreateHostModalWidget = () => {
     })
     const { mutateAsync: updateHostBalancer, isPending: isUpdateHostBalancerPending } =
         useUpdateHostBalancer()
-    const { mutateAsync: updateHostBalancerTargets, isPending: isUpdateHostBalancerTargetsPending } =
-        useUpdateHostBalancerTargets()
+    const {
+        mutateAsync: updateHostBalancerTargets,
+        isPending: isUpdateHostBalancerTargetsPending
+    } = useUpdateHostBalancerTargets()
 
     const saveHostBalancing = async (hostUuid: string) => {
-        if (!hostBalancingDraft.touched) {
-            return
-        }
-
-        const { settings, targets } = sanitizeHostBalancingDraft(hostBalancingDraft)
-
-        await updateHostBalancer({
-            route: { hostUuid },
-            variables: settings
-        })
-        await updateHostBalancerTargets({
-            route: { hostUuid },
-            variables: { targets }
+        await saveHostBalancingDraft({
+            draft: hostBalancingDraft,
+            hostUuid,
+            notifySuccess: () => {
+                notifications.show({
+                    title: t('common.success'),
+                    message: t('base-host-form.balancer-settings-saved'),
+                    color: 'teal'
+                })
+            },
+            refetchSettings: async (refetchHostUuid) =>
+                queryClient.refetchQueries({
+                    queryKey: QueryKeys.hostBalancers.getSettings(refetchHostUuid).queryKey
+                }),
+            setDraft: setHostBalancingDraft,
+            updateSettings: updateHostBalancer,
+            updateTargets: updateHostBalancerTargets
         })
     }
 

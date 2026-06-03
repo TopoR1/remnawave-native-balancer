@@ -1,16 +1,18 @@
-import { FindAllApiTokensCommand, GetRemnawaveSettingsCommand } from '@remnawave/backend-contract'
+import { FindAllApiTokensCommand } from '@remnawave/backend-contract'
 import { useTranslation } from 'react-i18next'
 import Masonry from 'react-layout-masonry'
 import { Container } from '@mantine/core'
 
 import { AuthentificationSettingsCardWidget } from '@widgets/remnawave-settings/authentification-settings-card/authentification-settings-card.widget'
 import { BrandingSettingsCardWidget } from '@widgets/remnawave-settings/branding-settings-card/branding-settings-card.widget'
+import { HostBalancerSettingsCardWidget } from '@widgets/remnawave-settings/host-balancer-settings-card/host-balancer-settings-card.widget'
 import { ApiTokensCardWidget } from '@widgets/remnawave-settings/api-tokens-card/api-tokens-card.widget'
+import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
 import { LoadingScreen, Logo, Page, PageHeaderShared } from '@shared/ui'
 
 interface IProps {
     apiTokensData: FindAllApiTokensCommand.Response['response']
-    remnawaveSettings: GetRemnawaveSettingsCommand.Response['response']
+    remnawaveSettings: RemnawaveSettings
 }
 
 export const RemnawaveSettingsPageComponent = (props: IProps) => {
@@ -43,6 +45,10 @@ export const RemnawaveSettingsPageComponent = (props: IProps) => {
                     />
 
                     <ApiTokensCardWidget apiTokensData={apiTokensData} />
+                    <HostBalancerSettingsCardWidget
+                        hostBalancerEnvEnabled={remnawaveSettings.hostBalancerEnvEnabled}
+                        hostBalancerGlobalEnabled={remnawaveSettings.hostBalancerGlobalEnabled}
+                    />
                     <BrandingSettingsCardWidget
                         brandingSettings={remnawaveSettings.brandingSettings}
                     />

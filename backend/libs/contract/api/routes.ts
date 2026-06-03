@@ -209,6 +209,10 @@ export const REST_API = {
             `${ROOT}/${CONTROLLERS.HOST_BALANCERS_CONTROLLER}/${CONTROLLERS.HOST_BALANCERS_ROUTES.TARGETS(
                 hostUuid,
             )}`,
+        VALIDATE_TARGETS: (hostUuid: string) =>
+            `${ROOT}/${CONTROLLERS.HOST_BALANCERS_CONTROLLER}/${CONTROLLERS.HOST_BALANCERS_ROUTES.VALIDATE_TARGETS(
+                hostUuid,
+            )}`,
         PREVIEW: (hostUuid: string) =>
             `${ROOT}/${CONTROLLERS.HOST_BALANCERS_CONTROLLER}/${CONTROLLERS.HOST_BALANCERS_ROUTES.PREVIEW(
                 hostUuid,

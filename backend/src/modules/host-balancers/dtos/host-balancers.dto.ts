@@ -8,11 +8,10 @@ import {
     ToggleHostBalancerCommand,
     UpdateHostBalancerCommand,
     UpdateHostBalancerTargetsCommand,
+    ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
 
-export class GetHostBalancerRequestDto extends createZodDto(
-    GetHostBalancerCommand.RequestSchema,
-) {}
+export class GetHostBalancerRequestDto extends createZodDto(GetHostBalancerCommand.RequestSchema) {}
 export class GetHostBalancerResponseDto extends createZodDto(
     GetHostBalancerCommand.ResponseSchema,
 ) {}
@@ -45,6 +44,16 @@ export class UpdateHostBalancerTargetsRequestBodyDto extends createZodDto(
 ) {}
 export class UpdateHostBalancerTargetsResponseDto extends createZodDto(
     UpdateHostBalancerTargetsCommand.ResponseSchema,
+) {}
+
+export class ValidateHostBalancerTargetsRequestDto extends createZodDto(
+    ValidateHostBalancerTargetsCommand.RequestSchema,
+) {}
+export class ValidateHostBalancerTargetsRequestBodyDto extends createZodDto(
+    ValidateHostBalancerTargetsCommand.RequestBodySchema,
+) {}
+export class ValidateHostBalancerTargetsResponseDto extends createZodDto(
+    ValidateHostBalancerTargetsCommand.ResponseSchema,
 ) {}
 
 export class PreviewHostBalancerRequestDto extends createZodDto(

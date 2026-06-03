@@ -15,7 +15,8 @@ export class RemnawaveSettingsRepository {
             data: {
                 id: entity.id,
                 passkeySettings: entity.passkeySettings,
-            },
+                hostBalancerGlobalEnabled: entity.hostBalancerGlobalEnabled,
+            } as never,
         });
 
         return new RemnawaveSettingsEntity(result);
@@ -44,7 +45,7 @@ export class RemnawaveSettingsRepository {
             where: {
                 id,
             },
-            data,
+            data: data as never,
         });
 
         return new RemnawaveSettingsEntity(result);

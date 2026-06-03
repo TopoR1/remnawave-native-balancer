@@ -40,6 +40,7 @@ model RemnawaveSettings {
   passwordSettings Json? @map("password_settings")
   /// [BrandingSettings]
   brandingSettings Json? @map("branding_settings")
+  hostBalancerGlobalEnabled Boolean @default(true) @map("host_balancer_global_enabled")
 
   @@map("remnawave_settings")
 }

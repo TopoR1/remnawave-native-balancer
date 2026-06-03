@@ -5,6 +5,7 @@ export const HOST_BALANCERS_ROUTES = {
     UPDATE: (hostUuid: string) => `${hostUuid}`,
     TOGGLE: (hostUuid: string) => `${hostUuid}/toggle`,
     TARGETS: (hostUuid: string) => `${hostUuid}/targets`,
+    VALIDATE_TARGETS: (hostUuid: string) => `${hostUuid}/targets/validate`,
     PREVIEW: (hostUuid: string) => `${hostUuid}/preview`,
     STATS: (hostUuid: string) => `${hostUuid}/stats`,
     DECISIONS: (hostUuid: string) => `${hostUuid}/decisions`,

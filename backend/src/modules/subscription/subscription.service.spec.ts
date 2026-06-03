@@ -5,6 +5,7 @@ import { beforeEach, describe, it } from 'node:test';
 import { ok } from '@common/types';
 
 import { GetCachedSubscriptionSettingsQuery } from '@modules/subscription-settings/queries/get-cached-subscrtipion-settings';
+import { GetCachedRemnawaveSettingsQuery } from '@modules/remnawave-settings/queries/get-cached-remnawave-settings';
 import { GetUserByUniqueFieldQuery } from '@modules/users/queries/get-user-by-unique-field';
 import { HostBalancerService } from '@modules/host-balancers';
 import { GetHostsForUserQuery } from '@modules/hosts/queries/get-hosts-for-user';
@@ -308,6 +309,7 @@ function createRenderTemplatesService(overrides = {}) {
 
 function createService({
     enabled = true,
+    hostBalancerGlobalEnabled = true,
     user = createUser(),
     hosts = [createHost()],
     settings = createSettings(),
@@ -337,6 +339,10 @@ function createService({
                 return settings;
             }
 
+            if (query instanceof GetCachedRemnawaveSettingsQuery) {
+                return { hostBalancerGlobalEnabled };
+            }
+
             return null;
         },
     };
@@ -363,7 +369,7 @@ function createService({
 }
 
 describe('SubscriptionService host balancer kill-switch', () => {
-    it('global disabled does not apply balancer service', async () => {
+    it('env false does not apply balancer service', async () => {
         let calls = 0;
         const service = createService({
             enabled: false,
@@ -382,28 +388,48 @@ describe('SubscriptionService host balancer kill-switch', () => {
         assert.doesNotMatch(String(response.body), /balanced\.example\.com/);
     });
 
-    it('global enabled with host balancer disabled keeps original host', async () => {
+    it('env true with global DB disabled does not apply balancer service', async () => {
         let calls = 0;
         const service = createService({
             enabled: true,
+            hostBalancerGlobalEnabled: false,
             hostBalancerService: {
                 applyToHostsForUser: async (_user, hosts) => {
                     calls += 1;
-                    return hosts;
+                    return [createHost({ address: 'balanced.example.com' }), ...hosts.slice(1)];
                 },
             },
         });
 
         const response = await service.getSubscriptionByShortUuid(createSrrContext(), 'short-user');
 
-        assert.equal(calls, 1);
+        assert.equal(calls, 0);
         assert.match(String(response.body), /origin\.example\.com:443/);
+        assert.doesNotMatch(String(response.body), /balanced\.example\.com/);
+    });
+
+    it('env true with global DB enabled and host balancer disabled keeps original host', async () => {
+        const service = createService({
+            enabled: true,
+            hostBalancerGlobalEnabled: true,
+            hostBalancerService: createRealHostBalancer({
+                findManyByHostUuids: async () => [
+                    createBalancer({ enabled: false, targets: [createTarget()] }),
+                ],
+            }),
+        });
+
+        const response = await service.getSubscriptionByShortUuid(createSrrContext(), 'short-user');
+
+        assert.match(String(response.body), /origin\.example\.com:443/);
+        assert.doesNotMatch(String(response.body), /target\.example\.com/);
         assert.match(String(response.body), /Original%20Remark/);
     });
 
-    it('global enabled with host balancer enabled applies balancer result', async () => {
+    it('env true with global DB enabled and host balancer enabled applies balancer result', async () => {
         const service = createService({
             enabled: true,
+            hostBalancerGlobalEnabled: true,
             hostBalancerService: {
                 applyToHostsForUser: async () => [
                     createHost({
@@ -428,20 +454,19 @@ describe('SubscriptionService host balancer subscription integration', () => {
     it('host balancer enabled rewrites address, port, sni, host, and path inside subscription output', async () => {
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            targets: [
-                                createTarget({
-                                    overrideAddress: 'edge.example.com',
-                                    overridePort: 8443,
-                                    overrideSni: 'edge-sni.example.com',
-                                    overrideHost: 'edge-host.example.com',
-                                    overridePath: '/edge',
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        targets: [
+                            createTarget({
+                                overrideAddress: 'edge.example.com',
+                                overridePort: 8443,
+                                overrideSni: 'edge-sni.example.com',
+                                overrideHost: 'edge-host.example.com',
+                                overridePath: '/edge',
+                            }),
+                        ],
+                    }),
+                ],
             }),
         });
 
@@ -458,16 +483,15 @@ describe('SubscriptionService host balancer subscription integration', () => {
     it('keeps original Host remark while using selected target address in VLESS link', async () => {
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            targets: [
-                                createTarget({
-                                    overrideAddress: 'target-address.example.com',
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        targets: [
+                            createTarget({
+                                overrideAddress: 'target-address.example.com',
+                            }),
+                        ],
+                    }),
+                ],
             }),
         });
 
@@ -482,13 +506,12 @@ describe('SubscriptionService host balancer subscription integration', () => {
     it('no candidates with HIDE_HOST removes host from output', async () => {
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            unavailablePolicy: 'HIDE_HOST',
-                            targets: [createTarget({ enabled: false })],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        unavailablePolicy: 'HIDE_HOST',
+                        targets: [createTarget({ enabled: false })],
+                    }),
+                ],
             }),
         });
 
@@ -500,13 +523,12 @@ describe('SubscriptionService host balancer subscription integration', () => {
     it('no candidates with ORIGINAL_HOST keeps original host in output', async () => {
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            unavailablePolicy: 'ORIGINAL_HOST',
-                            targets: [createTarget({ status: 'DEAD' })],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        unavailablePolicy: 'ORIGINAL_HOST',
+                        targets: [createTarget({ status: 'DEAD' })],
+                    }),
+                ],
             }),
         });
 
@@ -521,20 +543,19 @@ describe('SubscriptionService host balancer subscription integration', () => {
         let touched = 0;
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            targets: [
-                                createTarget({
-                                    overrideAddress: 'sticky.example.com',
-                                }),
-                                createTarget({
-                                    uuid: TARGET_UUID_2,
-                                    overrideAddress: 'other.example.com',
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        targets: [
+                            createTarget({
+                                overrideAddress: 'sticky.example.com',
+                            }),
+                            createTarget({
+                                uuid: TARGET_UUID_2,
+                                overrideAddress: 'other.example.com',
+                            }),
+                        ],
+                    }),
+                ],
                 findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
                 touchAssignment: async () => {
                     touched += 1;
@@ -552,21 +573,20 @@ describe('SubscriptionService host balancer subscription integration', () => {
         let upsertedTargetUuid = '';
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            targets: [
-                                createTarget({
-                                    status: 'DEAD',
-                                    overrideAddress: 'dead.example.com',
-                                }),
-                                createTarget({
-                                    uuid: TARGET_UUID_2,
-                                    overrideAddress: 'active.example.com',
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        targets: [
+                            createTarget({
+                                status: 'DEAD',
+                                overrideAddress: 'dead.example.com',
+                            }),
+                            createTarget({
+                                uuid: TARGET_UUID_2,
+                                overrideAddress: 'active.example.com',
+                            }),
+                        ],
+                    }),
+                ],
                 findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
                 upsertAssignment: async (dto) => {
                     upsertedTargetUuid = dto.targetUuid;
@@ -585,24 +605,23 @@ describe('SubscriptionService host balancer subscription integration', () => {
     it('traffic strategy selects lower-traffic node inside subscription flow', async () => {
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            strategy: 'LEAST_TRAFFIC',
-                            trafficMetric: 'LAST_1H',
-                            targets: [
-                                createTarget({
-                                    overrideAddress: 'busy.example.com',
-                                    nodeUuid: NODE_UUID,
-                                }),
-                                createTarget({
-                                    uuid: TARGET_UUID_2,
-                                    overrideAddress: 'quiet.example.com',
-                                    nodeUuid: NODE_UUID_2,
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        strategy: 'LEAST_TRAFFIC',
+                        trafficMetric: 'LAST_1H',
+                        targets: [
+                            createTarget({
+                                overrideAddress: 'busy.example.com',
+                                nodeUuid: NODE_UUID,
+                            }),
+                            createTarget({
+                                uuid: TARGET_UUID_2,
+                                overrideAddress: 'quiet.example.com',
+                                nodeUuid: NODE_UUID_2,
+                            }),
+                        ],
+                    }),
+                ],
                 getNodeTrafficByMetric: async () =>
                     new Map([
                         [NODE_UUID, 10_000n],
@@ -620,17 +639,16 @@ describe('SubscriptionService host balancer subscription integration', () => {
     it('raw subscription flow receives hosts after balancer application', async () => {
         const service = createService({
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            targets: [
-                                createTarget({
-                                    overrideAddress: 'raw-target.example.com',
-                                    overridePort: 9443,
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        targets: [
+                            createTarget({
+                                overrideAddress: 'raw-target.example.com',
+                                overridePort: 9443,
+                            }),
+                        ],
+                    }),
+                ],
             }),
         });
 
@@ -669,17 +687,16 @@ describe('SubscriptionService host balancer subscription integration', () => {
         const service = createService({
             renderTemplatesService,
             hostBalancerService: createRealHostBalancer({
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            targets: [
-                                createTarget({
-                                    overrideAddress: 'generator-target.example.com',
-                                    overridePort: 7443,
-                                }),
-                            ],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        targets: [
+                            createTarget({
+                                overrideAddress: 'generator-target.example.com',
+                                overridePort: 7443,
+                            }),
+                        ],
+                    }),
+                ],
             }),
         });
 

@@ -75,7 +75,7 @@ import { XrayLogo } from '@shared/ui/logos/xray-logo'
 import { SectionCard } from '@shared/ui/section-card'
 
 import { FinalMaskDrawer } from './final-mask.drawer'
-import { HostBalancingForm } from './host-balancing-form'
+import { HostBalancingForm, shouldEnableHostSave } from './host-balancing-form'
 import classes from './HostTabs.module.css'
 import { IProps } from './interfaces'
 
@@ -119,6 +119,7 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
         hostUuid,
         hostBalancingDraft,
         onHostBalancingDraftChange,
+        onHostBalancingValidationChange,
         internalSquads,
         subscriptionTemplates
     } = props
@@ -177,6 +178,10 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
     useEffect(() => {
         handleFormErrors(form, form.errors)
     }, [form.errors])
+
+    const hostFormChanged = form.isDirty() && form.isTouched()
+    const canSave =
+        form.isValid() && shouldEnableHostSave(hostFormChanged, hostBalancingDraft.touched)
 
     const patternHoverCard = (showSingle = true, showMulti = true, showWildcard = true) => {
         return (
@@ -377,205 +382,215 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                     </SectionCard.Section>
                                     <SectionCard.Section>
                                         <Stack gap="md">
-                                        <TextInput
-                                            key={form.key('remark')}
-                                            label={t('base-host-form.remark')}
-                                            {...form.getInputProps('remark')}
-                                            leftSection={<TemplateInfoPopoverShared />}
-                                            required
-                                        />
-
-                                        <Stack gap="xs">
-                                            <HostSelectInboundFeature
-                                                activeConfigProfileInbound={
-                                                    form.getValues().inbound
-                                                        ?.configProfileInboundUuid ?? undefined
-                                                }
-                                                activeConfigProfileUuid={
-                                                    form.getValues().inbound?.configProfileUuid ??
-                                                    undefined
-                                                }
-                                                configProfiles={configProfiles}
-                                                onSaveInbound={saveInbound}
-                                            />
-                                        </Stack>
-
-                                        <Group
-                                            gap="xs"
-                                            grow
-                                            justify="space-between"
-                                            preventGrowOverflow={false}
-                                            w="100%"
-                                        >
                                             <TextInput
-                                                key={form.key('address')}
-                                                label={t('base-host-form.address')}
-                                                leftSection={
-                                                    <PopoverWithInfoShared
-                                                        text={
-                                                            <>
-                                                                {t(
-                                                                    'base-host-form.address-description-line-1'
-                                                                )}
-                                                                <br />
-                                                                {t(
-                                                                    'base-host-form.address-description-line-2'
-                                                                )}
-                                                            </>
-                                                        }
-                                                    />
-                                                }
-                                                {...form.getInputProps('address')}
-                                                placeholder={t('base-host-form.e-g-example-com')}
+                                                key={form.key('remark')}
+                                                label={t('base-host-form.remark')}
+                                                {...form.getInputProps('remark')}
+                                                leftSection={<TemplateInfoPopoverShared />}
                                                 required
-                                                rightSection={patternHoverCard(true, true, true)}
-                                                w="65%"
                                             />
 
-                                            <NumberInput
-                                                key={form.key('port')}
-                                                label={t('base-host-form.port')}
-                                                {...form.getInputProps('port')}
-                                                allowDecimal={false}
-                                                allowNegative={false}
-                                                clampBehavior="strict"
-                                                decimalScale={0}
-                                                hideControls
-                                                leftSection={
-                                                    <PopoverWithInfoShared
-                                                        text={
-                                                            <>
-                                                                {t(
-                                                                    'base-host-form.port-description-line-1'
-                                                                )}
-                                                                <br />
-                                                                <br />
-                                                                {t(
-                                                                    'base-host-form.port-description-line-2'
-                                                                )}
-                                                            </>
-                                                        }
-                                                    />
-                                                }
-                                                max={65535}
-                                                min={1}
-                                                placeholder={t('base-host-form.e-g-443')}
-                                                required
-                                                w="30%"
+                                            <Stack gap="xs">
+                                                <HostSelectInboundFeature
+                                                    activeConfigProfileInbound={
+                                                        form.getValues().inbound
+                                                            ?.configProfileInboundUuid ?? undefined
+                                                    }
+                                                    activeConfigProfileUuid={
+                                                        form.getValues().inbound
+                                                            ?.configProfileUuid ?? undefined
+                                                    }
+                                                    configProfiles={configProfiles}
+                                                    onSaveInbound={saveInbound}
+                                                />
+                                            </Stack>
+
+                                            <Group
+                                                gap="xs"
+                                                grow
+                                                justify="space-between"
+                                                preventGrowOverflow={false}
+                                                w="100%"
+                                            >
+                                                <TextInput
+                                                    key={form.key('address')}
+                                                    label={t('base-host-form.address')}
+                                                    leftSection={
+                                                        <PopoverWithInfoShared
+                                                            text={
+                                                                <>
+                                                                    {t(
+                                                                        'base-host-form.address-description-line-1'
+                                                                    )}
+                                                                    <br />
+                                                                    {t(
+                                                                        'base-host-form.address-description-line-2'
+                                                                    )}
+                                                                </>
+                                                            }
+                                                        />
+                                                    }
+                                                    {...form.getInputProps('address')}
+                                                    placeholder={t(
+                                                        'base-host-form.e-g-example-com'
+                                                    )}
+                                                    required
+                                                    rightSection={patternHoverCard(
+                                                        true,
+                                                        true,
+                                                        true
+                                                    )}
+                                                    w="65%"
+                                                />
+
+                                                <NumberInput
+                                                    key={form.key('port')}
+                                                    label={t('base-host-form.port')}
+                                                    {...form.getInputProps('port')}
+                                                    allowDecimal={false}
+                                                    allowNegative={false}
+                                                    clampBehavior="strict"
+                                                    decimalScale={0}
+                                                    hideControls
+                                                    leftSection={
+                                                        <PopoverWithInfoShared
+                                                            text={
+                                                                <>
+                                                                    {t(
+                                                                        'base-host-form.port-description-line-1'
+                                                                    )}
+                                                                    <br />
+                                                                    <br />
+                                                                    {t(
+                                                                        'base-host-form.port-description-line-2'
+                                                                    )}
+                                                                </>
+                                                            }
+                                                        />
+                                                    }
+                                                    max={65535}
+                                                    min={1}
+                                                    placeholder={t('base-host-form.e-g-443')}
+                                                    required
+                                                    w="30%"
+                                                />
+                                            </Group>
+
+                                            <HostTagsInputWidget
+                                                key={form.key('tag')}
+                                                {...form.getInputProps('tag')}
+                                                value={form.getValues().tag}
                                             />
-                                        </Group>
 
-                                        <HostTagsInputWidget
-                                            key={form.key('tag')}
-                                            {...form.getInputProps('tag')}
-                                            value={form.getValues().tag}
-                                        />
+                                            <MultiSelect
+                                                clearButtonProps={{
+                                                    size: 'xs'
+                                                }}
+                                                data={nodes.map((node) => ({
+                                                    label: `${emojiFlag(node.countryCode)} ${node.name}${
+                                                        node.provider
+                                                            ? ` (${node.provider.name})`
+                                                            : ''
+                                                    }`,
+                                                    value: node.uuid
+                                                }))}
+                                                description={t(
+                                                    'base-host-form.pick-nodes-which-resolved-from-this-host-only-visual-assignment'
+                                                )}
+                                                inputWrapperOrder={[
+                                                    'label',
+                                                    'input',
+                                                    'description',
+                                                    'error'
+                                                ]}
+                                                key={form.key('nodes')}
+                                                label={t('base-host-form.nodes')}
+                                                leftSection={<TbServer2 size={16} />}
+                                                renderOption={(item) => {
+                                                    const node = nodes.find(
+                                                        (node) => node.uuid === item.option.value
+                                                    )
+                                                    if (!node) return null
+                                                    return (
+                                                        <>
+                                                            <Checkbox
+                                                                aria-hidden
+                                                                checked={item.checked}
+                                                                onChange={() => {}}
+                                                                style={{ pointerEvents: 'none' }}
+                                                                tabIndex={-1}
+                                                            />
+                                                            <Group
+                                                                gap={7}
+                                                                justify="space-between"
+                                                                w="100%"
+                                                            >
+                                                                <Group gap={7}>
+                                                                    {resolveCountryCode(
+                                                                        node.countryCode
+                                                                    )}
+                                                                    <span>{node.name}</span>
+                                                                </Group>
+                                                                {node.provider && (
+                                                                    <Badge color="gray" size="xs">
+                                                                        {node.provider.name}
+                                                                    </Badge>
+                                                                )}
+                                                            </Group>
+                                                        </>
+                                                    )
+                                                }}
+                                                searchable
+                                                {...form.getInputProps('nodes')}
+                                            />
 
-                                        <MultiSelect
-                                            clearButtonProps={{
-                                                size: 'xs'
-                                            }}
-                                            data={nodes.map((node) => ({
-                                                label: `${emojiFlag(node.countryCode)} ${node.name}${
-                                                    node.provider ? ` (${node.provider.name})` : ''
-                                                }`,
-                                                value: node.uuid
-                                            }))}
-                                            description={t(
-                                                'base-host-form.pick-nodes-which-resolved-from-this-host-only-visual-assignment'
-                                            )}
-                                            inputWrapperOrder={[
-                                                'label',
-                                                'input',
-                                                'description',
-                                                'error'
-                                            ]}
-                                            key={form.key('nodes')}
-                                            label={t('base-host-form.nodes')}
-                                            leftSection={<TbServer2 size={16} />}
-                                            renderOption={(item) => {
-                                                const node = nodes.find(
-                                                    (node) => node.uuid === item.option.value
-                                                )
-                                                if (!node) return null
-                                                return (
-                                                    <>
+                                            <MultiSelect
+                                                clearable
+                                                clearButtonProps={{
+                                                    size: 'xs'
+                                                }}
+                                                data={internalSquads.map((internalSquad) => ({
+                                                    label: internalSquad.name,
+                                                    value: internalSquad.uuid
+                                                }))}
+                                                description={t(
+                                                    'base-host-form.exclude-this-host-from-specific-internal-squads'
+                                                )}
+                                                inputWrapperOrder={[
+                                                    'label',
+                                                    'input',
+                                                    'description',
+                                                    'error'
+                                                ]}
+                                                key={form.key('excludedInternalSquads')}
+                                                label={t('base-host-form.excluded-internal-squads')}
+                                                leftSection={<TbCirclesRelation size={16} />}
+                                                renderOption={(item) => {
+                                                    return (
                                                         <Checkbox
                                                             aria-hidden
                                                             checked={item.checked}
+                                                            label={item.option.label}
                                                             onChange={() => {}}
                                                             style={{ pointerEvents: 'none' }}
                                                             tabIndex={-1}
                                                         />
-                                                        <Group
-                                                            gap={7}
-                                                            justify="space-between"
-                                                            w="100%"
-                                                        >
-                                                            <Group gap={7}>
-                                                                {resolveCountryCode(
-                                                                    node.countryCode
-                                                                )}
-                                                                <span>{node.name}</span>
-                                                            </Group>
-                                                            {node.provider && (
-                                                                <Badge color="gray" size="xs">
-                                                                    {node.provider.name}
-                                                                </Badge>
-                                                            )}
-                                                        </Group>
-                                                    </>
-                                                )
-                                            }}
-                                            searchable
-                                            {...form.getInputProps('nodes')}
-                                        />
-
-                                        <MultiSelect
-                                            clearable
-                                            clearButtonProps={{
-                                                size: 'xs'
-                                            }}
-                                            data={internalSquads.map((internalSquad) => ({
-                                                label: internalSquad.name,
-                                                value: internalSquad.uuid
-                                            }))}
-                                            description={t(
-                                                'base-host-form.exclude-this-host-from-specific-internal-squads'
-                                            )}
-                                            inputWrapperOrder={[
-                                                'label',
-                                                'input',
-                                                'description',
-                                                'error'
-                                            ]}
-                                            key={form.key('excludedInternalSquads')}
-                                            label={t('base-host-form.excluded-internal-squads')}
-                                            leftSection={<TbCirclesRelation size={16} />}
-                                            renderOption={(item) => {
-                                                return (
-                                                    <Checkbox
-                                                        aria-hidden
-                                                        checked={item.checked}
-                                                        label={item.option.label}
-                                                        onChange={() => {}}
-                                                        style={{ pointerEvents: 'none' }}
-                                                        tabIndex={-1}
-                                                    />
-                                                )
-                                            }}
-                                            searchable
-                                            {...form.getInputProps('excludedInternalSquads')}
-                                        />
+                                                    )
+                                                }}
+                                                searchable
+                                                {...form.getInputProps('excludedInternalSquads')}
+                                            />
                                         </Stack>
                                     </SectionCard.Section>
                                 </SectionCard.Root>
 
                                 <HostBalancingForm
                                     draft={hostBalancingDraft}
+                                    hostPort={form.getValues().port}
                                     hostUuid={hostUuid}
                                     nodes={nodes ?? []}
                                     onChange={onHostBalancingDraftChange}
+                                    onValidationChange={onHostBalancingValidationChange}
                                 />
                             </Stack>
                         )}
@@ -1138,7 +1153,7 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                     <Group gap="xs">
                         <Button
                             color="teal"
-                            disabled={!form.isValid() || !form.isDirty() || !form.isTouched()}
+                            disabled={!canSave}
                             leftSection={<PiFloppyDiskDuotone size="16px" />}
                             loading={isSubmitting}
                             size="md"

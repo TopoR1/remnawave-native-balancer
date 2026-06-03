@@ -1,16 +1,13 @@
 import { z } from 'zod';
 
-import {
-    HOST_BALANCERS_ROUTES,
-    HOST_BALANCERS_CONTROLLER,
-    REST_API,
-} from '../../api';
+import { HOST_BALANCERS_ROUTES, HOST_BALANCERS_CONTROLLER, REST_API } from '../../api';
 import { getEndpointDetails } from '../../constants';
 import {
     HostBalancerDecisionSchema,
     HostBalancerPreviewSchema,
     HostBalancerSchema,
     HostBalancerStatsSchema,
+    HostBalancerTargetsValidationSchema,
     HostBalancerStrategySchema,
     HostBalancerTargetSchema,
     HostBalancerTargetStatusSchema,
@@ -108,6 +105,22 @@ export namespace UpdateHostBalancerTargetsCommand {
     export type Response = z.infer<typeof ResponseSchema>;
 }
 
+export namespace ValidateHostBalancerTargetsCommand {
+    export const url = REST_API.HOST_BALANCERS.VALIDATE_TARGETS;
+    export const TSQ_url = url;
+    export const endpointDetails = getEndpointDetails(
+        HOST_BALANCERS_ROUTES.VALIDATE_TARGETS(':hostUuid'),
+        'post',
+        'Validate host balancer targets',
+    );
+    export const RequestSchema = HostUuidSchema;
+    export type Request = z.infer<typeof RequestSchema>;
+    export const RequestBodySchema = z.object({ targets: z.array(TargetInputSchema) });
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
+    export const ResponseSchema = z.object({ response: HostBalancerTargetsValidationSchema });
+    export type Response = z.infer<typeof ResponseSchema>;
+}
+
 export namespace PreviewHostBalancerCommand {
     export const url = REST_API.HOST_BALANCERS.PREVIEW;
     export const TSQ_url = url;
@@ -127,7 +140,7 @@ export namespace PreviewHostBalancerCommand {
             if (!value.userUuid && !value.shortUuid) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    message: 'Either userUuid or shortUuid must be provided',
+                    message: 'userUuid or shortUuid is required',
                     path: ['userUuid'],
                 });
             }

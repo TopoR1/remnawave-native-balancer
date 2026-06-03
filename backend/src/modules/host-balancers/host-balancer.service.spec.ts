@@ -6,9 +6,11 @@ import {
     PreviewHostBalancerCommand,
     UpdateHostBalancerCommand,
     UpdateHostBalancerTargetsCommand,
+    ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
 
 import { HostBalancerService } from './host-balancer.service';
+import { HostBalancersRepository } from './repositories/host-balancers.repository';
 import { HostWithRawInbound } from '../hosts/entities/host-with-inbound-tag.entity';
 
 const HOST_UUID = '11111111-1111-4111-8111-111111111111';
@@ -113,9 +115,17 @@ function createAssignment(overrides = {}) {
     };
 }
 
-function createService(overrides: Record<string, unknown> = {}, options: { decisionsEnabled?: boolean } = {}) {
+function createService(
+    overrides: Record<string, unknown> = {},
+    options: { decisionsEnabled?: boolean } = {},
+) {
     const repository = {
-        findHost: async () => ({ uuid: HOST_UUID, address: 'origin.example.com' }),
+        findHost: async () => ({
+            uuid: HOST_UUID,
+            address: 'origin.example.com',
+            port: 443,
+            configProfileInboundUuid: INBOUND_UUID,
+        }),
         findUser: async () => ({ uuid: USER_UUID, shortUuid: SHORT_UUID }),
         findUserByShortUuid: async () => ({ uuid: USER_UUID, shortUuid: SHORT_UUID }),
         findByHostUuid: async () => null,
@@ -134,6 +144,9 @@ function createService(overrides: Record<string, unknown> = {}, options: { decis
                     NODE_UUID,
                     {
                         uuid: NODE_UUID,
+                        name: 'Node A',
+                        address: 'node-a.example.com',
+                        port: 8443,
                         isConnected: true,
                         isConnecting: false,
                         isDisabled: false,
@@ -144,6 +157,9 @@ function createService(overrides: Record<string, unknown> = {}, options: { decis
                     NODE_UUID_2,
                     {
                         uuid: NODE_UUID_2,
+                        name: 'Node B',
+                        address: 'node-b.example.com',
+                        port: 9443,
                         isConnected: true,
                         isConnecting: false,
                         isDisabled: false,
@@ -151,19 +167,26 @@ function createService(overrides: Record<string, unknown> = {}, options: { decis
                     },
                 ],
             ]),
-        getNodeTrafficByMetric: async () => new Map([[NODE_UUID, 0n], [NODE_UUID_2, 0n]]),
+        getNodeTrafficByMetric: async () =>
+            new Map([
+                [NODE_UUID, 0n],
+                [NODE_UUID_2, 0n],
+            ]),
         getStats: async () => ({ assignmentsCount: 0, targets: [] }),
         createDecision: async () => undefined,
         listDecisions: async () => [],
         ...overrides,
     };
 
-    return new HostBalancerService(repository as never, {
-        get: (key: string, defaultValue?: string) =>
-            key === 'HOST_BALANCER_DECISIONS_ENABLED'
-                ? String(options.decisionsEnabled ?? false)
-                : defaultValue,
-    } as never);
+    return new HostBalancerService(
+        repository as never,
+        {
+            get: (key: string, defaultValue?: string) =>
+                key === 'HOST_BALANCER_DECISIONS_ENABLED'
+                    ? String(options.decisionsEnabled ?? false)
+                    : defaultValue,
+        } as never,
+    );
 }
 
 describe('HostBalancerService', () => {
@@ -236,8 +259,15 @@ describe('HostBalancerService', () => {
             assert.equal(result.response.diagnostics.wouldCreateAssignment, false);
             assert.equal(result.response.diagnostics.selectedTargetUuid, TARGET_UUID);
             assert.equal(result.response.diagnostics.assignment, 'created');
+            assert.equal(result.response.diagnostics.assignmentAction, 'would_create');
             assert.equal(result.response.diagnostics.resolvedUserUuid, USER_UUID);
             assert.equal(result.response.diagnostics.shortUuidMasked, 'test...uuid');
+            assert.equal(result.response.diagnostics.existingAssignment, null);
+            assert.equal(
+                result.response.diagnostics.finalHostOverrides.address,
+                'edge.example.com',
+            );
+            assert.equal(result.response.diagnostics.finalHostOverrides.port, 443);
         }
     });
 
@@ -272,6 +302,7 @@ describe('HostBalancerService', () => {
         if (result.isOk) {
             assert.equal(result.response.userUuid, USER_UUID);
             assert.equal(result.response.diagnostics.resolvedUserUuid, USER_UUID);
+            assert.equal(result.response.diagnostics.assignmentAction, 'would_create');
         }
     });
 
@@ -297,6 +328,7 @@ describe('HostBalancerService', () => {
             assert.equal(result.response.userUuid, USER_UUID);
             assert.equal(result.response.diagnostics.resolvedUserUuid, USER_UUID);
             assert.equal(result.response.diagnostics.shortUuidMasked, 'test...uuid');
+            assert.equal(result.response.diagnostics.assignmentAction, 'would_create');
         }
     });
 
@@ -315,6 +347,206 @@ describe('HostBalancerService', () => {
         const parsed = PreviewHostBalancerCommand.RequestQuerySchema.safeParse({});
 
         assert.equal(parsed.success, false);
+        if (!parsed.success) {
+            assert.equal(parsed.error.issues[0]?.message, 'userUuid or shortUuid is required');
+        }
+    });
+
+    it('previews no candidates without selecting a target', async () => {
+        const service = createService({
+            findByHostUuid: async () =>
+                createBalancer({
+                    enabled: true,
+                    unavailablePolicy: 'HIDE_HOST',
+                    targets: [createTarget({ enabled: false, status: 'DISABLED' })],
+                }),
+        });
+
+        const result = await service.previewSelection(USER_UUID, HOST_UUID);
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.target, null);
+            assert.equal(result.response.diagnostics.selectedTargetUuid, null);
+            assert.equal(result.response.diagnostics.assignmentAction, 'preview_only');
+            assert.equal(result.response.diagnostics.candidates.length, 0);
+            assert.equal(result.response.diagnostics.excludedTargets[0].reason, 'target disabled');
+            assert.equal(result.response.diagnostics.finalHostOverrides, null);
+        }
+    });
+
+    it('previews target excluded by missing required inbound', async () => {
+        const service = createService({
+            findByHostUuid: async () =>
+                createBalancer({ enabled: true, targets: [createTarget()] }),
+            getNodeStates: async () =>
+                new Map([
+                    [
+                        NODE_UUID,
+                        {
+                            uuid: NODE_UUID,
+                            name: 'Node A',
+                            address: 'node-a.example.com',
+                            port: 8443,
+                            isConnected: true,
+                            isConnecting: false,
+                            isDisabled: false,
+                            activeInboundUuids: new Set(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']),
+                        },
+                    ],
+                ]),
+        });
+
+        const result = await service.previewSelection(USER_UUID, HOST_UUID);
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.target, null);
+            assert.equal(
+                result.response.diagnostics.excludedTargets[0].reason,
+                'target node lacks required inbound',
+            );
+            assert.equal(
+                result.response.diagnostics.warnings.includes('target node lacks required inbound'),
+                true,
+            );
+            assert.equal(result.response.diagnostics.assignmentAction, 'preview_only');
+        }
+    });
+
+    it('previews reused existing assignment without writing it', async () => {
+        let assignmentWrites = 0;
+        const service = createService({
+            findByHostUuid: async () =>
+                createBalancer({ enabled: true, stickyEnabled: true, targets: [createTarget()] }),
+            findAssignmentsForUser: async () =>
+                new Map([[HOST_UUID, createAssignment({ reason: 'selected:LEAST_ASSIGNED' })]]),
+            upsertAssignment: async () => {
+                assignmentWrites += 1;
+            },
+        });
+
+        const result = await service.previewSelection(USER_UUID, HOST_UUID);
+
+        assert.equal(result.isOk, true);
+        assert.equal(assignmentWrites, 0);
+        if (result.isOk) {
+            assert.equal(result.response.target?.uuid, TARGET_UUID);
+            assert.equal(result.response.diagnostics.assignmentAction, 'reused');
+            assert.equal(result.response.diagnostics.existingAssignment?.targetUuid, TARGET_UUID);
+        }
+    });
+
+    it('decisions endpoint returns recent decisions', async () => {
+        const recentDecision = {
+            uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            hostUuid: HOST_UUID,
+            userUuid: USER_UUID,
+            targetUuid: TARGET_UUID,
+            strategy: 'LEAST_ASSIGNED',
+            reason: 'selected:LEAST_ASSIGNED:created',
+            unavailablePolicy: 'HIDE_HOST',
+            assignmentAction: 'created',
+            candidates: [{ targetUuid: TARGET_UUID, selected: true }],
+            excludedTargets: [],
+            selectedTarget: { targetUuid: TARGET_UUID, selected: true },
+            warnings: [],
+            finalHostOverrides: {
+                address: 'decision.example.com',
+                port: 443,
+                sni: null,
+                host: null,
+                path: null,
+            },
+            diagnostics: {},
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        };
+        const service = createService({
+            listDecisions: async (hostUuid, limit) => {
+                assert.equal(hostUuid, HOST_UUID);
+                assert.equal(limit, 50);
+                return [recentDecision];
+            },
+        });
+
+        const result = await service.getDecisions(HOST_UUID, 50);
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.length, 1);
+            assert.equal(result.response[0].reason, 'selected:LEAST_ASSIGNED:created');
+            assert.equal(result.response[0].finalHostOverrides.address, 'decision.example.com');
+        }
+    });
+
+    it('decision diagnostics are JSON safe and do not expose arbitrary secrets', async () => {
+        const repository = new HostBalancersRepository({
+            tx: {
+                hostBalancerDecision: {
+                    findMany: async () => [
+                        {
+                            uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                            hostUuid: HOST_UUID,
+                            userUuid: USER_UUID,
+                            targetUuid: TARGET_UUID,
+                            strategy: 'LEAST_ASSIGNED',
+                            reason: 'selected:LEAST_ASSIGNED:created',
+                            diagnostics: {
+                                unavailablePolicy: 'HIDE_HOST',
+                                assignmentAction: 'created',
+                                candidates: [{ targetUuid: TARGET_UUID, selected: true }],
+                                excludedTargets: [
+                                    {
+                                        targetUuid: TARGET_UUID_2,
+                                        reason: 'target node lacks required inbound',
+                                    },
+                                ],
+                                selectedTarget: { targetUuid: TARGET_UUID, selected: true },
+                                warnings: ['target node lacks required inbound'],
+                                finalHostOverrides: {
+                                    address: 'safe.example.com',
+                                    port: 443,
+                                    sni: null,
+                                    host: null,
+                                    path: null,
+                                },
+                                password: 'super-secret',
+                                token: 'secret-token',
+                            },
+                            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+                        },
+                    ],
+                },
+            },
+        } as never);
+
+        const decisions = await repository.listDecisions(HOST_UUID, 50);
+
+        assert.equal(decisions.length, 1);
+        assert.equal(decisions[0].candidates[0].targetUuid, TARGET_UUID);
+        assert.equal(decisions[0].excludedTargets[0].reason, 'target node lacks required inbound');
+        assert.equal(decisions[0].diagnostics.password, undefined);
+        assert.equal(decisions[0].diagnostics.token, undefined);
+        assert.deepEqual(JSON.parse(JSON.stringify(decisions[0].diagnostics)), {
+            unavailablePolicy: 'HIDE_HOST',
+            assignmentAction: 'created',
+            candidates: [{ targetUuid: TARGET_UUID, selected: true }],
+            excludedTargets: [
+                {
+                    targetUuid: TARGET_UUID_2,
+                    reason: 'target node lacks required inbound',
+                },
+            ],
+            selectedTarget: { targetUuid: TARGET_UUID, selected: true },
+            warnings: ['target node lacks required inbound'],
+            finalHostOverrides: {
+                address: 'safe.example.com',
+                port: 443,
+                sni: null,
+                host: null,
+                path: null,
+            },
+        });
     });
 
     it('rejects traffic-aware settings when existing targets have no nodeUuid', async () => {
@@ -339,11 +571,147 @@ describe('HostBalancerService', () => {
         assert.equal(parsed.success, true);
     });
 
+    it('validates target node with required inbound as valid', async () => {
+        const service = createService();
+
+        const result = await service.validateTargets(HOST_UUID, {
+            targets: [{ nodeUuid: NODE_UUID, overrideAddress: 'node-a.example.com' }],
+        });
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.targets[0].valid, true);
+            assert.equal(result.response.targets[0].severity, 'ok');
+            assert.equal(result.response.targets[0].hasRequiredInbound, true);
+            assert.equal(result.response.targets[0].nodeName, 'Node A');
+            assert.equal(result.response.targets[0].nodeAddress, 'node-a.example.com');
+        }
+    });
+
+    it('validates target node without required inbound as error for active target', async () => {
+        const service = createService({
+            getNodeStates: async () =>
+                new Map([
+                    [
+                        NODE_UUID,
+                        {
+                            uuid: NODE_UUID,
+                            name: 'Node A',
+                            address: 'node-a.example.com',
+                            port: 8443,
+                            isConnected: true,
+                            isConnecting: false,
+                            isDisabled: false,
+                            activeInboundUuids: new Set(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']),
+                        },
+                    ],
+                ]),
+        });
+
+        const result = await service.validateTargets(HOST_UUID, {
+            targets: [{ nodeUuid: NODE_UUID, status: 'ACTIVE' }],
+        });
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.targets[0].valid, false);
+            assert.equal(result.response.targets[0].severity, 'error');
+            assert.equal(result.response.targets[0].hasRequiredInbound, false);
+            assert.equal(
+                result.response.targets[0].reasons.includes('target node lacks required inbound'),
+                true,
+            );
+        }
+    });
+
+    it('validates disabled target without required inbound as warning', async () => {
+        const service = createService({
+            getNodeStates: async () =>
+                new Map([
+                    [
+                        NODE_UUID,
+                        {
+                            uuid: NODE_UUID,
+                            name: 'Node A',
+                            address: 'node-a.example.com',
+                            port: 8443,
+                            isConnected: true,
+                            isConnecting: false,
+                            isDisabled: false,
+                            activeInboundUuids: new Set(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']),
+                        },
+                    ],
+                ]),
+        });
+
+        const result = await service.validateTargets(HOST_UUID, {
+            targets: [{ nodeUuid: NODE_UUID, status: 'DISABLED', enabled: false }],
+        });
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.targets[0].valid, true);
+            assert.equal(result.response.targets[0].severity, 'warning');
+            assert.equal(result.response.targets[0].hasRequiredInbound, false);
+        }
+    });
+
+    it('validates overrideAddress mismatch as warning', async () => {
+        const service = createService();
+
+        const result = await service.validateTargets(HOST_UUID, {
+            targets: [{ nodeUuid: NODE_UUID, overrideAddress: 'override.example.com' }],
+        });
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.targets[0].valid, true);
+            assert.equal(result.response.targets[0].severity, 'warning');
+            assert.equal(
+                result.response.targets[0].reasons.includes(
+                    'overrideAddress differs from selected node address',
+                ),
+                true,
+            );
+        }
+    });
+
+    it('validates address-only target as warning', async () => {
+        const service = createService();
+
+        const result = await service.validateTargets(HOST_UUID, {
+            targets: [{ nodeUuid: null, overrideAddress: 'address-only.example.com' }],
+        });
+
+        assert.equal(result.isOk, true);
+        if (result.isOk) {
+            assert.equal(result.response.targets[0].valid, true);
+            assert.equal(result.response.targets[0].severity, 'warning');
+            assert.equal(result.response.targets[0].nodeStatus, 'unknown');
+            assert.equal(result.response.targets[0].hasRequiredInbound, null);
+            assert.equal(
+                result.response.targets[0].reasons.includes(
+                    'address-only target: traffic/status checks unavailable',
+                ),
+                true,
+            );
+        }
+    });
+
+    it('validates target validation command schema', () => {
+        const parsed = ValidateHostBalancerTargetsCommand.RequestBodySchema.safeParse({
+            targets: [{ nodeUuid: NODE_UUID, overridePort: 443 }],
+        });
+
+        assert.equal(parsed.success, true);
+    });
+
     it('host balancer disabled keeps original behavior', async () => {
         const host = createHost();
         const service = createService({
-            findManyByHostUuids: async () =>
-                [createBalancer({ enabled: false, targets: [createTarget()] })],
+            findManyByHostUuids: async () => [
+                createBalancer({ enabled: false, targets: [createTarget()] }),
+            ],
         });
 
         const result = await service.applyToHostsForUser({ uuid: USER_UUID }, [host]);
@@ -354,21 +722,20 @@ describe('HostBalancerService', () => {
 
     it('host balancer enabled rewrites host connection params but keeps remark', async () => {
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        targets: [
-                            createTarget({
-                                overrideAddress: 'target.example.com',
-                                overridePort: 8443,
-                                overrideSni: 'target-sni.example.com',
-                                overrideHost: 'target-host.example.com',
-                                overridePath: '/target',
-                            }),
-                        ],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    targets: [
+                        createTarget({
+                            overrideAddress: 'target.example.com',
+                            overridePort: 8443,
+                            overrideSni: 'target-sni.example.com',
+                            overrideHost: 'target-host.example.com',
+                            overridePath: '/target',
+                        }),
+                    ],
+                }),
+            ],
         });
 
         const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
@@ -384,8 +751,9 @@ describe('HostBalancerService', () => {
     it('sticky assignment reused', async () => {
         let touched = 0;
         const service = createService({
-            findManyByHostUuids: async () =>
-                [createBalancer({ enabled: true, targets: [createTarget()] })],
+            findManyByHostUuids: async () => [
+                createBalancer({ enabled: true, targets: [createTarget()] }),
+            ],
             findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
             touchAssignment: async () => {
                 touched += 1;
@@ -405,13 +773,12 @@ describe('HostBalancerService', () => {
             overrideAddress: 'active.example.com',
         });
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        targets: [createTarget({ enabled: false }), activeTarget],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    targets: [createTarget({ enabled: false }), activeTarget],
+                }),
+            ],
             findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
             upsertAssignment: async (dto) => {
                 upsertedTarget = dto.targetUuid;
@@ -431,13 +798,12 @@ describe('HostBalancerService', () => {
             overrideAddress: 'alive.example.com',
         });
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        targets: [createTarget({ status: 'DEAD' }), activeTarget],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    targets: [createTarget({ status: 'DEAD' }), activeTarget],
+                }),
+            ],
             findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
         });
 
@@ -457,15 +823,19 @@ describe('HostBalancerService', () => {
         });
 
         const reusedService = createService({
-            findManyByHostUuids: async () =>
-                [createBalancer({ enabled: true, targets: [drainingTarget, activeTarget] })],
+            findManyByHostUuids: async () => [
+                createBalancer({ enabled: true, targets: [drainingTarget, activeTarget] }),
+            ],
             findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
         });
-        const [reused] = await reusedService.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+        const [reused] = await reusedService.applyToHostsForUser({ uuid: USER_UUID }, [
+            createHost(),
+        ]);
 
         const newService = createService({
-            findManyByHostUuids: async () =>
-                [createBalancer({ enabled: true, targets: [drainingTarget, activeTarget] })],
+            findManyByHostUuids: async () => [
+                createBalancer({ enabled: true, targets: [drainingTarget, activeTarget] }),
+            ],
         });
         const [created] = await newService.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
 
@@ -475,14 +845,13 @@ describe('HostBalancerService', () => {
 
     it('HIDE_HOST removes host when no candidates', async () => {
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        unavailablePolicy: 'HIDE_HOST',
-                        targets: [createTarget({ enabled: false })],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    unavailablePolicy: 'HIDE_HOST',
+                    targets: [createTarget({ enabled: false })],
+                }),
+            ],
         });
 
         const result = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
@@ -492,14 +861,13 @@ describe('HostBalancerService', () => {
 
     it('ORIGINAL_HOST keeps old behavior when no candidates', async () => {
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        unavailablePolicy: 'ORIGINAL_HOST',
-                        targets: [createTarget({ enabled: false })],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    unavailablePolicy: 'ORIGINAL_HOST',
+                    targets: [createTarget({ enabled: false })],
+                }),
+            ],
         });
 
         const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
@@ -509,24 +877,23 @@ describe('HostBalancerService', () => {
 
     it('priority failover selects primary active target', async () => {
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        strategy: 'PRIORITY_FAILOVER',
-                        targets: [
-                            createTarget({
-                                uuid: TARGET_UUID_2,
-                                priority: 50,
-                                overrideAddress: 'secondary.example.com',
-                            }),
-                            createTarget({
-                                priority: 10,
-                                overrideAddress: 'primary.example.com',
-                            }),
-                        ],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    strategy: 'PRIORITY_FAILOVER',
+                    targets: [
+                        createTarget({
+                            uuid: TARGET_UUID_2,
+                            priority: 50,
+                            overrideAddress: 'secondary.example.com',
+                        }),
+                        createTarget({
+                            priority: 10,
+                            overrideAddress: 'primary.example.com',
+                        }),
+                    ],
+                }),
+            ],
         });
 
         const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
@@ -545,15 +912,14 @@ describe('HostBalancerService', () => {
             nodeUuid: NODE_UUID_2,
         });
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        strategy: 'LEAST_TRAFFIC',
-                        trafficMetric: 'LAST_1H',
-                        targets: [targetA, targetB],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    strategy: 'LEAST_TRAFFIC',
+                    trafficMetric: 'LAST_1H',
+                    targets: [targetA, targetB],
+                }),
+            ],
             getNodeTrafficByMetric: async () =>
                 new Map([
                     [NODE_UUID, 1_000n],
@@ -579,14 +945,13 @@ describe('HostBalancerService', () => {
             weight: 1,
         });
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        strategy: 'WEIGHTED_LEAST_TRAFFIC',
-                        targets: [targetA, targetB],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    strategy: 'WEIGHTED_LEAST_TRAFFIC',
+                    targets: [targetA, targetB],
+                }),
+            ],
             getNodeTrafficByMetric: async () =>
                 new Map([
                     [NODE_UUID, 1_000n],
@@ -662,14 +1027,13 @@ describe('HostBalancerService', () => {
             nodeUuid: NODE_UUID_2,
         });
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        strategy: 'LEAST_TRAFFIC',
-                        targets: [disabledTarget, deadTarget, activeTarget],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    strategy: 'LEAST_TRAFFIC',
+                    targets: [disabledTarget, deadTarget, activeTarget],
+                }),
+            ],
             getNodeTrafficByMetric: async () =>
                 new Map([
                     [NODE_UUID, 1n],
@@ -695,15 +1059,14 @@ describe('HostBalancerService', () => {
             nodeUuid: NODE_UUID_2,
         });
         const service = createService({
-            findManyByHostUuids: async () =>
-                [
-                    createBalancer({
-                        enabled: true,
-                        strategy: 'LEAST_TRAFFIC',
-                        rebalanceExistingAssignmentsByTraffic: false,
-                        targets: [stickyTarget, quietTarget],
-                    }),
-                ],
+            findManyByHostUuids: async () => [
+                createBalancer({
+                    enabled: true,
+                    strategy: 'LEAST_TRAFFIC',
+                    rebalanceExistingAssignmentsByTraffic: false,
+                    targets: [stickyTarget, quietTarget],
+                }),
+            ],
             findAssignmentsForUser: async () => new Map([[HOST_UUID, createAssignment()]]),
             getNodeTrafficByMetric: async () =>
                 new Map([
@@ -743,13 +1106,12 @@ describe('HostBalancerService', () => {
         let decisionRecord;
         const service = createService(
             {
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            enabled: true,
-                            targets: [createTarget({ overrideAddress: 'audit.example.com' })],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        enabled: true,
+                        targets: [createTarget({ overrideAddress: 'audit.example.com' })],
+                    }),
+                ],
                 createDecision: async (dto) => {
                     decisionRecord = dto;
                 },
@@ -774,14 +1136,13 @@ describe('HostBalancerService', () => {
         let decisionRecord;
         const service = createService(
             {
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            enabled: true,
-                            unavailablePolicy: 'HIDE_HOST',
-                            targets: [createTarget({ enabled: false })],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        enabled: true,
+                        unavailablePolicy: 'HIDE_HOST',
+                        targets: [createTarget({ enabled: false })],
+                    }),
+                ],
                 createDecision: async (dto) => {
                     decisionRecord = dto;
                 },
@@ -803,14 +1164,13 @@ describe('HostBalancerService', () => {
         let decisionRecord;
         const service = createService(
             {
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            enabled: true,
-                            unavailablePolicy: 'ORIGINAL_HOST',
-                            targets: [createTarget({ status: 'DEAD' })],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        enabled: true,
+                        unavailablePolicy: 'ORIGINAL_HOST',
+                        targets: [createTarget({ status: 'DEAD' })],
+                    }),
+                ],
                 createDecision: async (dto) => {
                     decisionRecord = dto;
                 },
@@ -831,13 +1191,12 @@ describe('HostBalancerService', () => {
     it('does not throw when decision insert fails', async () => {
         const service = createService(
             {
-                findManyByHostUuids: async () =>
-                    [
-                        createBalancer({
-                            enabled: true,
-                            targets: [createTarget({ overrideAddress: 'safe.example.com' })],
-                        }),
-                    ],
+                findManyByHostUuids: async () => [
+                    createBalancer({
+                        enabled: true,
+                        targets: [createTarget({ overrideAddress: 'safe.example.com' })],
+                    }),
+                ],
                 createDecision: async () => {
                     throw new Error('audit table unavailable');
                 },

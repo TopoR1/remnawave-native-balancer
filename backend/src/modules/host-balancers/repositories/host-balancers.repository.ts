@@ -27,6 +27,9 @@ export type HostBalancerWithTargets = Prisma.HostBalancerGetPayload<{
 
 export type HostBalancerNodeState = {
     uuid: string;
+    name: string;
+    address: string;
+    port: number | null;
     isConnected: boolean;
     isConnecting: boolean;
     isDisabled: boolean;
@@ -53,6 +56,11 @@ type HostBalancerDecisionFinalOverrides = {
 type HostBalancerDecisionExcludedTarget = {
     targetUuid: string;
     nodeUuid?: string | null;
+    trafficBytes?: string | null;
+    weight?: number;
+    score?: number;
+    selected?: boolean;
+    fallbackUsed?: boolean;
     reason?: string;
 };
 
@@ -63,7 +71,12 @@ export class HostBalancersRepository {
     public async findHost(hostUuid: string) {
         return this.prisma.tx.hosts.findUnique({
             where: { uuid: hostUuid },
-            select: { uuid: true, address: true },
+            select: {
+                uuid: true,
+                address: true,
+                port: true,
+                configProfileInboundUuid: true,
+            },
         });
     }
 
@@ -239,6 +252,9 @@ export class HostBalancersRepository {
             where: { uuid: { in: nodeUuids } },
             select: {
                 uuid: true,
+                name: true,
+                address: true,
+                port: true,
                 isConnected: true,
                 isConnecting: true,
                 isDisabled: true,
@@ -255,6 +271,9 @@ export class HostBalancersRepository {
                 node.uuid,
                 {
                     uuid: node.uuid,
+                    name: node.name,
+                    address: node.address,
+                    port: node.port,
                     isConnected: node.isConnected,
                     isConnecting: node.isConnecting,
                     isDisabled: node.isDisabled,
@@ -302,7 +321,9 @@ export class HostBalancersRepository {
         return new Map(nodes.map((node) => [node.uuid, node.trafficUsedBytes ?? 0n]));
     }
 
-    private resolveTrafficMetricStart(metric: Exclude<HostBalancerTrafficMetric, 'CURRENT_PERIOD'>): Date {
+    private resolveTrafficMetricStart(
+        metric: Exclude<HostBalancerTrafficMetric, 'CURRENT_PERIOD'>,
+    ): Date {
         const now = Date.now();
         const hours = {
             LAST_1H: 1,
@@ -344,6 +365,7 @@ export class HostBalancersRepository {
                 diagnostics: dto.diagnostics,
             },
         });
+        await this.pruneDecisionRetention(5_000);
     }
 
     public async listDecisions(hostUuid: string, limit: number) {
@@ -355,7 +377,9 @@ export class HostBalancersRepository {
 
         return rows.map((row) => {
             const diagnostics: Record<string, unknown> =
-                row.diagnostics && typeof row.diagnostics === 'object' && !Array.isArray(row.diagnostics)
+                row.diagnostics &&
+                typeof row.diagnostics === 'object' &&
+                !Array.isArray(row.diagnostics)
                     ? (row.diagnostics as Record<string, unknown>)
                     : {};
             const unavailablePolicy = this.isUnavailablePolicy(diagnostics['unavailablePolicy'])
@@ -369,9 +393,27 @@ export class HostBalancersRepository {
             const excludedTargets = this.resolveDecisionExcludedTargets(
                 diagnostics['excludedTargets'],
             );
+            const candidates = this.resolveDecisionExcludedTargets(diagnostics['candidates']);
+            const selectedTargets = this.resolveDecisionExcludedTargets(
+                diagnostics['selectedTarget'] ? [diagnostics['selectedTarget']] : [],
+            );
+            const warnings = Array.isArray(diagnostics['warnings'])
+                ? diagnostics['warnings'].filter((warning): warning is string => {
+                      return typeof warning === 'string';
+                  })
+                : [];
             const finalHostOverrides = this.resolveDecisionFinalOverrides(
                 diagnostics['finalHostOverrides'],
             );
+            const safeDiagnostics = this.sanitizeDecisionDiagnostics({
+                unavailablePolicy,
+                assignmentAction,
+                candidates,
+                excludedTargets,
+                selectedTarget: selectedTargets[0] ?? null,
+                warnings,
+                finalHostOverrides,
+            });
 
             return {
                 uuid: row.uuid,
@@ -382,19 +424,38 @@ export class HostBalancersRepository {
                 reason: row.reason,
                 unavailablePolicy,
                 assignmentAction,
+                candidates,
                 excludedTargets,
+                selectedTarget: selectedTargets[0] ?? null,
+                warnings,
                 finalHostOverrides,
-                diagnostics,
+                diagnostics: safeDiagnostics,
                 createdAt: row.createdAt,
             };
         });
     }
 
+    public async pruneDecisionRetention(keepLatest: number): Promise<number> {
+        const staleRows = await this.prisma.tx.hostBalancerDecision.findMany({
+            orderBy: { createdAt: 'desc' },
+            skip: keepLatest,
+            select: { uuid: true },
+        });
+
+        if (staleRows.length === 0) {
+            return 0;
+        }
+
+        const result = await this.prisma.tx.hostBalancerDecision.deleteMany({
+            where: { uuid: { in: staleRows.map((row) => row.uuid) } },
+        });
+
+        return result.count;
+    }
+
     private isUnavailablePolicy(value: unknown): value is HostBalancerUnavailablePolicy {
         return (
-            value === 'HIDE_HOST' ||
-            value === 'ORIGINAL_HOST' ||
-            value === 'KEEP_LAST_IF_POSSIBLE'
+            value === 'HIDE_HOST' || value === 'ORIGINAL_HOST' || value === 'KEEP_LAST_IF_POSSIBLE'
         );
     }
 
@@ -425,8 +486,21 @@ export class HostBalancersRepository {
                     typeof item['nodeUuid'] === 'string' || item['nodeUuid'] === null
                         ? item['nodeUuid']
                         : undefined,
+                trafficBytes:
+                    typeof item['trafficBytes'] === 'string' || item['trafficBytes'] === null
+                        ? item['trafficBytes']
+                        : undefined,
+                weight: typeof item['weight'] === 'number' ? item['weight'] : undefined,
+                score: typeof item['score'] === 'number' ? item['score'] : undefined,
+                selected: typeof item['selected'] === 'boolean' ? item['selected'] : undefined,
+                fallbackUsed:
+                    typeof item['fallbackUsed'] === 'boolean' ? item['fallbackUsed'] : undefined,
                 reason: typeof item['reason'] === 'string' ? item['reason'] : undefined,
             }));
+    }
+
+    private sanitizeDecisionDiagnostics(value: Record<string, unknown>): Record<string, unknown> {
+        return JSON.parse(JSON.stringify(value));
     }
 
     private resolveDecisionFinalOverrides(
@@ -444,9 +518,18 @@ export class HostBalancersRepository {
         return {
             address: overrides['address'],
             port: overrides['port'],
-            sni: typeof overrides['sni'] === 'string' || overrides['sni'] === null ? overrides['sni'] : null,
-            host: typeof overrides['host'] === 'string' || overrides['host'] === null ? overrides['host'] : null,
-            path: typeof overrides['path'] === 'string' || overrides['path'] === null ? overrides['path'] : null,
+            sni:
+                typeof overrides['sni'] === 'string' || overrides['sni'] === null
+                    ? overrides['sni']
+                    : null,
+            host:
+                typeof overrides['host'] === 'string' || overrides['host'] === null
+                    ? overrides['host']
+                    : null,
+            path:
+                typeof overrides['path'] === 'string' || overrides['path'] === null
+                    ? overrides['path']
+                    : null,
         };
     }
 }

@@ -13,6 +13,7 @@ import {
     PreviewHostBalancerCommand,
     UpdateHostBalancerCommand,
     UpdateHostBalancerTargetsCommand,
+    ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
 
 import { HostWithRawInbound } from '@modules/hosts/entities/host-with-inbound-tag.entity';
@@ -27,6 +28,7 @@ import {
 type TargetWithWarning = HostBalancerTarget & { warning?: string | null };
 type AssignmentAction = 'none' | 'reused' | 'created' | 'reassigned' | 'skipped';
 type DecisionAssignmentAction = Exclude<AssignmentAction, 'none'>;
+type PreviewAssignmentAction = 'preview_only' | 'reused' | 'would_create' | 'would_reassign';
 type PreviewUserLookup = string | { userUuid?: string; shortUuid?: string };
 type TargetDiagnostics = {
     targetUuid: string;
@@ -58,6 +60,7 @@ type SelectTargetResult = {
     selectedTarget: TargetDiagnostics;
     warnings: string[];
 };
+type HostBalancerValidationSeverity = 'ok' | 'warning' | 'error';
 
 const TRAFFIC_FALLBACK_WARNING = 'Traffic data missing, fallback strategy used.';
 
@@ -151,6 +154,37 @@ export class HostBalancerService {
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.UPDATE_HOST_BALANCER_TARGETS_ERROR);
+        }
+    }
+
+    public async validateTargets(
+        hostUuid: string,
+        dto: ValidateHostBalancerTargetsCommand.RequestBody,
+    ): Promise<TResult<ValidateHostBalancerTargetsCommand.Response['response']>> {
+        try {
+            const host = await this.hostBalancersRepository.findHost(hostUuid);
+            if (!host) {
+                return fail(ERRORS.HOST_NOT_FOUND);
+            }
+
+            const nodeUuids = Array.from(
+                new Set(
+                    dto.targets
+                        .map((target) => target.nodeUuid)
+                        .filter((nodeUuid): nodeUuid is string => !!nodeUuid),
+                ),
+            );
+            const nodeStates = await this.hostBalancersRepository.getNodeStates(nodeUuids);
+            const hostForValidation = this.hostRecordToRawInbound(host);
+
+            return ok({
+                targets: dto.targets.map((target) =>
+                    this.validateDraftTargetForHost(target, hostForValidation, nodeStates),
+                ),
+            });
+        } catch (error) {
+            this.logger.error(error);
+            return fail(ERRORS.GET_HOST_BALANCER_ERROR);
         }
     }
 
@@ -256,6 +290,8 @@ export class HostBalancerService {
                         wouldCreateAssignment: false,
                         resolvedUserUuid: user.uuid,
                         shortUuidMasked: this.maskShortUuid(user.shortUuid),
+                        existingAssignment: null,
+                        assignmentAction: 'preview_only',
                         candidates: [],
                         excludedTargets: [],
                         selectedTarget: null,
@@ -272,25 +308,15 @@ export class HostBalancerService {
                 user.uuid,
                 [hostUuid],
             );
+            const existingAssignment = assignments.get(hostUuid) ?? null;
             const nodeStates = await this.loadNodeStates([settings]);
-            const hostForPreview = new HostWithRawInbound({
-                uuid: hostUuid,
-                address: host.address,
-                port: 0,
-                sni: null,
-                host: null,
-                path: null,
-                configProfileInboundUuid: null,
-                rawInbound: null,
-                inboundTag: '',
-                xrayJsonTemplate: null,
-            });
+            const hostForPreview = this.hostRecordToRawInbound(host);
 
             const decision = await this.resolveHostTarget({
                 userUuid: user.uuid,
                 host: hostForPreview,
                 balancer: settings,
-                assignment: assignments.get(hostUuid) ?? null,
+                assignment: existingAssignment,
                 assignmentCounts,
                 nodeStates,
                 persistAssignment: false,
@@ -310,6 +336,14 @@ export class HostBalancerService {
                     wouldCreateAssignment: false,
                     resolvedUserUuid: user.uuid,
                     shortUuidMasked: this.maskShortUuid(user.shortUuid),
+                    existingAssignment: existingAssignment
+                        ? {
+                              targetUuid: existingAssignment.targetUuid,
+                              reason: existingAssignment.reason,
+                              lastUsedAt: existingAssignment.lastUsedAt,
+                          }
+                        : null,
+                    assignmentAction: this.previewAssignmentAction(decision.diagnostics.assignment),
                     ...decision.diagnostics,
                     warnings: [
                         ...decision.diagnostics.warnings,
@@ -374,7 +408,7 @@ export class HostBalancerService {
         const targetByUuid = new Map(ctx.balancer.targets.map((target) => [target.uuid, target]));
         const stickyTarget =
             ctx.assignment && ctx.balancer.stickyEnabled
-                ? targetByUuid.get(ctx.assignment.targetUuid) ?? null
+                ? (targetByUuid.get(ctx.assignment.targetUuid) ?? null)
                 : null;
         const shouldReuseSticky =
             !!stickyTarget &&
@@ -414,12 +448,24 @@ export class HostBalancerService {
         }
 
         if (stickyTarget && shouldReuseSticky) {
-            const validation = this.validateTargetForHost(stickyTarget, ctx.host, ctx.nodeStates, true);
+            const validation = this.validateTargetForHost(
+                stickyTarget,
+                ctx.host,
+                ctx.nodeStates,
+                true,
+            );
             if (validation.isValid) {
                 if (ctx.persistAssignment) {
                     await this.hostBalancersRepository.touchAssignment(ctx.host.uuid, ctx.userUuid);
                 }
-                return this.resolved(ctx.host, stickyTarget, candidates, excludedTargets, 'reused', ctx.assignmentCounts);
+                return this.resolved(
+                    ctx.host,
+                    stickyTarget,
+                    candidates,
+                    excludedTargets,
+                    'reused',
+                    ctx.assignmentCounts,
+                );
             }
         }
 
@@ -523,9 +569,14 @@ export class HostBalancerService {
 
         if (hasMissingTraffic) {
             const target = this.selectByScore(candidates, assignmentCounts, true);
-            return this.selectionResult(target, candidates, assignmentCounts, true, trafficByNodeUuid, [
-                TRAFFIC_FALLBACK_WARNING,
-            ]);
+            return this.selectionResult(
+                target,
+                candidates,
+                assignmentCounts,
+                true,
+                trafficByNodeUuid,
+                [TRAFFIC_FALLBACK_WARNING],
+            );
         }
 
         const weighted = settings.strategy === 'WEIGHTED_LEAST_TRAFFIC';
@@ -657,6 +708,175 @@ export class HostBalancerService {
         };
     }
 
+    private validateDraftTargetForHost(
+        input: ValidateHostBalancerTargetsCommand.RequestBody['targets'][number],
+        host: HostWithRawInbound,
+        nodeStates: Map<string, HostBalancerNodeState>,
+    ): ValidateHostBalancerTargetsCommand.Response['response']['targets'][number] {
+        const target = this.draftInputToTarget(input);
+        const node = target.nodeUuid ? (nodeStates.get(target.nodeUuid) ?? null) : null;
+        const runtimeValidation = this.validateTargetForHost(target, host, nodeStates, false);
+        const reasons: string[] = [];
+        let severityRank = 0;
+
+        const addReason = (reason: string, reasonSeverity: HostBalancerValidationSeverity) => {
+            if (!reasons.includes(reason)) {
+                reasons.push(reason);
+            }
+            severityRank = Math.max(severityRank, this.validationSeverityRank(reasonSeverity));
+        };
+
+        const activeTarget = target.enabled && target.status === 'ACTIVE';
+        const inactiveTarget =
+            !target.enabled || target.status === 'DISABLED' || target.status === 'DEAD';
+        const hasRequiredInbound = this.resolveHasRequiredInbound(host, node);
+
+        if (!target.nodeUuid) {
+            addReason('address-only target: traffic/status checks unavailable', 'warning');
+        }
+
+        if (target.overrideAddress && node && target.overrideAddress !== node.address) {
+            addReason('overrideAddress differs from selected node address', 'warning');
+        }
+
+        if (hasRequiredInbound === false) {
+            addReason('target node lacks required inbound', activeTarget ? 'error' : 'warning');
+        }
+
+        if (!runtimeValidation.isValid) {
+            const runtimeSeverity =
+                inactiveTarget || target.status === 'DRAINING' ? 'warning' : 'error';
+            addReason(runtimeValidation.reason, runtimeSeverity);
+        }
+
+        const severity = this.validationSeverityFromRank(severityRank);
+
+        return {
+            nodeUuid: target.nodeUuid,
+            valid: severity !== 'error',
+            severity,
+            reasons,
+            nodeName: node?.name ?? null,
+            nodeAddress: node?.address ?? null,
+            nodeStatus: this.resolveNodeStatus(node),
+            hasRequiredInbound,
+        };
+    }
+
+    private draftInputToTarget(
+        input: ValidateHostBalancerTargetsCommand.RequestBody['targets'][number],
+    ): HostBalancerTarget {
+        return {
+            uuid: input.uuid ?? '00000000-0000-4000-8000-000000000000',
+            balancerUuid: '00000000-0000-4000-8000-000000000000',
+            nodeUuid: input.nodeUuid ?? null,
+            enabled: input.enabled ?? true,
+            status: input.status ?? 'ACTIVE',
+            weight: input.weight ?? 1,
+            priority: input.priority ?? 100,
+            maxAssignedUsers: input.maxAssignedUsers ?? null,
+            overrideAddress: input.overrideAddress ?? null,
+            overridePort: input.overridePort ?? null,
+            overrideSni: input.overrideSni ?? null,
+            overrideHost: input.overrideHost ?? null,
+            overridePath: input.overridePath ?? null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+        };
+    }
+
+    private hostRecordToRawInbound(host: {
+        uuid: string;
+        address: string;
+        port: number;
+        configProfileInboundUuid: string | null;
+    }): HostWithRawInbound {
+        return new HostWithRawInbound({
+            uuid: host.uuid,
+            viewPosition: 0,
+            remark: '',
+            address: host.address,
+            port: host.port,
+            path: null,
+            sni: null,
+            host: null,
+            alpn: null,
+            fingerprint: null,
+            securityLayer: 'DEFAULT',
+            xHttpExtraParams: null,
+            muxParams: null,
+            sockoptParams: null,
+            finalMask: null,
+            isDisabled: false,
+            serverDescription: null,
+            allowInsecure: false,
+            tag: null,
+            isHidden: false,
+            overrideSniFromAddress: false,
+            keepSniBlank: false,
+            vlessRouteId: null,
+            shuffleHost: false,
+            mihomoX25519: false,
+            configProfileUuid: null,
+            configProfileInboundUuid: host.configProfileInboundUuid,
+            xrayJsonTemplateUuid: null,
+            excludeFromSubscriptionTypes: [],
+            rawInbound: null,
+            inboundTag: '',
+            xrayJsonTemplate: null,
+        });
+    }
+
+    private resolveHasRequiredInbound(
+        host: HostWithRawInbound,
+        node: HostBalancerNodeState | null,
+    ): boolean | null {
+        if (!node || !host.configProfileInboundUuid || node.activeInboundUuids.size === 0) {
+            return null;
+        }
+
+        return node.activeInboundUuids.has(host.configProfileInboundUuid);
+    }
+
+    private resolveNodeStatus(
+        node: HostBalancerNodeState | null,
+    ): 'connected' | 'connecting' | 'disabled' | 'disconnected' | 'unknown' {
+        if (!node) {
+            return 'unknown';
+        }
+        if (node.isDisabled) {
+            return 'disabled';
+        }
+        if (node.isConnecting) {
+            return 'connecting';
+        }
+        if (node.isConnected) {
+            return 'connected';
+        }
+
+        return 'disconnected';
+    }
+
+    private validationSeverityRank(severity: HostBalancerValidationSeverity): number {
+        const order = { ok: 0, warning: 1, error: 2 } satisfies Record<
+            HostBalancerValidationSeverity,
+            number
+        >;
+
+        return order[severity];
+    }
+
+    private validationSeverityFromRank(rank: number): HostBalancerValidationSeverity {
+        if (rank >= 2) {
+            return 'error';
+        }
+        if (rank === 1) {
+            return 'warning';
+        }
+
+        return 'ok';
+    }
+
     private async loadNodeStates(
         balancers: HostBalancerWithTargets[],
     ): Promise<Map<string, HostBalancerNodeState>> {
@@ -737,7 +957,8 @@ export class HostBalancerService {
         assignmentCounts: Map<string, number>,
         selection?: SelectTargetResult,
     ) {
-        const diagnostics = selection ?? this.selectionResult(selected, candidates, assignmentCounts, false);
+        const diagnostics =
+            selection ?? this.selectionResult(selected, candidates, assignmentCounts, false);
         return {
             host: this.cloneWithTargetOverrides(host, selected),
             selectedTarget: selected,
@@ -836,10 +1057,10 @@ export class HostBalancerService {
 
     private isDecisionAuditEnabled(): boolean {
         return (
-            this.configService?.get<string>('HOST_BALANCER_DECISIONS_ENABLED', 'false') ??
-            process.env.HOST_BALANCER_DECISIONS_ENABLED ??
-            'false'
-        ) === 'true';
+            (this.configService?.get<string>('HOST_BALANCER_DECISIONS_ENABLED', 'false') ??
+                process.env.HOST_BALANCER_DECISIONS_ENABLED ??
+                'false') === 'true'
+        );
     }
 
     private decisionAssignmentAction(assignment: AssignmentAction): DecisionAssignmentAction {
@@ -868,6 +1089,20 @@ export class HostBalancerService {
 
     private toJsonSafe(value: unknown) {
         return JSON.parse(JSON.stringify(value));
+    }
+
+    private previewAssignmentAction(assignment: AssignmentAction): PreviewAssignmentAction {
+        if (assignment === 'reused') {
+            return 'reused';
+        }
+        if (assignment === 'created') {
+            return 'would_create';
+        }
+        if (assignment === 'reassigned') {
+            return 'would_reassign';
+        }
+
+        return 'preview_only';
     }
 
     private previewResponse(

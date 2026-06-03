@@ -130,6 +130,7 @@ export async function seedRemnawaveSettings(prisma: PrismaClient) {
             oauth2Settings: DEFAULT_OAUTH2_SETTINGS,
             passwordSettings: DEFAULT_PASSWORD_AUTH_SETTINGS,
             brandingSettings: DEFAULT_BRANDING_SETTINGS,
+            hostBalancerGlobalEnabled: true,
         });
 
         await prisma.remnawaveSettings.create({

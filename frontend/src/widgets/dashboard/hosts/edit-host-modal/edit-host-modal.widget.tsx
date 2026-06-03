@@ -10,6 +10,7 @@ import { Drawer } from '@mantine/core'
 import consola from 'consola/browser'
 
 import {
+    HostBalancerTargetsValidation,
     QueryKeys,
     useCreateHost,
     useGetConfigProfiles,
@@ -19,7 +20,8 @@ import {
     useGetSubscriptionTemplates,
     useUpdateHost,
     useUpdateHostBalancer,
-    useUpdateHostBalancerTargets
+    useUpdateHostBalancerTargets,
+    useValidateHostBalancerTargets
 } from '@shared/api/hooks'
 import { MODALS, useModalClose, useModalState } from '@entities/dashboard/modal-store'
 import {
@@ -28,6 +30,7 @@ import {
     hostBalancerToDraft,
     sanitizeHostBalancingDraft
 } from '@shared/ui/forms/hosts/base-host-form/host-balancing-form'
+import { saveHostBalancingDraft } from '@shared/ui/forms/hosts/base-host-form/host-balancing-save-flow'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { BaseHostForm } from '@shared/ui/forms/hosts/base-host-form'
 import { cloneString } from '@shared/utils/misc/clone-string'
@@ -45,6 +48,8 @@ export const EditHostModalWidget = memo(() => {
     const [hostBalancingDraft, setHostBalancingDraft] = useState<HostBalancingDraft>(
         DEFAULT_HOST_BALANCING_DRAFT
     )
+    const [hostBalancingValidation, setHostBalancingValidation] =
+        useState<HostBalancerTargetsValidation | null>(null)
 
     const { data: configProfiles } = useGetConfigProfiles()
     const { data: nodes } = useGetNodes()
@@ -77,6 +82,7 @@ export const EditHostModalWidget = memo(() => {
             form.resetDirty()
             form.resetTouched()
             setHostBalancingDraft(DEFAULT_HOST_BALANCING_DRAFT)
+            setHostBalancingValidation(null)
             setAdvancedOpened(false)
         }, 200)
     }
@@ -92,8 +98,14 @@ export const EditHostModalWidget = memo(() => {
     })
     const { mutateAsync: updateHostBalancer, isPending: isUpdateHostBalancerPending } =
         useUpdateHostBalancer()
-    const { mutateAsync: updateHostBalancerTargets, isPending: isUpdateHostBalancerTargetsPending } =
-        useUpdateHostBalancerTargets()
+    const {
+        mutateAsync: updateHostBalancerTargets,
+        isPending: isUpdateHostBalancerTargetsPending
+    } = useUpdateHostBalancerTargets()
+    const {
+        mutateAsync: validateHostBalancerTargets,
+        isPending: isValidateHostBalancerTargetsPending
+    } = useValidateHostBalancerTargets()
 
     const { mutate: createHost } = useCreateHost({
         mutationFns: {
@@ -181,19 +193,41 @@ export const EditHostModalWidget = memo(() => {
     }, [host, hostBalancer])
 
     const saveHostBalancing = async (hostUuid: string) => {
-        if (!hostBalancingDraft.touched) {
-            return
+        if (hostBalancingDraft.touched) {
+            const { targets } = sanitizeHostBalancingDraft(hostBalancingDraft)
+            const validation = await validateHostBalancerTargets({
+                route: { hostUuid },
+                variables: { targets }
+            })
+            setHostBalancingValidation(validation)
+
+            if (validation.targets.some((target) => target.severity === 'error')) {
+                notifications.show({
+                    title: t('edit-host-modal.widget.error'),
+                    message: t('base-host-form.cannot-save-active-invalid-targets'),
+                    color: 'red'
+                })
+                throw new Error('Host balancer targets validation failed')
+            }
         }
 
-        const { settings, targets } = sanitizeHostBalancingDraft(hostBalancingDraft)
-
-        await updateHostBalancer({
-            route: { hostUuid },
-            variables: settings
-        })
-        await updateHostBalancerTargets({
-            route: { hostUuid },
-            variables: { targets }
+        await saveHostBalancingDraft({
+            draft: hostBalancingDraft,
+            hostUuid,
+            notifySuccess: () => {
+                notifications.show({
+                    title: t('common.success'),
+                    message: t('base-host-form.balancer-settings-saved'),
+                    color: 'teal'
+                })
+            },
+            refetchSettings: async (refetchHostUuid) =>
+                queryClient.refetchQueries({
+                    queryKey: QueryKeys.hostBalancers.getSettings(refetchHostUuid).queryKey
+                }),
+            setDraft: setHostBalancingDraft,
+            updateSettings: updateHostBalancer,
+            updateTargets: updateHostBalancerTargets
         })
     }
 
@@ -243,6 +277,8 @@ export const EditHostModalWidget = memo(() => {
         if (!host) {
             return
         }
+
+        const shouldUpdateHost = form.isDirty() && form.isTouched()
 
         let xHttpExtraParams
         let muxParams
@@ -298,18 +334,20 @@ export const EditHostModalWidget = memo(() => {
         }
 
         try {
-            await updateHost({
-                variables: {
-                    ...values,
-                    isDisabled: !values.isDisabled,
-                    uuid: host.uuid,
-                    xHttpExtraParams,
-                    muxParams,
-                    sockoptParams,
-                    finalMask,
-                    tag: values.tag === '' ? null : values.tag
-                }
-            })
+            if (shouldUpdateHost) {
+                await updateHost({
+                    variables: {
+                        ...values,
+                        isDisabled: !values.isDisabled,
+                        uuid: host.uuid,
+                        xHttpExtraParams,
+                        muxParams,
+                        sockoptParams,
+                        finalMask,
+                        tag: values.tag === '' ? null : values.tag
+                    }
+                })
+            }
             await saveHostBalancing(host.uuid)
             handleClose()
             await queryClient.refetchQueries({
@@ -402,10 +440,12 @@ export const EditHostModalWidget = memo(() => {
                     isSubmitting={
                         isUpdateHostPending ||
                         isUpdateHostBalancerPending ||
-                        isUpdateHostBalancerTargetsPending
+                        isUpdateHostBalancerTargetsPending ||
+                        isValidateHostBalancerTargetsPending
                     }
                     nodes={nodes!}
                     onHostBalancingDraftChange={setHostBalancingDraft}
+                    onHostBalancingValidationChange={setHostBalancingValidation}
                     setAdvancedOpened={setAdvancedOpened}
                     subscriptionTemplates={templates?.templates ?? []}
                 />

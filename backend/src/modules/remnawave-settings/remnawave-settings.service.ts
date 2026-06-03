@@ -1,5 +1,6 @@
 import isEmail from 'validator/lib/isEmail';
 
+import { ConfigService } from '@nestjs/config';
 import { Injectable, Logger } from '@nestjs/common';
 
 import { RawCacheService } from '@common/raw-cache';
@@ -16,11 +17,12 @@ export class RemnawaveSettingsService {
     constructor(
         private readonly remnawaveSettingsRepository: RemnawaveSettingsRepository,
         private readonly rawCacheService: RawCacheService,
+        private readonly configService: ConfigService,
     ) {}
 
     public async getSettingsFromController(): Promise<TResult<RemnawaveSettingsEntity>> {
         try {
-            const settings = await this.getSettings();
+            const settings = this.withHostBalancerRuntimeStatus(await this.getSettings());
 
             return ok(settings);
         } catch (error) {
@@ -63,6 +65,16 @@ export class RemnawaveSettingsService {
 
     private async getSettings(): Promise<RemnawaveSettingsEntity> {
         return await this.remnawaveSettingsRepository.getSettings();
+    }
+
+    private withHostBalancerRuntimeStatus(
+        settings: RemnawaveSettingsEntity,
+    ): RemnawaveSettingsEntity {
+        return new RemnawaveSettingsEntity({
+            ...settings,
+            hostBalancerEnvEnabled:
+                this.configService.get<string>('HOST_BALANCER_ENABLED', 'true') === 'true',
+        });
     }
 
     private async validateSettings(settings: RemnawaveSettingsEntity): Promise<{

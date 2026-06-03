@@ -8,9 +8,7 @@ import {
 } from '../constants';
 
 export const HostBalancerStrategySchema = z.nativeEnum(HOST_BALANCER_STRATEGIES);
-export const HostBalancerUnavailablePolicySchema = z.nativeEnum(
-    HOST_BALANCER_UNAVAILABLE_POLICIES,
-);
+export const HostBalancerUnavailablePolicySchema = z.nativeEnum(HOST_BALANCER_UNAVAILABLE_POLICIES);
 export const HostBalancerTrafficMetricSchema = z.nativeEnum(HOST_BALANCER_TRAFFIC_METRICS);
 export const HostBalancerTargetStatusSchema = z.nativeEnum(HOST_BALANCER_TARGET_STATUSES);
 const DateTimeSchema = z
@@ -51,6 +49,17 @@ export const HostBalancerSchema = z.object({
     updatedAt: DateTimeSchema,
 });
 
+const HostBalancerPreviewDiagnosticsTargetSchema = z.object({
+    targetUuid: z.string().uuid(),
+    nodeUuid: z.string().uuid().nullable().optional(),
+    trafficBytes: z.string().nullable().optional(),
+    weight: z.number().int().min(1).optional(),
+    score: z.number().optional(),
+    selected: z.boolean().optional(),
+    fallbackUsed: z.boolean().optional(),
+    reason: z.string().optional(),
+});
+
 export const HostBalancerPreviewSchema = z.object({
     hostUuid: z.string().uuid(),
     userUuid: z.string().uuid(),
@@ -65,49 +74,19 @@ export const HostBalancerPreviewSchema = z.object({
         reasons: z.array(z.string()),
         warnings: z.array(z.string()),
         wouldCreateAssignment: z.literal(false),
-        resolvedUserUuid: z.string().uuid().optional(),
+        resolvedUserUuid: z.string().uuid(),
         shortUuidMasked: z.string().nullable().optional(),
-        candidates: z
-            .array(
-                z.object({
-                    targetUuid: z.string().uuid(),
-                    nodeUuid: z.string().uuid().nullable().optional(),
-                    trafficBytes: z.string().nullable().optional(),
-                    weight: z.number().int().min(1).optional(),
-                    score: z.number().optional(),
-                    selected: z.boolean().optional(),
-                    fallbackUsed: z.boolean().optional(),
-                    reason: z.string().optional(),
-                }),
-            )
-            .optional(),
-        excludedTargets: z
-            .array(
-                z.object({
-                    targetUuid: z.string().uuid(),
-                    nodeUuid: z.string().uuid().nullable().optional(),
-                    trafficBytes: z.string().nullable().optional(),
-                    weight: z.number().int().min(1).optional(),
-                    score: z.number().optional(),
-                    selected: z.boolean().optional(),
-                    fallbackUsed: z.boolean().optional(),
-                    reason: z.string().optional(),
-                }),
-            )
-            .optional(),
-        selectedTarget: z
+        existingAssignment: z
             .object({
                 targetUuid: z.string().uuid(),
-                nodeUuid: z.string().uuid().nullable().optional(),
-                trafficBytes: z.string().nullable().optional(),
-                weight: z.number().int().min(1).optional(),
-                score: z.number().optional(),
-                selected: z.boolean().optional(),
-                fallbackUsed: z.boolean().optional(),
-                reason: z.string().optional(),
+                reason: z.string().nullable(),
+                lastUsedAt: DateTimeSchema,
             })
-            .nullable()
-            .optional(),
+            .nullable(),
+        assignmentAction: z.enum(['preview_only', 'reused', 'would_create', 'would_reassign']),
+        candidates: z.array(HostBalancerPreviewDiagnosticsTargetSchema).optional(),
+        excludedTargets: z.array(HostBalancerPreviewDiagnosticsTargetSchema).optional(),
+        selectedTarget: HostBalancerPreviewDiagnosticsTargetSchema.nullable().optional(),
         assignment: z.enum(['none', 'reused', 'created', 'reassigned', 'skipped']).optional(),
         finalHostOverrides: z
             .object({
@@ -133,6 +112,44 @@ export const HostBalancerStatsSchema = z.object({
     ),
 });
 
+export const HostBalancerTargetValidationSeveritySchema = z.enum(['ok', 'warning', 'error']);
+
+export const HostBalancerTargetValidationSchema = z.object({
+    nodeUuid: z.string().uuid().nullable(),
+    valid: z.boolean(),
+    severity: HostBalancerTargetValidationSeveritySchema,
+    reasons: z.array(z.string()),
+    nodeName: z.string().nullable(),
+    nodeAddress: z.string().nullable(),
+    nodeStatus: z.enum(['connected', 'connecting', 'disabled', 'disconnected', 'unknown']),
+    hasRequiredInbound: z.boolean().nullable(),
+});
+
+export const HostBalancerTargetsValidationSchema = z.object({
+    targets: z.array(HostBalancerTargetValidationSchema),
+});
+
+const HostBalancerDecisionDiagnosticsTargetSchema = z.object({
+    targetUuid: z.string().uuid(),
+    nodeUuid: z.string().uuid().nullable().optional(),
+    trafficBytes: z.string().nullable().optional(),
+    weight: z.number().int().min(1).optional(),
+    score: z.number().optional(),
+    selected: z.boolean().optional(),
+    fallbackUsed: z.boolean().optional(),
+    reason: z.string().optional(),
+});
+
+const HostBalancerDecisionFinalOverridesSchema = z
+    .object({
+        address: z.string(),
+        port: z.number().int(),
+        sni: z.string().nullable(),
+        host: z.string().nullable(),
+        path: z.string().nullable(),
+    })
+    .nullable();
+
 export const HostBalancerDecisionSchema = z.object({
     uuid: z.string().uuid(),
     hostUuid: z.string().uuid(),
@@ -142,22 +159,11 @@ export const HostBalancerDecisionSchema = z.object({
     reason: z.string(),
     unavailablePolicy: HostBalancerUnavailablePolicySchema,
     assignmentAction: z.enum(['reused', 'created', 'reassigned', 'skipped']),
-    excludedTargets: z.array(
-        z.object({
-            targetUuid: z.string().uuid(),
-            nodeUuid: z.string().uuid().nullable().optional(),
-            reason: z.string().optional(),
-        }),
-    ),
-    finalHostOverrides: z
-        .object({
-            address: z.string(),
-            port: z.number().int(),
-            sni: z.string().nullable(),
-            host: z.string().nullable(),
-            path: z.string().nullable(),
-        })
-        .nullable(),
+    candidates: z.array(HostBalancerDecisionDiagnosticsTargetSchema),
+    excludedTargets: z.array(HostBalancerDecisionDiagnosticsTargetSchema),
+    selectedTarget: HostBalancerDecisionDiagnosticsTargetSchema.nullable(),
+    warnings: z.array(z.string()),
+    finalHostOverrides: HostBalancerDecisionFinalOverridesSchema,
     diagnostics: z.record(z.unknown()),
     createdAt: DateTimeSchema,
 });

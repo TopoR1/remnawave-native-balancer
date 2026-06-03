@@ -27,6 +27,10 @@ const allowedLiteralPatterns = [
     /^No eligible target selected\.$/,
     /^Selected target by \([A-Z_]\+\)\.\$$/,
     /^target (disabled|draining|node not found|node disabled|node disconnected|node lacks required inbound)$/,
+    /^target status [A-Z_]+$/,
+    /^node disconnected$/,
+    /^overrideAddress differs from selected node address$/,
+    /^address-only target: traffic\/status checks unavailable$/,
     /^target status \([A-Z_]\+\)\$$/
 ]
 

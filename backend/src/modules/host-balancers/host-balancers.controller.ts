@@ -15,6 +15,7 @@ import {
     ToggleHostBalancerCommand,
     UpdateHostBalancerCommand,
     UpdateHostBalancerTargetsCommand,
+    ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
 import { CONTROLLERS_INFO, HOST_BALANCERS_CONTROLLER } from '@libs/contracts/api';
 import { ROLE } from '@libs/contracts/constants';
@@ -39,6 +40,9 @@ import {
     UpdateHostBalancerTargetsRequestBodyDto,
     UpdateHostBalancerTargetsRequestDto,
     UpdateHostBalancerTargetsResponseDto,
+    ValidateHostBalancerTargetsRequestBodyDto,
+    ValidateHostBalancerTargetsRequestDto,
+    ValidateHostBalancerTargetsResponseDto,
 } from './dtos';
 import { HostBalancerService } from './host-balancer.service';
 
@@ -110,6 +114,21 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
+    @ApiOkResponse({ type: ValidateHostBalancerTargetsResponseDto })
+    @Endpoint({
+        command: ValidateHostBalancerTargetsCommand,
+        httpCode: HttpStatus.OK,
+        apiBody: ValidateHostBalancerTargetsRequestBodyDto,
+    })
+    async validateTargets(
+        @Param() { hostUuid }: ValidateHostBalancerTargetsRequestDto,
+        @Body() body: ValidateHostBalancerTargetsRequestBodyDto,
+    ): Promise<ValidateHostBalancerTargetsResponseDto> {
+        const result = await this.hostBalancerService.validateTargets(hostUuid, body);
+        return { response: errorHandler(result) };
+    }
+
+    @ApiParam({ name: 'hostUuid', type: String, required: true })
     @ApiOkResponse({ type: PreviewHostBalancerResponseDto })
     @Endpoint({
         command: PreviewHostBalancerCommand,
@@ -119,7 +138,10 @@ export class HostBalancersController {
         @Param() { hostUuid }: PreviewHostBalancerRequestDto,
         @Query() { userUuid, shortUuid }: PreviewHostBalancerRequestQueryDto,
     ): Promise<PreviewHostBalancerResponseDto> {
-        const result = await this.hostBalancerService.previewSelection({ userUuid, shortUuid }, hostUuid);
+        const result = await this.hostBalancerService.previewSelection(
+            { userUuid, shortUuid },
+            hostUuid,
+        );
         return { response: errorHandler(result) };
     }
 

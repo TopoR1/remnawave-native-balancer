@@ -1,74 +1,262 @@
-# Remnawave Native Host Balancer (в разработке, могут быть ошибки или не рабочие сценарии)
+# Remnawave Native Host Balancer
 
-Это форк Remnawave с нативной балансировкой на уровне `Host`. Изменения находятся в backend и frontend Remnawave: оператор настраивает балансировку прямо в панели, а backend выбирает целевой узел до генерации подписки.
+Этот репозиторий содержит форк Remnawave с нативной балансировкой на уровне `Host`.
+Балансировка встроена в backend и UI Remnawave: оператор настраивает ее в форме `Host`, а backend выбирает target до генерации подписки.
 
-Нативный `Host Balancer` не является отдельной страницей подписки и не переписывает уже готовый текст подписки. Балансировка выполняется внутри backend Remnawave перед генерацией подписки: для публичного `Host` выбирается один из внутренних targets, после чего генератор подписки получает уже подмененные `address`, `port`, `sni`, `host` и `path`.
+Функция защищена тремя уровнями включения:
 
-Пользователь при этом продолжает видеть публичный remark исходного `Host`. Меняется только техническая цель подключения: адрес, порт и при необходимости TLS/WebSocket поля берутся из выбранного target.
+1. `HOST_BALANCER_ENABLED` в окружении backend. Это аварийный hard kill-switch.
+2. Глобальная настройка `Host Balancer` в UI Remnawave.
+3. Настройка `Balancing` у конкретного `Host`.
 
-## Этот форк работает внутри Remnawave:
+Балансировка применяется только если включены все три уровня.
 
-- выбор target происходит в backend до сборки подписки;
-- панель Remnawave содержит секцию `Balancing` в форме `Host`;
-- старый внешний балансировщик не нужен для генерации подписок;
-- публичный `Host` и его remark остаются точкой, которую видит пользователь;
-- выбранный target меняет внутренние поля `address`, `port`, `sni`, `host`, `path`.
+## Что такое native Host Balancer
+
+Native Host Balancer выбирает, на какую target-ноду отправить пользователя, прямо во время генерации подписки Remnawave.
+
+Исходный публичный `Host` остается логической точкой входа:
+
+- пользователь видит remark исходного `Host`;
+- operator продолжает управлять Host из панели Remnawave;
+- subscription generator получает уже подмененные технические поля подключения.
+
+Target может переопределить:
+
+- `address`;
+- `port`;
+- `sni`;
+- `host`;
+- `path`.
+
+Backend хранит sticky assignment в формате:
+
+```text
+userUuid + hostUuid -> targetUuid
+```
+
+Это означает, что один и тот же пользователь для одного и того же Host может стабильно получать одну target-ноду, пока assignment валиден и включен sticky mode.
+
+## Отличие от remnawave-subscription-page-with-balancer
+
+`remnawave-subscription-page-with-balancer` работает как внешняя subscription page и балансирует уже снаружи Remnawave.
+
+Native Host Balancer работает иначе:
+
+- не требует отдельной subscription page для балансировки;
+- не переписывает готовый текст подписки после генерации;
+- работает внутри backend Remnawave до генерации подписки;
+- видит реальные Host, targets, assignments и diagnostics;
+- показывает preview и decision audit прямо в UI Host;
+- может использовать ту же subscription page, что и обычный Remnawave.
+
+Практический вывод: внешний balancer-page нужно остановить и вернуть обычную subscription-page. Балансировку теперь выполняет backend Remnawave.
+
+## Как это работает
+
+1. Пользователь запрашивает подписку.
+2. Remnawave получает список Host, доступных пользователю.
+3. Для каждого Host backend проверяет:
+   - разрешен ли `HOST_BALANCER_ENABLED`;
+   - включен ли глобальный Host Balancer в UI;
+   - включен ли Balancing у конкретного Host.
+4. Если все включено, backend выбирает target по стратегии.
+5. Если sticky assignment существует и валиден, он может быть переиспользован.
+6. Если assignment нужен, он сохраняется как `userUuid + hostUuid -> targetUuid`.
+7. В subscription generator уходит Host с подмененными полями `address/port/sni/host/path`.
+8. В `host_balancer_decisions` может записаться audit-запись с причиной выбора или исключения target.
+
+Публичный Host не становится target. Он остается именем и логической сущностью. Target только подменяет технические параметры подключения.
+
+## Уровни включения
+
+### 1. Env hard kill-switch
+
+`HOST_BALANCER_ENABLED=false` полностью выключает Host Balancer на backend.
+
+При этом:
+
+- UI может показывать и сохранять настройки;
+- targets и assignments остаются в БД;
+- генерация подписки идет без применения Balancer.
+
+`HOST_BALANCER_ENABLED=true` разрешает Balancer, но не включает его автоматически для всех Host.
+
+В этом форке default в коде и `backend/.env.sample`:
+
+```env
+HOST_BALANCER_ENABLED=true
+```
+
+Для аварийного rollback явно задайте:
+
+```env
+HOST_BALANCER_ENABLED=false
+```
+
+и перезапустите backend.
+
+### 2. Глобальная UI-настройка
+
+В UI:
+
+```text
+Настройки Remnawave -> Host Balancer -> Глобально включить Host Balancer
+```
+
+Настройка хранится в БД:
+
+```text
+remnawave_settings.host_balancer_global_enabled
+```
+
+Миграция добавляет значение `true` для новых и существующих установок. Это не меняет поведение само по себе, потому что per-host `balancer.enabled` по умолчанию `false`.
+
+Если env выключен, UI покажет предупреждение:
+
+```text
+Host Balancer отключён переменной окружения. Включение в UI не применится.
+```
+
+### 3. Настройка конкретного Host
+
+В форме Host включите блок `Balancing`.
+
+Даже если env и глобальная UI-настройка включены, конкретный Host не будет балансироваться, пока у него не включен `Balancing`.
 
 ## Структура репозитория
 
-- `backend` - backend Remnawave с модулем `Host Balancer`, Prisma-миграциями, API и логикой выбора target при генерации подписки.
-- `frontend` - панель Remnawave с секцией `Balancing` в форме создания и редактирования `Host`.
-- `node` - код Remnawave Node, в этом форке не является основной точкой балансировки.
-- `panel` - документация и сайт панели Remnawave.
-- `TESTING_HOST_BALANCER.md` - подробный регламент для проверки, диагностики и отката `Host Balancer`.
-- `Dockerfile` - корневой рабочий Dockerfile, который собирает локальный frontend и backend в один образ.
-- `Dockerfile.prebuilt-frontend` - вариант для слабого VPS: frontend собирается заранее, а Docker копирует готовый `frontend/dist`.
+- `backend` - backend Remnawave, Prisma-миграции, API, HostBalancerService.
+- `frontend` - UI Remnawave с блоком `Balancing`, preview и decision audit.
+- `node` - код Remnawave Node, не является точкой балансировки.
+- `panel` - документация и сайт панели.
+- `Dockerfile` - основной Dockerfile из корня репозитория.
+- `Dockerfile.prebuilt-frontend` - Dockerfile для слабого VPS, когда `frontend/dist` собран заранее.
+- `TESTING_HOST_BALANCER.md` - подробный регламент проверки, диагностики и отката.
 
-Важно: рабочий Docker-образ для этого форка нужно собирать из корня репозитория. `backend/Dockerfile` оставлен как совместимый с upstream вариант и может скачать официальный frontend zip без секции `Balancing`.
+Важно: рабочий образ этого форка собирается из корня репозитория. `backend/Dockerfile` может подтянуть официальный frontend без блока `Balancing`.
+
+## Установка поверх существующего Remnawave
+
+Ниже пример для установки в `/opt/remnawave`. Подставьте свои имена сервисов, контейнеров и доменов.
+
+### 1. Backup `/opt/remnawave`
 
 ```bash
+cd /opt
+sudo tar -czf remnawave-files-before-native-balancer.tgz remnawave
+```
+
+Сохраните текущие образы:
+
+```bash
+cd /opt/remnawave
+docker compose ps
+docker compose images
+docker compose config > compose-before-native-balancer.yml
+```
+
+### 2. Backup PostgreSQL
+
+Если PostgreSQL в compose:
+
+```bash
+cd /opt/remnawave
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > remnawave-before-native-balancer.dump
+```
+
+Если PostgreSQL внешний:
+
+```bash
+PGPASSWORD='<password>' pg_dump \
+  -h <db-host> \
+  -p <db-port> \
+  -U <db-user> \
+  -d <db-name> \
+  -Fc \
+  -f remnawave-before-native-balancer.dump
+```
+
+### 3. Остановить старый remnawave-subscription-page-with-balancer
+
+Если у вас был внешний balancer-page, остановите его:
+
+```bash
+cd /opt/remnawave
+docker compose stop remnawave-subscription-page-with-balancer
+docker compose rm -f remnawave-subscription-page-with-balancer
+```
+
+Если сервис называется иначе:
+
+```bash
+docker compose config --services
+```
+
+Найдите сервис старой subscription page с balancer и остановите его.
+
+### 4. Вернуть обычную subscription-page
+
+В compose должна остаться обычная subscription-page Remnawave, без внешнего balancer.
+
+Проверьте:
+
+```bash
+docker compose config | grep -i subscription
+```
+
+Если вы ранее меняли Caddy/Nginx route на внешний balancer-page, верните route на обычную subscription-page или backend Remnawave согласно вашей схеме.
+
+### 5. Собрать image из root Dockerfile
+
+```bash
+cd /opt
+git clone https://github.com/TopoR1/remnawave-native-balancer.git
+cd /opt/remnawave-native-balancer
 docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
 ```
 
-Если frontend уже собран заранее:
+### 6. Подключить image
 
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
+Создайте или обновите `/opt/remnawave/docker-compose.override.yml`:
+
+```yaml
+services:
+  remnawave:
+    image: topor/remnawave-backend:native-balancer
+    environment:
+      HOST_BALANCER_ENABLED: "false"
+      HOST_BALANCER_DECISIONS_ENABLED: "true"
 ```
 
-Frontend currently uses ESLint 9 with `legacy-peer-deps=true` in `frontend/.npmrc` because
-`eslint-config-airbnb-base@15` declares an ESLint 7/8 peer range. This affects install-time
-peer resolution only.
+Схема безопасного запуска:
+
+- `HOST_BALANCER_ENABLED=false` - сначала проверить, что новый image и UI работают без применения Balancer;
+- затем `HOST_BALANCER_ENABLED=true` - разрешить Balancer и управлять им из UI.
+
+После изменения:
+
+```bash
+cd /opt/remnawave
+docker compose up -d
+docker compose logs --tail=100 remnawave
+```
 
 ## Сборка на слабом VPS
 
-На VPS с небольшим объемом памяти сборка frontend внутри Docker может завершиться так:
+Если сборка падает так:
 
 ```text
-✓ 11751 modules transformed
 Killed
 exit code 137
 ```
 
-Обычно это означает, что Vite-сборку остановил OOM-killer: памяти и swap не хватило на финальную стадию сборки.
+обычно это OOM-killer. Vite/frontend build не хватило RAM или swap.
 
-Корневой `Dockerfile` ограничивает heap frontend-сборки значением `--max-old-space-size=3072`. При необходимости его можно переопределить:
-
-```bash
-docker build \
-  --build-arg FRONTEND_NODE_OPTIONS=--max-old-space-size=2048 \
-  -f Dockerfile \
-  -t topor/remnawave-backend:native-balancer .
-```
-
-Если сборка все равно получает `Killed`, временно добавьте swap на время сборки:
+### Temporary swap 6G
 
 ```bash
-sudo fallocate -l 4G /swapfile-remnawave-build
+sudo fallocate -l 6G /swapfile-remnawave-build
 sudo chmod 600 /swapfile-remnawave-build
 sudo mkswap /swapfile-remnawave-build
 sudo swapon /swapfile-remnawave-build
@@ -80,352 +268,286 @@ sudo swapoff /swapfile-remnawave-build
 sudo rm /swapfile-remnawave-build
 ```
 
-Более надежный режим для слабого VPS - собрать frontend заранее и использовать `Dockerfile.prebuilt-frontend`. Этот Dockerfile не запускает Vite внутри Docker, требует готовый `frontend/dist/index.html` и копирует `frontend/dist` в `/opt/app/frontend`:
+Если места мало:
 
 ```bash
-cd frontend
+docker builder prune -af
+docker system df
+```
+
+### Dockerfile.prebuilt-frontend
+
+Если Docker build внутри VPS все равно не проходит, соберите frontend заранее:
+
+```bash
+cd /opt/remnawave-native-balancer/frontend
 npm ci
 npm run build
 cd ..
 docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
 ```
 
-Если Docker builder занял много места после неудачных сборок, очистите кэш:
+Этот вариант копирует готовый `frontend/dist` и не запускает тяжелую frontend-сборку внутри Docker.
+
+## Проверка image
+
+Обычный `docker run` запускает entrypoint backend. Он потребует `DATABASE_URL` и другие env:
 
 ```bash
-docker builder prune
+docker run --rm topor/remnawave-backend:native-balancer
 ```
 
-Проверять содержимое образа нужно с переопределенным entrypoint:
+Это не является корректной проверкой содержимого image.
+
+Правильная проверка:
 
 ```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend && ls -la /opt/app/backend"
 ```
 
-Обычный `docker run topor/remnawave-backend:native-balancer ...` запускает `docker-entrypoint.sh`, который выполняет startup-логику Remnawave и требует `DATABASE_URL`.
-
-## Установка на существующий сервер Remnawave
-
-Команды ниже рассчитаны на сервер, где Remnawave установлен в `/opt/remnawave`. Перед началом замените имена контейнеров, compose-файлов и домены на свои, если ваша установка отличается.
-
-### 1. Сделайте резервные копии
-
-Сохраните конфиги Remnawave:
+Проверить, что frontend внутри image:
 
 ```bash
-sudo mkdir -p /opt/remnawave-backups
-sudo tar -C /opt -czf /opt/remnawave-backups/remnawave-configs-$(date +%F-%H%M%S).tar.gz remnawave
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "test -f /opt/app/frontend/index.html && find /opt/app/frontend/assets -maxdepth 1 -type f | head"
 ```
 
-Сохраните PostgreSQL в формате custom dump:
+## Настройка Host Balancer
+
+### 1. Включить глобально
+
+Откройте:
+
+```text
+Настройки Remnawave -> Host Balancer
+```
+
+Проверьте:
+
+- env status;
+- warning, если `HOST_BALANCER_ENABLED=false`;
+- включена ли глобальная UI-настройка.
+
+### 2. Включить на Host
+
+Откройте Host create/edit modal:
+
+```text
+Hosts -> нужный Host -> Balancing
+```
+
+Включите `Balancing`, выберите стратегию и policy.
+
+### 3. Добавить targets
+
+Добавьте targets:
+
+- выберите node;
+- проверьте auto-fill `overrideAddress`;
+- задайте `overridePort`, если нужно;
+- проверьте статус inbound compatibility.
+
+Target со статусом `ACTIVE` без нужного inbound блокируется строгой проверкой. Disabled target может оставаться как черновик, но будет предупреждение.
+
+### 4. Проверить preview
+
+В блоке `Предпросмотр выбора` введите:
+
+- `userUuid`;
+- или `shortUuid`.
+
+Нажмите `Проверить выбор`.
+
+UI должен показать:
+
+- selected target;
+- candidates;
+- excluded targets;
+- warnings;
+- final address/port;
+- причину выбора или исключения.
+
+### 5. Проверить decision audit
+
+В блоке `Последние решения` смотрите:
+
+- время;
+- masked `userUuid`;
+- выбранную цель;
+- strategy;
+- reason;
+- assignmentAction;
+- final address;
+- candidates/excluded count;
+- warnings.
+
+Откройте detail row, чтобы увидеть:
+
+- candidates;
+- excludedTargets;
+- selectedTarget;
+- finalHostOverrides;
+- unavailablePolicy.
+
+Если видите `target node lacks required inbound`, target-нода не содержит inbound, который использует этот Host.
+
+### 6. Проверить assignments
+
+В БД:
+
+```sql
+SELECT host_uuid, user_uuid, target_uuid, reason, last_used_at
+FROM host_balancer_assignments
+WHERE host_uuid = '<hostUuid>'
+ORDER BY updated_at DESC
+LIMIT 20;
+```
+
+Preview не должен создавать assignments. Assignment появляется только при реальной генерации подписки.
+
+## Типовые проблемы
+
+### Targets не сохраняются из UI
+
+Проверьте DevTools Network при сохранении Host:
+
+- если менялась обычная форма Host, должен быть `PATCH /api/hosts/...`;
+- для balancer settings должен быть `PUT /api/host-balancers/:hostUuid`;
+- для targets должен быть `PUT /api/host-balancers/:hostUuid/targets`.
+
+Если settings сохранились, а targets нет, UI должен показать ошибку и не закрыть модалку молча.
+
+### target node lacks required inbound
+
+Причина: target-нода не имеет inbound, который использует текущий Host.
+
+Что проверить:
+
+- `configProfileInboundUuid` у Host;
+- активные inbounds на node;
+- compatibility badge в targets table;
+- decision audit detail `excludedTargets`.
+
+Решение: добавьте нужный inbound на target-ноду или выберите другую node.
+
+### Host исчезает из подписки
+
+Проверьте `unavailablePolicy`:
+
+- `HIDE_HOST` скрывает Host, если нет доступных targets;
+- `ORIGINAL_HOST` оставляет исходный Host;
+- `KEEP_LAST_IF_POSSIBLE` пытается сохранить последний валидный target.
+
+Также проверьте:
+
+- targets enabled/status;
+- node connected;
+- inbound compatibility;
+- decision audit reason.
+
+### App not supported через curl
+
+Некоторые endpoints подписки зависят от User-Agent или client type.
+
+Для проверки используйте реальный subscription URL и User-Agent клиента, либо явно подставляйте поддерживаемый User-Agent:
 
 ```bash
-cd /opt/remnawave
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > /opt/remnawave-backups/remnawave-db-before-native-balancer.dump
+curl -A "v2rayN" "https://<sub-domain>/<shortUuid>"
 ```
 
-Если PostgreSQL находится не в compose-проекте Remnawave:
+Если route ведет на browser/subpage branch, можно получить `App not supported`.
 
-```bash
-PGPASSWORD='<password>' pg_dump -h <db-host> -p <db-port> -U <db-user> -d <db-name> -Fc -f /opt/remnawave-backups/remnawave-db-before-native-balancer.dump
-```
+### Original Host CSV random мешает тесту
 
-### 2. Склонируйте форк и соберите образ
+Если у исходной конфигурации уже включен random/shuffle Host или CSV-логика, результат может выглядеть как балансировка, хотя native Host Balancer не применился.
 
-```bash
-cd /opt
-git clone https://github.com/TopoR1/remnawave-native-balancer.git
-cd /opt/remnawave-native-balancer
-docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
-```
+Для чистого теста:
 
-Если frontend собран заранее или VPS не хватает памяти на Vite-сборку внутри Docker, используйте prebuilt-режим:
+- используйте один Host;
+- временно отключите random/shuffle;
+- сравнивайте final address из decision audit;
+- проверяйте assignments в БД.
 
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
-```
+### Sticky выключен и пользователь получает разные targets
 
-Проверьте, что в образ попал локальный frontend. Используйте `--entrypoint sh`, иначе обычный запуск пойдет через `docker-entrypoint.sh` и потребует `DATABASE_URL`:
+Если sticky assignments выключены, пользователь может получать разные targets при разных генерациях подписки.
 
-```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
-```
+Для стабильной выдачи:
 
-### 3. Подключите образ через override
+- включите `stickyEnabled`;
+- проверьте `host_balancer_assignments`;
+- не включайте traffic rebalance, если не хотите переносить существующих пользователей.
 
-Создайте `/opt/remnawave/docker-compose.override.yml`:
+## Откат
+
+Есть четыре уровня отката, от мягкого к жесткому.
+
+### 1. Выключить env
+
+Самый быстрый аварийный rollback:
 
 ```yaml
 services:
   remnawave:
-    image: topor/remnawave-backend:native-balancer
     environment:
       HOST_BALANCER_ENABLED: "false"
-      HOST_BALANCER_DECISIONS_ENABLED: "false"
 ```
 
-Если в вашем compose backend-сервис называется не `remnawave`, укажите фактическое имя сервиса. Его можно посмотреть командой:
-
-```bash
-cd /opt/remnawave
-docker compose config --services
-```
-
-На первом запуске оставьте `HOST_BALANCER_ENABLED=false`. Это глобальный аварийный выключатель: при значении `false` генерация подписки идет как в обычном Remnawave.
-
-### 4. Запустите Remnawave и проверьте панель
-
-```bash
-cd /opt/remnawave
-docker compose up -d
-docker compose ps
-docker compose logs --tail=100 remnawave
-```
-
-Откройте панель Remnawave и убедитесь, что вход работает. Затем откройте `Hosts` и проверьте, что форма `Host` содержит секцию `Balancing`. До отдельного тестового окна не включайте глобальный `HOST_BALANCER_ENABLED=true`.
-
-## Чистая установка
-
-Для новой установки используйте обычную схему Remnawave, но backend-образ соберите из этого репозитория.
-
-```bash
-cd /opt
-git clone https://github.com/TopoR1/remnawave-native-balancer.git
-cd /opt/remnawave-native-balancer
-```
-
-Подготовьте `.env` по примеру Remnawave. Обычно основа находится в `backend/.env.sample`; перенесите значения в compose-проект установки и задайте PostgreSQL, JWT, домены панели и подписок.
-
-Если ваша версия compose-файлов поддерживает setup-команду Remnawave, выполните ее по официальной инструкции Remnawave:
-
-```bash
-docker compose run --rm remnawave npm run setup
-```
-
-Если setup-команда в вашем compose-файле не предусмотрена, настройте `.env` вручную и переходите к сборке образа:
-
-```bash
-docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
-```
-
-Если frontend уже собран заранее, можно собрать образ без Vite-сборки внутри Docker:
-
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
-```
-
-Проверьте frontend внутри образа:
-
-```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend"
-```
-
-В compose-файле или `docker-compose.override.yml` укажите этот образ для backend-сервиса и сначала задайте:
-
-```env
-HOST_BALANCER_ENABLED=false
-HOST_BALANCER_DECISIONS_ENABLED=false
-```
-
-Примените миграции:
-
-```bash
-docker compose run --rm remnawave npx prisma migrate deploy
-```
-
-Запустите сервисы:
+Затем:
 
 ```bash
 docker compose up -d
-docker compose ps
 ```
 
-После первого входа в панель проверьте обычные функции Remnawave с выключенным балансировщиком, и только потом включайте балансировку на одном тестовом `Host`.
+Balancer не будет применяться, даже если UI settings и Host settings включены.
 
-## Миграция базы данных
+### 2. Выключить global UI setting
 
-Перед миграцией проверьте текущую БД и статус миграций:
+Откройте:
 
-```bash
-cd /opt/remnawave
-docker compose ps
-docker compose run --rm remnawave npx prisma migrate status
+```text
+Настройки Remnawave -> Host Balancer
 ```
 
-Сделайте свежую резервную копию:
+Выключите глобальный переключатель.
 
-```bash
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > /opt/remnawave-backups/remnawave-db-before-host-balancer-migrations.dump
-```
+### 3. Отключить конкретный Host
 
-Примените миграции:
+Откройте Host edit modal и выключите `Balancing` у проблемного Host.
 
-```bash
-docker compose run --rm remnawave npx prisma migrate deploy
-```
+### 4. Вернуть image remnawave/backend:2
 
-Миграции добавляют таблицы:
-
-- `host_balancers`
-- `host_balancer_targets`
-- `host_balancer_assignments`
-- `host_balancer_decisions`
-
-Проверьте таблицы через SQL:
-
-```bash
-docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt host_balancer*"
-```
-
-Быстрая проверка счетчиков:
-
-```bash
-docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'select count(*) from "host_balancers";'
-docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'select count(*) from "host_balancer_targets";'
-docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'select count(*) from "host_balancer_assignments";'
-docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'select count(*) from "host_balancer_decisions";'
-```
-
-## Тестирование
-
-Подробный сценарий находится в [TESTING_HOST_BALANCER.md](TESTING_HOST_BALANCER.md).
-
-Минимальный безопасный порядок:
-
-1. Оставьте `HOST_BALANCER_ENABLED=false`.
-2. Получите подписку тестового пользователя и сохраните результат.
-3. Убедитесь, что после установки нового образа подписка не изменилась.
-4. В панели включите балансировку только на одном тестовом `Host`.
-5. Добавьте два targets с разными `overrideAddress` и `overridePort`.
-6. Установите `HOST_BALANCER_ENABLED=true` и перезапустите backend.
-7. Получите подписку через `curl`.
-8. Декодируйте подписку Python-скриптом.
-9. Проверьте, что remark остался публичным именем `Host`.
-10. Проверьте, что host/port в ссылке поменялись на выбранный target.
-11. Проверьте assignment в таблице `host_balancer_assignments`.
-
-Пример получения подписки:
-
-```bash
-curl -sS -H "User-Agent: v2rayN" "https://<api-domain>/api/sub/<shortUuid>" -o balanced.txt
-```
-
-Пример декодирования:
-
-```bash
-python3 - <<'PY'
-import base64
-from pathlib import Path
-
-raw = Path("balanced.txt").read_bytes().strip()
-try:
-    decoded = base64.b64decode(raw + b"=" * (-len(raw) % 4), validate=False).decode()
-except Exception:
-    decoded = raw.decode()
-
-print(decoded)
-PY
-```
-
-Пример проверки assignment:
-
-```sql
-select
-  a."host_uuid",
-  a."user_uuid",
-  a."target_uuid",
-  t."override_address",
-  t."override_port",
-  a."reason",
-  a."last_used_at"
-from "host_balancer_assignments" a
-join "host_balancer_targets" t on t."uuid" = a."target_uuid"
-where a."host_uuid" = '<hostUuid>'
-  and a."user_uuid" = '<userUuid>';
-```
-
-## Откат
-
-### Мягкий откат
-
-Самый быстрый и предпочтительный вариант - выключить глобальный аварийный выключатель:
-
-```env
-HOST_BALANCER_ENABLED=false
-```
-
-Перезапустите backend:
-
-```bash
-docker compose up -d --no-deps remnawave
-```
-
-Настройки балансировщика и assignments останутся в БД, но генерация подписок перестанет использовать `HostBalancerService`.
-
-### Откат образа
-
-Верните официальный backend-образ Remnawave:
+В compose верните прежний image:
 
 ```yaml
 services:
   remnawave:
     image: remnawave/backend:2
-    environment:
-      HOST_BALANCER_ENABLED: "false"
 ```
 
-Перезапустите сервис:
+Затем:
 
 ```bash
-docker compose up -d --no-deps remnawave
+docker compose up -d
+docker compose logs --tail=100 remnawave
 ```
 
-Если имя backend-сервиса другое, используйте его вместо `remnawave`.
+### 5. Restore DB только как крайняя мера
 
-### Откат базы данных
+Обычно restore DB не нужен: настройки Balancer и assignments можно оставить в БД, если env выключен.
 
-Восстановление БД используйте только как последнюю меру: оно откатывает не только настройки балансировщика, но и все изменения данных после резервной копии.
+Restore используйте только если:
+
+- миграции нужно полностью откатить;
+- данные повреждены;
+- вы возвращаетесь на схему, несовместимую с текущей БД.
+
+Пример restore:
 
 ```bash
+cd /opt/remnawave
 docker compose stop remnawave
-docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists < /opt/remnawave-backups/remnawave-db-before-native-balancer.dump
+docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists < remnawave-before-native-balancer.dump
 docker compose up -d
 ```
 
-## Диагностика
-
-### Панель открывается, но секции Balancing нет
-
-Скорее всего, образ содержит официальный frontend zip вместо локального frontend из этого форка. Соберите образ из корневого `Dockerfile`, а не из `./backend`:
-
-```bash
-docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
-```
-
-После пересборки перезапустите backend и очистите кэш браузера.
-
-### Подписка не изменилась
-
-Проверьте три уровня включения:
-
-- `HOST_BALANCER_ENABLED=true` в окружении backend;
-- балансировка включена на конкретном `Host`;
-- у `Host` есть включенные targets со статусом `ACTIVE` или подходящим статусом для закрепленного assignment.
-
-Также проверьте, что вы тестируете пользователя, которому доступен именно этот `Host`.
-
-### Host пропал из подписки
-
-Проверьте `unavailablePolicy` и список candidates. Если политика `HIDE_HOST`, а подходящих targets нет, исходный `Host` может быть скрыт. Для проверки можно временно поставить `ORIGINAL_HOST` или вернуть хотя бы один target в `ACTIVE`.
-
-### Стратегия по трафику не меняет старых пользователей
-
-Закрепленные assignments по умолчанию не ребалансируются стратегиями трафика. Уже назначенный пользователь останется на прежнем target, пока target валиден. Проверяйте стратегии `LEAST_TRAFFIC` и `WEIGHTED_LEAST_TRAFFIC` на новых тестовых пользователях или включайте отдельную настройку ребалансировки существующих assignments, если она используется в вашей сборке.
+Перед restore сделайте свежую копию текущего состояния.

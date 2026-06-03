@@ -25,6 +25,7 @@ export namespace UpdateRemnawaveSettingsCommand {
         oauth2Settings: Oauth2SettingsSchema.optional(),
         passwordSettings: PasswordAuthSettingsSchema.optional(),
         brandingSettings: BrandingSettingsSchema.optional(),
+        hostBalancerGlobalEnabled: z.boolean().optional(),
     });
 
     export type Request = z.infer<typeof RequestSchema>;
