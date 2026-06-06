@@ -267,7 +267,7 @@ export const CreateHostModalWidget = () => {
             overlayProps={{ backgroundOpacity: 0.6, blur: 0 }}
             padding="lg"
             position="right"
-            size="lg"
+            size="68.75rem"
             title={
                 <BaseOverlayHeader
                     iconColor="teal"

@@ -21,8 +21,8 @@ type DecisionDisplay = {
 export function decisionSelectedTargetLabel(decision: DecisionDisplay) {
     return (
         decision.selectedTarget?.nodeName ??
-        decision.selectedTarget?.targetUuid ??
-        decision.targetUuid ??
+        decision.selectedTarget?.nodeAddress ??
+        decision.selectedTarget?.address ??
         '-'
     )
 }

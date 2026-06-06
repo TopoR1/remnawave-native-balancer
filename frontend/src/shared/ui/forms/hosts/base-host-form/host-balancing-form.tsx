@@ -5,6 +5,7 @@ import {
     Button,
     Card,
     Checkbox,
+    CopyButton,
     Divider,
     Group,
     Modal,
@@ -23,7 +24,14 @@ import { notifications } from '@mantine/notifications'
 import { isAxiosError } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { TFunction } from 'i18next'
-import { PiFlaskDuotone, PiPlus, PiScalesDuotone, PiTrashDuotone } from 'react-icons/pi'
+import {
+    PiCheckDuotone,
+    PiCopyDuotone,
+    PiFlaskDuotone,
+    PiPlus,
+    PiScalesDuotone,
+    PiTrashDuotone
+} from 'react-icons/pi'
 import { TbActivityHeartbeat, TbAlertTriangle, TbPlayerPause, TbSkull } from 'react-icons/tb'
 import { nanoid } from 'nanoid'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
@@ -46,6 +54,8 @@ import {
 } from '@shared/api/hooks'
 import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
 import { instance } from '@shared/api'
+import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
+import { prettyBytesUtil } from '@shared/utils/bytes'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { HelpTooltip } from '@shared/ui/help-tooltip'
 import { SectionCard } from '@shared/ui/section-card'
@@ -562,6 +572,11 @@ export function HostBalancingForm({
                                     const subscriptionPort = target.overridePort ?? hostPort ?? '-'
                                     const nodeStatus =
                                         targetValidation?.nodeStatus ?? resolveLocalNodeStatus(node)
+                                    const profileInbound = nodeProfileInboundLabel(
+                                        node,
+                                        requiredInboundUuid,
+                                        t
+                                    )
                                     const isActiveTarget =
                                         target.enabled !== false &&
                                         (target.status ?? 'ACTIVE') === 'ACTIVE'
@@ -585,25 +600,27 @@ export function HostBalancingForm({
                                         >
                                             <Stack gap="sm">
                                                 <Group align="flex-start" justify="space-between">
-                                                    <Stack gap={2}>
-                                                        <Group gap="xs">
-                                                            <Text fw={700}>{nodeName}</Text>
-                                                            {target.nodeUuid && (
-                                                                <Badge variant="light">
-                                                                    {maskUuid(target.nodeUuid)}
-                                                                </Badge>
+                                                    <Stack gap={4}>
+                                                        <NodeTitle
+                                                            address={nodeAddress}
+                                                            node={node}
+                                                            title={nodeName}
+                                                        />
+                                                        <CompactIdCopy
+                                                            label={String(
+                                                                t('base-host-form.node-id')
                                                             )}
-                                                        </Group>
-                                                        <Text c="dimmed" size="sm">
-                                                            {nodeAddress}
-                                                        </Text>
+                                                            value={target.nodeUuid}
+                                                        />
                                                     </Stack>
                                                     <Stack align="flex-end" gap={4}>
-                                                        <Group gap={4} justify="flex-end">
-                                                            {statusBadge(
-                                                                target.status ?? 'ACTIVE',
-                                                                t
-                                                            )}
+                                                        <Group gap={4} justify="flex-end" wrap="wrap">
+                                                            <Badge color="dark" variant="light">
+                                                                {t(
+                                                                    'base-host-form.target-admin-status'
+                                                                )}
+                                                            </Badge>
+                                                            {statusBadge(target.status ?? 'ACTIVE', t)}
                                                             <HelpTooltip
                                                                 description={String(
                                                                     t(
@@ -615,23 +632,30 @@ export function HostBalancingForm({
                                                                 )}
                                                             />
                                                         </Group>
-                                                        {validationBadge(targetValidation, t)}
-                                                        <Badge
-                                                            color={participates ? 'teal' : 'red'}
-                                                            variant="light"
-                                                        >
-                                                            {participates
-                                                                ? t(
-                                                                      'base-host-form.target-participates'
-                                                                  )
-                                                                : t(
-                                                                      'base-host-form.target-not-participating'
-                                                                  )}
-                                                        </Badge>
+                                                        <Group gap={4} justify="flex-end" wrap="wrap">
+                                                            <Badge color="dark" variant="light">
+                                                                {t(
+                                                                    'base-host-form.technical-state'
+                                                                )}
+                                                            </Badge>
+                                                            {validationBadge(targetValidation, t)}
+                                                        </Group>
+                                                        <Group gap={4} justify="flex-end" wrap="wrap">
+                                                            <Badge color="dark" variant="light">
+                                                                {t('base-host-form.selection-state')}
+                                                            </Badge>
+                                                            {participationBadge(participates, t)}
+                                                        </Group>
                                                     </Stack>
                                                 </Group>
 
                                                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                                                    <TargetInfo
+                                                        label={t(
+                                                            'base-host-form.profile-inbound'
+                                                        )}
+                                                        value={profileInbound}
+                                                    />
                                                     <TargetInfo
                                                         label={helpLabel(
                                                             'base-host-form.subscription-address',
@@ -989,6 +1013,11 @@ export function HostBalancingForm({
                                         const existingTarget = draft.targets.find(
                                             (target) => target.nodeUuid === node.uuid
                                         )
+                                        const profileInbound = nodeProfileInboundLabel(
+                                            node,
+                                            requiredInboundUuid,
+                                            t
+                                        )
                                         const canAdd =
                                             !existingTarget && hasRequiredInbound !== false
 
@@ -1000,17 +1029,54 @@ export function HostBalancingForm({
                                                 withBorder
                                             >
                                                 <Group align="flex-start" justify="space-between">
-                                                    <Stack gap={6}>
-                                                        <Group gap="xs">
-                                                            <Text fw={700}>{node.name}</Text>
-                                                            <Badge variant="light">
-                                                                {maskUuid(node.uuid)}
-                                                            </Badge>
-                                                        </Group>
-                                                        <Text c="dimmed" size="sm">
-                                                            {node.address}
-                                                        </Text>
-                                                        <Group gap="xs">
+                                                    <Stack gap="xs">
+                                                        <NodeTitle
+                                                            address={node.address}
+                                                            node={node}
+                                                            title={node.name}
+                                                        />
+                                                        <CompactIdCopy
+                                                            label={String(
+                                                                t('base-host-form.node-id')
+                                                            )}
+                                                            value={node.uuid}
+                                                        />
+                                                        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                                                            <TargetInfo
+                                                                label={t(
+                                                                    'base-host-form.profile-inbound'
+                                                                )}
+                                                                value={profileInbound}
+                                                            />
+                                                            <TargetInfo
+                                                                label={t(
+                                                                    'base-host-form.assignments'
+                                                                )}
+                                                                value={
+                                                                    existingTarget?.assignments ??
+                                                                    0
+                                                                }
+                                                            />
+                                                            <TargetInfo
+                                                                label={t('base-host-form.traffic')}
+                                                                value={
+                                                                    existingTarget?.trafficBytes ??
+                                                                    prettyBytesUtil(
+                                                                        node.trafficUsedBytes
+                                                                    )
+                                                                }
+                                                            />
+                                                            <TargetInfo
+                                                                label={t(
+                                                                    'base-host-form.node-status'
+                                                                )}
+                                                                value={nodeStatusBadge(
+                                                                    nodeStatus,
+                                                                    t
+                                                                )}
+                                                            />
+                                                        </SimpleGrid>
+                                                        <Group gap="xs" wrap="wrap">
                                                             {nodeStatusBadge(nodeStatus, t)}
                                                             {localInboundCompatibilityBadge(
                                                                 hasRequiredInbound,
@@ -1023,17 +1089,6 @@ export function HostBalancingForm({
                                                                     )}
                                                                 </Badge>
                                                             )}
-                                                        </Group>
-                                                        <Group gap="md">
-                                                            <Text size="sm">
-                                                                {t('base-host-form.assignments')}:{' '}
-                                                                {existingTarget?.assignments ?? 0}
-                                                            </Text>
-                                                            <Text size="sm">
-                                                                {t('base-host-form.traffic')}:{' '}
-                                                                {existingTarget?.trafficBytes ??
-                                                                    '-'}
-                                                            </Text>
                                                         </Group>
                                                         {hasRequiredInbound === false && (
                                                             <Text c="red" size="sm">
@@ -1243,7 +1298,9 @@ function DecisionsAuditBlock({
                                         <Stack gap={2}>
                                             <Group gap="xs">
                                                 <Text fw={700} size="sm">
-                                                    {selectedTargetLabel}
+                                                    {selectedTargetLabel === '-'
+                                                        ? t('base-host-form.no-selected-target')
+                                                        : selectedTargetLabel}
                                                 </Text>
                                                 <Badge
                                                     color={
@@ -1264,10 +1321,31 @@ function DecisionsAuditBlock({
                                                 {decision.userUuidMasked ?? decision.userUuid}
                                             </Text>
                                         </Stack>
-                                        <Badge color={expanded ? 'blue' : 'gray'} variant="light">
-                                            {decisionCandidatesCount(decision)} /{' '}
-                                            {decisionExcludedCount(decision)}
-                                        </Badge>
+                                        <Group gap={4} justify="flex-end">
+                                            <Badge
+                                                color={expanded ? 'blue' : 'gray'}
+                                                variant="light"
+                                            >
+                                                {t(
+                                                    'base-host-form.decision-candidates-count',
+                                                    {
+                                                        count: decisionCandidatesCount(decision)
+                                                    }
+                                                )}
+                                            </Badge>
+                                            <Badge
+                                                color={
+                                                    decisionExcludedCount(decision) > 0
+                                                        ? 'yellow'
+                                                        : 'gray'
+                                                }
+                                                variant="light"
+                                            >
+                                                {t('base-host-form.decision-excluded-count', {
+                                                    count: decisionExcludedCount(decision)
+                                                })}
+                                            </Badge>
+                                        </Group>
                                     </Group>
 
                                     <SimpleGrid cols={{ base: 1, sm: 3 }}>
@@ -1313,7 +1391,7 @@ function DecisionDetail({ decision }: { decision: HostBalancerDecision }) {
                         value={
                             selectedTarget
                                 ? `${decisionSelectedTargetLabel(decision)} · ${decisionTargetAddressPort(selectedTarget)}`
-                                : (decision.targetUuid ?? '-')
+                                : t('base-host-form.no-selected-target')
                         }
                     />
                 </SimpleGrid>
@@ -1522,7 +1600,7 @@ function DiagnosticsTable({
                                         {targetDisplayName(row)}
                                     </Text>
                                     <Text c="dimmed" size="xs">
-                                        {targetAddressPort(row)} · {maskUuid(row.targetUuid)}
+                                        {targetAddressPort(row)}
                                     </Text>
                                 </Stack>
                             </Table.Td>
@@ -1613,7 +1691,7 @@ function translateSelectionReason(
 }
 
 function targetDisplayName(row: PreviewDiagnosticsRow) {
-    return row.nodeName ?? row.nodeUuid ?? row.targetUuid
+    return row.nodeName ?? row.nodeAddress ?? row.address ?? '-'
 }
 
 function targetAddressPort(row: PreviewDiagnosticsRow) {
@@ -1641,6 +1719,98 @@ function TargetInfo({ label, value }: { label: ReactNode; value: ReactNode }) {
                 {value}
             </Text>
         </Stack>
+    )
+}
+
+function CompactIdCopy({ label, value }: { label: string; value?: string | null }) {
+    const { t } = useTranslation()
+
+    if (!value) {
+        return null
+    }
+
+    return (
+        <Group gap={4} wrap="nowrap">
+            <Text c="dimmed" ff="monospace" size="xs">
+                {label}: {maskUuid(value)}
+            </Text>
+            <CopyButton timeout={1500} value={value}>
+                {({ copied, copy }) => (
+                    <ActionIcon
+                        aria-label={String(t('base-host-form.copy-id'))}
+                        color={copied ? 'teal' : 'gray'}
+                        onClick={(event) => {
+                            event.stopPropagation()
+                            copy()
+                        }}
+                        size="xs"
+                        variant="subtle"
+                    >
+                        {copied ? <PiCheckDuotone size={12} /> : <PiCopyDuotone size={12} />}
+                    </ActionIcon>
+                )}
+            </CopyButton>
+        </Group>
+    )
+}
+
+function NodeTitle({
+    address,
+    node,
+    title
+}: {
+    address: ReactNode
+    node?: HostBalancerNode
+    title: ReactNode
+}) {
+    return (
+        <Group align="flex-start" gap="sm" wrap="nowrap">
+            <Group mt={2}>{node ? resolveCountryCode(node.countryCode, 22) : resolveCountryCode('XX', 22)}</Group>
+            <Stack gap={2}>
+                <Text fw={700}>{title}</Text>
+                <Text c="dimmed" size="sm">
+                    {address}
+                </Text>
+            </Stack>
+        </Group>
+    )
+}
+
+function nodeProfileInboundLabel(
+    node: HostBalancerNode | undefined,
+    requiredInboundUuid?: string,
+    t?: TFunction
+) {
+    if (!node) {
+        return t ? String(t('base-host-form.node-profile-unknown')) : '-'
+    }
+
+    const inbound = requiredInboundUuid
+        ? node.configProfile.activeInbounds.find((item) => item.uuid === requiredInboundUuid)
+        : undefined
+
+    const profile = node.configProfile.activeConfigProfileUuid
+        ? maskUuid(node.configProfile.activeConfigProfileUuid)
+        : t
+          ? String(t('base-host-form.node-profile-not-active'))
+          : '-'
+
+    if (!inbound) {
+        return t
+            ? String(t('base-host-form.node-profile-inbound-missing', { profile }))
+            : profile
+    }
+
+    return `${profile} · ${inbound.tag} · ${inbound.type}${inbound.network ? `/${inbound.network}` : ''}`
+}
+
+function participationBadge(participates: boolean, t: TFunction) {
+    return (
+        <Badge color={participates ? 'teal' : 'red'} variant="light">
+            {participates
+                ? t('base-host-form.target-participates')
+                : t('base-host-form.target-not-participating')}
+        </Badge>
     )
 }
 
