@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Group, Stack, Switch, Text } from '@mantine/core'
+import { Alert, Badge, Button, Group, SimpleGrid, Stack, Switch, Text } from '@mantine/core'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TbRouteAltLeft, TbShieldX } from 'react-icons/tb'
@@ -10,11 +10,18 @@ import { SettingsCardShared } from '@shared/ui/settings-card'
 interface IProps {
     hostBalancerGlobalEnabled: boolean
     hostBalancerEnvEnabled: boolean
+    hostBalancerSummary?: {
+        enabledHosts: number
+        activeTargets: number
+        warnings: number
+        errors: number
+    }
 }
 
 export function HostBalancerSettingsCardWidget({
     hostBalancerGlobalEnabled,
-    hostBalancerEnvEnabled
+    hostBalancerEnvEnabled,
+    hostBalancerSummary
 }: IProps) {
     const { t } = useTranslation()
     const [enabled, setEnabled] = useState(hostBalancerGlobalEnabled)
@@ -33,6 +40,12 @@ export function HostBalancerSettingsCardWidget({
     }, [hostBalancerGlobalEnabled])
 
     const isDirty = enabled !== hostBalancerGlobalEnabled
+    const summary = hostBalancerSummary ?? {
+        enabledHosts: 0,
+        activeTargets: 0,
+        warnings: 0,
+        errors: 0
+    }
 
     return (
         <SettingsCardShared.Container>
@@ -70,6 +83,36 @@ export function HostBalancerSettingsCardWidget({
                         </Badge>
                     </Group>
 
+                    <Group justify="space-between">
+                        <Text fw={500}>{t('host-balancer-settings-card.global-status')}</Text>
+                        <Badge color={hostBalancerGlobalEnabled ? 'teal' : 'gray'} variant="light">
+                            {hostBalancerGlobalEnabled
+                                ? t('host-balancer-settings-card.global-enabled-status')
+                                : t('host-balancer-settings-card.global-disabled-status')}
+                        </Badge>
+                    </Group>
+
+                    <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+                        <SummaryMetric
+                            label={t('host-balancer-settings-card.enabled-hosts')}
+                            value={summary.enabledHosts}
+                        />
+                        <SummaryMetric
+                            label={t('host-balancer-settings-card.active-targets')}
+                            value={summary.activeTargets}
+                        />
+                        <SummaryMetric
+                            color={summary.warnings > 0 ? 'yellow' : 'gray'}
+                            label={t('host-balancer-settings-card.warnings')}
+                            value={summary.warnings}
+                        />
+                        <SummaryMetric
+                            color={summary.errors > 0 ? 'red' : 'gray'}
+                            label={t('host-balancer-settings-card.errors')}
+                            value={summary.errors}
+                        />
+                    </SimpleGrid>
+
                     {!hostBalancerEnvEnabled && (
                         <Alert color="red" icon={<TbShieldX size={18} />} variant="light">
                             {t('host-balancer-settings-card.env-disabled-warning')}
@@ -96,5 +139,26 @@ export function HostBalancerSettingsCardWidget({
                 </Group>
             </SettingsCardShared.Bottom>
         </SettingsCardShared.Container>
+    )
+}
+
+function SummaryMetric({
+    label,
+    value,
+    color = 'teal'
+}: {
+    label: string
+    value: number
+    color?: string
+}) {
+    return (
+        <Stack gap={2}>
+            <Text c="dimmed" size="xs">
+                {label}
+            </Text>
+            <Badge color={color} size="lg" variant="light">
+                {value}
+            </Badge>
+        </Stack>
     )
 }

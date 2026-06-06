@@ -8,7 +8,7 @@ import {
 } from '@remnawave/backend-contract'
 import { UseFormReturnType } from '@mantine/form'
 
-import { HostBalancingDraft } from '../host-balancing-form'
+import { HostBalancingDraft } from '../host-balancing-draft'
 import { HostBalancerTargetsValidation } from '@shared/api/hooks'
 
 export interface IProps<T extends CreateHostCommand.Request | UpdateHostCommand.Request> {

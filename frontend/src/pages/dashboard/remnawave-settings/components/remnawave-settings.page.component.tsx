@@ -48,6 +48,7 @@ export const RemnawaveSettingsPageComponent = (props: IProps) => {
                     <HostBalancerSettingsCardWidget
                         hostBalancerEnvEnabled={remnawaveSettings.hostBalancerEnvEnabled}
                         hostBalancerGlobalEnabled={remnawaveSettings.hostBalancerGlobalEnabled}
+                        hostBalancerSummary={remnawaveSettings.hostBalancerSummary}
                     />
                     <BrandingSettingsCardWidget
                         brandingSettings={remnawaveSettings.brandingSettings}

@@ -22,9 +22,12 @@ export class RemnawaveSettingsService {
 
     public async getSettingsFromController(): Promise<TResult<RemnawaveSettingsEntity>> {
         try {
-            const settings = this.withHostBalancerRuntimeStatus(await this.getSettings());
+            const [settings, hostBalancerSummary] = await Promise.all([
+                this.getSettings(),
+                this.remnawaveSettingsRepository.getHostBalancerSummary(),
+            ]);
 
-            return ok(settings);
+            return ok(this.withHostBalancerRuntimeStatus(settings, hostBalancerSummary));
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_REMNAAWAVE_SETTINGS_ERROR);
@@ -69,11 +72,18 @@ export class RemnawaveSettingsService {
 
     private withHostBalancerRuntimeStatus(
         settings: RemnawaveSettingsEntity,
+        hostBalancerSummary?: {
+            enabledHosts: number;
+            activeTargets: number;
+            warnings: number;
+            errors: number;
+        },
     ): RemnawaveSettingsEntity {
         return new RemnawaveSettingsEntity({
             ...settings,
             hostBalancerEnvEnabled:
                 this.configService.get<string>('HOST_BALANCER_ENABLED', 'true') === 'true',
+            hostBalancerSummary,
         });
     }
 

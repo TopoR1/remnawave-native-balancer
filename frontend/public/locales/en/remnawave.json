@@ -534,9 +534,12 @@
         "balancer-settings-saved": "Balancing settings saved",
         "cannot-save-active-invalid-targets": "Cannot save an ACTIVE target without the required inbound.",
         "fix-or-disable-invalid-targets": "Switch the target to DISABLED or fix the node before saving.",
+        "balancer-status-env-enabled": "Balancer allowed by environment variable",
+        "balancer-status-env-disabled": "Balancer disabled by environment variable",
         "balancer-status-global-enabled": "Globally enabled",
-        "balancer-status-global-disabled": "Disabled in system settings",
-        "balancer-status-env-disabled": "Disabled by environment variable",
+        "balancer-status-global-disabled": "Globally disabled",
+        "balancer-status-host-enabled": "Enabled for this Host",
+        "balancer-status-host-disabled": "Disabled for this Host",
         "node-status-connected": "Connected",
         "node-status-connecting": "Connecting",
         "node-status-disabled": "Disabled",
@@ -2329,7 +2332,14 @@
         "env-status": "Env kill-switch status",
         "env-enabled": "HOST_BALANCER_ENABLED=true",
         "env-disabled": "HOST_BALANCER_ENABLED=false",
-        "env-disabled-warning": "Host Balancer is disabled by environment variable. Enabling it in UI will not apply."
+        "env-disabled-warning": "Host Balancer is disabled by environment variable. Enabling it in UI will not apply.",
+        "global-status": "Global setting status",
+        "global-enabled-status": "Globally enabled",
+        "global-disabled-status": "Globally disabled",
+        "enabled-hosts": "Enabled hosts",
+        "active-targets": "Active targets",
+        "warnings": "Warnings",
+        "errors": "Errors"
     },
     "mobile-stats": {
         "widget": {

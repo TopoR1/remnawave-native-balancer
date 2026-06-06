@@ -14,6 +14,12 @@ export class RemnawaveSettingsResponseModel {
     public brandingSettings: TBrandingSettings;
     public hostBalancerGlobalEnabled: boolean;
     public hostBalancerEnvEnabled: boolean;
+    public hostBalancerSummary: {
+        enabledHosts: number;
+        activeTargets: number;
+        warnings: number;
+        errors: number;
+    };
 
     constructor(entity: RemnawaveSettingsEntity) {
         this.passkeySettings = entity.passkeySettings;
@@ -22,5 +28,11 @@ export class RemnawaveSettingsResponseModel {
         this.brandingSettings = entity.brandingSettings;
         this.hostBalancerGlobalEnabled = entity.hostBalancerGlobalEnabled;
         this.hostBalancerEnvEnabled = entity.hostBalancerEnvEnabled ?? false;
+        this.hostBalancerSummary = entity.hostBalancerSummary ?? {
+            enabledHosts: 0,
+            activeTargets: 0,
+            warnings: 0,
+            errors: 0,
+        };
     }
 }

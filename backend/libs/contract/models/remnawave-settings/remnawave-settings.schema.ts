@@ -12,6 +12,14 @@ export const RemnawaveSettingsSchema = z.object({
     brandingSettings: z.nullable(BrandingSettingsSchema),
     hostBalancerGlobalEnabled: z.boolean(),
     hostBalancerEnvEnabled: z.boolean(),
+    hostBalancerSummary: z
+        .object({
+            enabledHosts: z.number().int().nonnegative(),
+            activeTargets: z.number().int().nonnegative(),
+            warnings: z.number().int().nonnegative(),
+            errors: z.number().int().nonnegative(),
+        })
+        .optional(),
 });
 
 export type TRemnawaveSettings = z.infer<typeof RemnawaveSettingsSchema>;

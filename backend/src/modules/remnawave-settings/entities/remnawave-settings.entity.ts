@@ -15,11 +15,23 @@ export class RemnawaveSettingsEntity implements RemnawaveSettings {
     public brandingSettings: TBrandingSettings;
     public hostBalancerGlobalEnabled: boolean;
     public hostBalancerEnvEnabled?: boolean;
+    public hostBalancerSummary?: {
+        enabledHosts: number;
+        activeTargets: number;
+        warnings: number;
+        errors: number;
+    };
 
     constructor(
         remnawaveSettings: Partial<RemnawaveSettings> & {
             hostBalancerGlobalEnabled?: boolean;
             hostBalancerEnvEnabled?: boolean;
+            hostBalancerSummary?: {
+                enabledHosts: number;
+                activeTargets: number;
+                warnings: number;
+                errors: number;
+            };
         },
     ) {
         Object.assign(this, remnawaveSettings);

@@ -30,7 +30,6 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { GetAllNodesCommand } from '@remnawave/backend-contract'
 
 import {
-    HostBalancer,
     HostBalancerDecision,
     HostBalancerPreview,
     HostBalancerPreviewSchema,
@@ -51,11 +50,32 @@ import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { HelpTooltip } from '@shared/ui/help-tooltip'
 import { SectionCard } from '@shared/ui/section-card'
 
-type DraftTarget = HostBalancerTargetInput & {
-    localId: string
-    assignments?: number
-    trafficBytes?: string | null
-}
+export {
+    DEFAULT_HOST_BALANCING_DRAFT,
+    hostBalancerToDraft,
+    patchHostBalancingDraft,
+    sanitizeHostBalancingDraft,
+    shouldEnableHostSave,
+    updateHostBalancingTarget
+} from './host-balancing-draft'
+export type { HostBalancingDraft } from './host-balancing-draft'
+
+import {
+    DraftTarget,
+    HostBalancingDraft,
+    patchHostBalancingDraft,
+    sanitizeHostBalancingDraft,
+    updateHostBalancingTarget
+} from './host-balancing-draft'
+import {
+    decisionCandidatesCount,
+    decisionExcludedCount,
+    decisionFinalAddress,
+    decisionReasonTranslation,
+    decisionSelectedTargetLabel,
+    decisionTargetAddressPort
+} from './host-balancing-decision-display'
+
 type HostBalancerNode = GetAllNodesCommand.Response['response'][number]
 type PreviewSimulatorAction =
     | 'preview_only'
@@ -95,55 +115,6 @@ type HostBalancerHelpKey =
     | 'base-host-form.unavailable-policy'
     | 'base-host-form.weight'
 
-export type HostBalancingDraft = {
-    enabled: boolean
-    strategy: HostBalancerStrategy
-    stickyEnabled: boolean
-    rebalanceExistingAssignmentsByTraffic: boolean
-    unavailablePolicy: HostBalancerUnavailablePolicy
-    trafficMetric: HostBalancerTrafficMetric | null
-    targets: DraftTarget[]
-    touched: boolean
-}
-
-export const DEFAULT_HOST_BALANCING_DRAFT: HostBalancingDraft = {
-    enabled: false,
-    strategy: 'LEAST_ASSIGNED',
-    stickyEnabled: true,
-    rebalanceExistingAssignmentsByTraffic: false,
-    unavailablePolicy: 'HIDE_HOST',
-    trafficMetric: 'CURRENT_PERIOD',
-    targets: [],
-    touched: false
-}
-
-export function shouldEnableHostSave(hostFormChanged: boolean, hostBalancingTouched: boolean) {
-    return hostFormChanged || hostBalancingTouched
-}
-
-export function patchHostBalancingDraft(
-    draft: HostBalancingDraft,
-    patch: Partial<HostBalancingDraft>
-): HostBalancingDraft {
-    return {
-        ...draft,
-        ...patch,
-        touched: true
-    }
-}
-
-export function updateHostBalancingTarget(
-    draft: HostBalancingDraft,
-    localId: string,
-    patch: Partial<DraftTarget>
-): HostBalancingDraft {
-    return patchHostBalancingDraft(draft, {
-        targets: draft.targets.map((target) =>
-            target.localId === localId ? { ...target, ...patch } : target
-        )
-    })
-}
-
 type IProps = {
     draft: HostBalancingDraft
     hostPort?: number
@@ -154,74 +125,9 @@ type IProps = {
     requiredInboundUuid?: string
 }
 
-const TRAFFIC_STRATEGIES: HostBalancerStrategy[] = ['LEAST_TRAFFIC', 'WEIGHTED_LEAST_TRAFFIC']
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const HOST_BALANCER_BUILD_MARKER = 'Native Host Balancer UI'
-
-export function hostBalancerToDraft(settings: HostBalancer | null): HostBalancingDraft {
-    if (!settings) {
-        return DEFAULT_HOST_BALANCING_DRAFT
-    }
-
-    return {
-        enabled: settings.enabled,
-        strategy: settings.strategy,
-        stickyEnabled: settings.stickyEnabled,
-        rebalanceExistingAssignmentsByTraffic: settings.rebalanceExistingAssignmentsByTraffic,
-        unavailablePolicy: settings.unavailablePolicy,
-        trafficMetric: settings.trafficMetric ?? 'CURRENT_PERIOD',
-        targets:
-            settings.targets?.map((target) => ({
-                uuid: target.uuid,
-                localId: target.uuid,
-                nodeUuid: target.nodeUuid,
-                enabled: target.enabled,
-                status: target.status,
-                weight: target.weight,
-                priority: target.priority,
-                maxAssignedUsers: target.maxAssignedUsers,
-                overrideAddress: target.overrideAddress,
-                overridePort: target.overridePort,
-                overrideSni: target.overrideSni,
-                overrideHost: target.overrideHost,
-                overridePath: target.overridePath
-            })) ?? [],
-        touched: false
-    }
-}
-
-export function sanitizeHostBalancingDraft(draft: HostBalancingDraft): {
-    settings: Omit<HostBalancingDraft, 'targets' | 'touched'>
-    targets: HostBalancerTargetInput[]
-} {
-    return {
-        settings: {
-            enabled: draft.enabled,
-            strategy: draft.strategy,
-            stickyEnabled: draft.stickyEnabled,
-            rebalanceExistingAssignmentsByTraffic: draft.rebalanceExistingAssignmentsByTraffic,
-            unavailablePolicy: draft.unavailablePolicy,
-            trafficMetric: TRAFFIC_STRATEGIES.includes(draft.strategy)
-                ? (draft.trafficMetric ?? 'CURRENT_PERIOD')
-                : null
-        },
-        targets: draft.targets.map((target) => ({
-            localId: target.localId,
-            uuid: target.uuid,
-            nodeUuid: target.nodeUuid || null,
-            enabled: target.enabled ?? true,
-            status: target.status ?? 'ACTIVE',
-            weight: target.weight ?? 1,
-            priority: target.priority ?? 100,
-            maxAssignedUsers: target.maxAssignedUsers ?? null,
-            overrideAddress: emptyToNull(target.overrideAddress),
-            overridePort: target.overridePort ?? null,
-            overrideSni: emptyToNull(target.overrideSni),
-            overrideHost: emptyToNull(target.overrideHost),
-            overridePath: emptyToNull(target.overridePath)
-        }))
-    }
-}
+const TRAFFIC_STRATEGIES: HostBalancerStrategy[] = ['LEAST_TRAFFIC', 'WEIGHTED_LEAST_TRAFFIC']
 
 export function HostBalancingForm({
     draft,
@@ -441,7 +347,7 @@ export function HostBalancingForm({
                         onChange={(event) => patchDraft({ enabled: event.currentTarget.checked })}
                     />
                 </Group>
-                <HostBalancerRuntimeStatus settings={remnawaveSettings} />
+                <HostBalancerRuntimeStatus hostEnabled={draft.enabled} settings={remnawaveSettings} />
             </SectionCard.Section>
 
             {draft.enabled && (
@@ -1231,33 +1137,37 @@ export function HostBalancingForm({
     )
 }
 
-function HostBalancerRuntimeStatus({ settings }: { settings?: RemnawaveSettings }) {
+function HostBalancerRuntimeStatus({
+    hostEnabled,
+    settings
+}: {
+    hostEnabled: boolean
+    settings?: RemnawaveSettings
+}) {
     const { t } = useTranslation()
 
     if (!settings) {
         return null
     }
 
-    if (!settings.hostBalancerEnvEnabled) {
-        return (
-            <Alert color="red" mt="sm" variant="light">
-                {t('base-host-form.balancer-status-env-disabled')}
-            </Alert>
-        )
-    }
-
-    if (!settings.hostBalancerGlobalEnabled) {
-        return (
-            <Alert color="yellow" mt="sm" variant="light">
-                {t('base-host-form.balancer-status-global-disabled')}
-            </Alert>
-        )
-    }
-
     return (
-        <Badge color="teal" mt="sm" variant="light">
-            {t('base-host-form.balancer-status-global-enabled')}
-        </Badge>
+        <Group gap="xs" mt="sm">
+            <Badge color={settings.hostBalancerEnvEnabled ? 'teal' : 'red'} variant="light">
+                {settings.hostBalancerEnvEnabled
+                    ? t('base-host-form.balancer-status-env-enabled')
+                    : t('base-host-form.balancer-status-env-disabled')}
+            </Badge>
+            <Badge color={settings.hostBalancerGlobalEnabled ? 'teal' : 'yellow'} variant="light">
+                {settings.hostBalancerGlobalEnabled
+                    ? t('base-host-form.balancer-status-global-enabled')
+                    : t('base-host-form.balancer-status-global-disabled')}
+            </Badge>
+            <Badge color={hostEnabled ? 'teal' : 'gray'} variant="light">
+                {hostEnabled
+                    ? t('base-host-form.balancer-status-host-enabled')
+                    : t('base-host-form.balancer-status-host-disabled')}
+            </Badge>
+        </Group>
     )
 }
 
@@ -1311,15 +1221,8 @@ function DecisionsAuditBlock({
             {decisions.length > 0 && (
                 <Stack gap="xs">
                     {decisions.map((decision) => {
-                        const selectedTarget = decision.selectedTarget
-                        const selectedTargetLabel =
-                            selectedTarget?.nodeName ??
-                            selectedTarget?.targetUuid ??
-                            decision.targetUuid ??
-                            '-'
-                        const finalAddress = decision.finalHostOverrides
-                            ? `${decision.finalHostOverrides.address}:${decision.finalHostOverrides.port}`
-                            : '-'
+                        const selectedTargetLabel = decisionSelectedTargetLabel(decision)
+                        const finalAddress = decisionFinalAddress(decision)
                         const expanded = expandedDecisionUuid === decision.uuid
 
                         return (
@@ -1362,8 +1265,8 @@ function DecisionsAuditBlock({
                                             </Text>
                                         </Stack>
                                         <Badge color={expanded ? 'blue' : 'gray'} variant="light">
-                                            {decision.candidates.length} /{' '}
-                                            {decision.excludedTargets.length}
+                                            {decisionCandidatesCount(decision)} /{' '}
+                                            {decisionExcludedCount(decision)}
                                         </Badge>
                                     </Group>
 
@@ -1409,7 +1312,7 @@ function DecisionDetail({ decision }: { decision: HostBalancerDecision }) {
                         label={t('base-host-form.selected-target')}
                         value={
                             selectedTarget
-                                ? `${targetDisplayName(selectedTarget)} · ${targetAddressPort(selectedTarget)}`
+                                ? `${decisionSelectedTargetLabel(decision)} · ${decisionTargetAddressPort(selectedTarget)}`
                                 : (decision.targetUuid ?? '-')
                         }
                     />
@@ -1913,50 +1816,12 @@ function translateDiagnosticText(message: string, t: TFunction): string {
 }
 
 function translateDecisionReason(message: string, t: TFunction): string {
-    const selected = message.match(/^selected:([A-Z_]+):([a-z_]+)$/)
-    if (selected) {
-        const strategy = translateStrategyName(selected[1], t)
-        const action = selected[2]
-
-        if (action === 'reused') {
-            return String(t('base-host-form.decision-reason-selected-reused'))
-        }
-        if (action === 'created') {
-            return String(
-                t('base-host-form.decision-reason-selected-created', {
-                    strategy
-                })
-            )
-        }
-        if (action === 'reassigned') {
-            return String(
-                t('base-host-form.decision-reason-selected-reassigned', {
-                    strategy
-                })
-            )
-        }
-
-        return String(
-            t('base-host-form.decision-reason-selected', {
-                strategy,
-                action: translateDecisionAssignmentAction(action, t)
-            })
-        )
-    }
-
-    const decisionKeys = {
-        'target node lacks required inbound': 'base-host-form.decision-reason-missing-inbound',
-        'target disabled': 'base-host-form.decision-reason-target-disabled',
-        'target status DISABLED': 'base-host-form.decision-reason-target-disabled',
-        'target node disconnected': 'base-host-form.decision-reason-node-disconnected',
-        'node disconnected': 'base-host-form.decision-reason-node-disconnected',
-        'target draining': 'base-host-form.diagnostic-target-draining',
-        'target node disabled': 'base-host-form.diagnostic-target-node-disabled',
-        'target node not found': 'base-host-form.diagnostic-target-node-not-found'
-    } as const
-
-    const key = decisionKeys[message as keyof typeof decisionKeys]
-    return key ? String(t(key)) : translateDiagnosticText(message, t)
+    return decisionReasonTranslation(
+        message,
+        (key, values) => String(t(key as never, values as never)),
+        (strategy) => translateStrategyName(strategy, t),
+        (action) => translateDecisionAssignmentAction(action, t)
+    )
 }
 
 function translateDecisionAssignmentAction(action: string, t: TFunction): string {
@@ -2056,8 +1921,4 @@ export function translateValidationReason(message: string, t: TFunction): string
 
     const key = validationKeys[message as keyof typeof validationKeys]
     return key ? String(t(key)) : message
-}
-
-function emptyToNull(value?: string | null) {
-    return value && value.trim() !== '' ? value.trim() : null
 }

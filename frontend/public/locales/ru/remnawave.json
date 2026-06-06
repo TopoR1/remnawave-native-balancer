@@ -534,9 +534,12 @@
         "balancer-settings-saved": "Настройки балансировки сохранены",
         "cannot-save-active-invalid-targets": "Нельзя сохранить ACTIVE target без нужного inbound.",
         "fix-or-disable-invalid-targets": "Переключите цель в DISABLED или исправьте ноду перед сохранением.",
+        "balancer-status-env-enabled": "Balancer разрешён переменной окружения",
+        "balancer-status-env-disabled": "Balancer отключён переменной окружения",
         "balancer-status-global-enabled": "Глобально включён",
-        "balancer-status-global-disabled": "Выключен в системных настройках",
-        "balancer-status-env-disabled": "Выключен переменной окружения",
+        "balancer-status-global-disabled": "Глобально выключен",
+        "balancer-status-host-enabled": "Для этого Host включён",
+        "balancer-status-host-disabled": "Для этого Host выключен",
         "node-status-connected": "Подключена",
         "node-status-connecting": "Подключается",
         "node-status-disabled": "Отключена",
@@ -2329,7 +2332,14 @@
         "env-status": "Статус env kill-switch",
         "env-enabled": "HOST_BALANCER_ENABLED=true",
         "env-disabled": "HOST_BALANCER_ENABLED=false",
-        "env-disabled-warning": "Host Balancer отключён переменной окружения. Включение в UI не применится."
+        "env-disabled-warning": "Host Balancer отключён переменной окружения. Включение в UI не применится.",
+        "global-status": "Статус глобальной настройки",
+        "global-enabled-status": "Глобально включён",
+        "global-disabled-status": "Глобально выключен",
+        "enabled-hosts": "Host с балансировкой",
+        "active-targets": "Активные targets",
+        "warnings": "Предупреждения",
+        "errors": "Ошибки"
     },
     "mobile-stats": {
         "widget": {

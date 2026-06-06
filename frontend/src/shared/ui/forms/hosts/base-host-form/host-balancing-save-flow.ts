@@ -1,4 +1,5 @@
-import { HostBalancingDraft, sanitizeHostBalancingDraft } from './host-balancing-form'
+import { sanitizeHostBalancingDraft } from './host-balancing-draft.ts'
+import type { HostBalancingDraft } from './host-balancing-draft.ts'
 
 type SaveHostBalancingDraftParams = {
     draft: HostBalancingDraft

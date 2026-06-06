@@ -71,4 +71,113 @@ export class RemnawaveSettingsRepository {
 
         return date;
     }
+
+    public async getHostBalancerSummary(): Promise<{
+        enabledHosts: number;
+        activeTargets: number;
+        warnings: number;
+        errors: number;
+    }> {
+        const [enabledHosts, targets] = await Promise.all([
+            this.prisma.tx.hostBalancer.count({
+                where: { enabled: true },
+            }),
+            this.prisma.tx.hostBalancerTarget.findMany({
+                where: {
+                    balancer: {
+                        enabled: true,
+                    },
+                },
+                select: {
+                    nodeUuid: true,
+                    enabled: true,
+                    status: true,
+                    overrideAddress: true,
+                    balancer: {
+                        select: {
+                            host: {
+                                select: {
+                                    configProfileInboundUuid: true,
+                                },
+                            },
+                        },
+                    },
+                    node: {
+                        select: {
+                            address: true,
+                            isConnected: true,
+                            isConnecting: true,
+                            isDisabled: true,
+                            configProfileInboundsToNodes: {
+                                select: {
+                                    configProfileInboundUuid: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        let activeTargets = 0;
+        let warnings = 0;
+        let errors = 0;
+
+        for (const target of targets) {
+            const isActive = target.enabled && target.status === 'ACTIVE';
+            const isDisabled = !target.enabled || target.status === 'DISABLED';
+
+            if (isActive) {
+                activeTargets += 1;
+            }
+
+            if (!target.nodeUuid) {
+                warnings += 1;
+                continue;
+            }
+
+            if (!target.node) {
+                if (isActive) {
+                    errors += 1;
+                } else {
+                    warnings += 1;
+                }
+                continue;
+            }
+
+            const requiredInboundUuid = target.balancer.host.configProfileInboundUuid;
+            const hasRequiredInbound =
+                !requiredInboundUuid ||
+                target.node.configProfileInboundsToNodes.some(
+                    (inbound) => inbound.configProfileInboundUuid === requiredInboundUuid,
+                );
+
+            if (!hasRequiredInbound) {
+                if (isActive) {
+                    errors += 1;
+                } else if (isDisabled) {
+                    warnings += 1;
+                }
+            }
+
+            if (isActive && (target.node.isDisabled || !target.node.isConnected)) {
+                errors += 1;
+            }
+
+            if (
+                target.overrideAddress &&
+                target.node.address &&
+                target.overrideAddress !== target.node.address
+            ) {
+                warnings += 1;
+            }
+        }
+
+        return {
+            enabledHosts,
+            activeTargets,
+            warnings,
+            errors,
+        };
+    }
 }

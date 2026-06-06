@@ -1,685 +1,841 @@
-# Регламент тестирования и отката Native Host Balancer
+# Регламент тестирования Native Host Balancer
 
-Документ описывает, как безопасно установить, проверить, диагностировать и откатить native Host Balancer в Remnawave.
+Этот документ описывает, как установить, проверить, диагностировать и откатить Native Host Balancer в Remnawave.
 
-Подставьте свои значения:
+Все команды ниже являются примерами. Подставьте свои контейнеры, домены, токены, UUID и пути.
 
-- `<api-domain>`;
-- `<sub-domain>`;
-- `<hostUuid>`;
-- `<userUuid>`;
-- `<shortUuid>`;
-- `<db-container>`;
-- `<backend-service>`;
-- `<token>`.
-
-## 0. Коротко о механике
-
-Native Host Balancer встроен в backend Remnawave.
-
-Он не заменяет subscription-page и не переписывает готовую подписку. Он работает до генерации подписки:
-
-1. Remnawave получает список Host для пользователя.
-2. Для Host с включенным Balancing выбирается target.
-3. Target подменяет `address`, `port`, `sni`, `host`, `path`.
-4. Remark и публичная логика исходного Host остаются.
-5. Sticky assignment сохраняется как `userUuid + hostUuid -> targetUuid`.
-6. Decision audit записывает, почему target выбран или исключен.
-
-Native Balancer работает внутри Remnawave backend, поэтому штатная subscription-page может оставаться обычной.
-
-## 1. План безопасного теста
-
-Рекомендуемая схема:
-
-1. Сделать backup файлов `/opt/remnawave`.
-2. Сделать backup PostgreSQL.
-3. Проверить, что subscription-page и route подписок работают по штатной схеме.
-4. Собрать новый image из root `Dockerfile`.
-5. Запустить новый image с `HOST_BALANCER_ENABLED=false`.
-6. Проверить, что UI и обычные подписки работают как раньше.
-7. Включить `HOST_BALANCER_ENABLED=true`.
-8. Включить global UI setting.
-9. Включить Balancing только на тестовом Host.
-10. Проверить preview.
-11. Сделать реальный запрос подписки.
-12. Проверить assignments и decision audit.
-13. При проблемах откатиться одним из мягких способов.
-
-## 2. Backup перед установкой
-
-### 2.1 Backup `/opt/remnawave`
+## Переменные для примеров
 
 ```bash
-cd /opt
-sudo tar -czf remnawave-files-before-native-balancer.tgz remnawave
+export PANEL_URL="https://panel.example.com"
+export SUB_URL="https://sub.example.com"
+export API_TOKEN="replace-with-admin-api-token"
+export USER_UUID="replace-user-uuid"
+export SHORT_UUID="replace-short-uuid"
+export HOST_UUID="replace-host-uuid"
+export NODE_UUID_A="replace-node-a-uuid"
+export NODE_UUID_B="replace-node-b-uuid"
 ```
 
-Зафиксируйте compose и images:
+Для API используйте заголовок:
 
 ```bash
-cd /opt/remnawave
-docker compose ps
-docker compose images
-docker compose config > compose-before-native-balancer.yml
+Authorization: Bearer <token>
 ```
 
-### 2.2 Backup PostgreSQL
+## 1. Предварительная проверка
 
-Если PostgreSQL в compose:
+### Проверить env kill-switch
 
 ```bash
-cd /opt/remnawave
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > remnawave-before-native-balancer.dump
+docker compose exec backend sh -lc 'echo $HOST_BALANCER_ENABLED'
 ```
 
-Если PostgreSQL внешний:
-
-```bash
-PGPASSWORD='<password>' pg_dump \
-  -h <db-host> \
-  -p <db-port> \
-  -U <db-user> \
-  -d <db-name> \
-  -Fc \
-  -f remnawave-before-native-balancer.dump
-```
-
-Проверьте, что backup не пустой:
-
-```bash
-ls -lh remnawave-before-native-balancer.dump
-```
-
-## 3. Проверить subscription-page и route подписок
-
-Посмотрите сервисы:
-
-```bash
-cd /opt/remnawave
-docker compose config --services
-```
-
-Убедитесь, что подписки обслуживаются штатной subscription-page или backend Remnawave согласно вашей схеме.
-
-Если Caddy/Nginx route для подписок менялся вручную, проверьте его перед включением Balancer.
-
-Проверка:
-
-```bash
-docker compose config | grep -i subscription
-```
-
-## 4. Сборка image
-
-Собирать нужно из корня репозитория:
-
-```bash
-cd /opt
-git clone https://github.com/TopoR1/remnawave-native-balancer.git
-cd /opt/remnawave-native-balancer
-docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
-```
-
-Важно: `backend/Dockerfile` может взять официальный frontend без UI Host Balancer. Используйте root `Dockerfile`.
-
-## 5. Сборка на слабом VPS
-
-### 5.1 Симптом exit code 137
-
-Если сборка падает:
+Ожидаемые варианты:
 
 ```text
-Killed
-exit code 137
+true
+false
 ```
 
-обычно это OOM-killer. Не хватило RAM/swap на frontend build.
+Если значение `false`, Balancer не будет применяться к подпискам.
 
-Проверьте:
+### Проверить доступность Panel
 
 ```bash
-dmesg -T | grep -i -E "killed process|out of memory|oom"
-free -h
-df -h
+curl -I "$PANEL_URL"
 ```
 
-### 5.2 Temporary swap 6G
+### Проверить обычную подписку
 
 ```bash
-sudo fallocate -l 6G /swapfile-remnawave-build
-sudo chmod 600 /swapfile-remnawave-build
-sudo mkswap /swapfile-remnawave-build
-sudo swapon /swapfile-remnawave-build
-free -h
-
-docker build -f Dockerfile -t topor/remnawave-backend:native-balancer .
-
-sudo swapoff /swapfile-remnawave-build
-sudo rm /swapfile-remnawave-build
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/$SHORT_UUID" | head
 ```
 
-### 5.3 Очистка Docker builder cache
+Если видите `App not supported`, проверьте `User-Agent`, правила ответа и правильность домена подписки.
+
+## 2. Проверка глобальных настроек
+
+### Получить настройки Remnawave
 
 ```bash
-docker builder prune -af
-docker system df
+curl -sS \
+  -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/remnawave-settings" | jq
 ```
 
-### 5.4 Dockerfile.prebuilt-frontend
+Проверьте поля:
 
-Если VPS все равно не тянет сборку frontend внутри Docker:
+```json
+{
+  "hostBalancerGlobalEnabled": true,
+  "hostBalancerEnvEnabled": true,
+  "hostBalancerSummary": {
+    "enabledHosts": 1,
+    "activeTargets": 2,
+    "warnings": 0,
+    "errors": 0
+  }
+}
+```
+
+### Включить глобальную настройку
 
 ```bash
-cd /opt/remnawave-native-balancer/frontend
-npm ci
-npm run build
-cd ..
-docker build -f Dockerfile.prebuilt-frontend -t topor/remnawave-backend:native-balancer .
+curl -sS -X PATCH \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/remnawave-settings" \
+  -d '{"hostBalancerGlobalEnabled":true}' | jq
 ```
 
-`Dockerfile.prebuilt-frontend` копирует готовый `frontend/dist` и снижает нагрузку на Docker build.
-
-## 6. Проверка image
-
-Не проверяйте image обычным `docker run`:
+### Выключить глобальную настройку
 
 ```bash
-docker run --rm topor/remnawave-backend:native-balancer
+curl -sS -X PATCH \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/remnawave-settings" \
+  -d '{"hostBalancerGlobalEnabled":false}' | jq
 ```
 
-Обычный запуск вызывает entrypoint backend. Он ожидает `DATABASE_URL`, JWT env и другие параметры. Ошибка про env в этом случае не доказывает, что image плохой.
+## 3. Настройка Host Balancer через API
 
-Правильная проверка:
+### Получить настройки Host Balancer
 
 ```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "ls -la /opt/app/frontend && ls -la /opt/app/backend"
+curl -sS \
+  -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" | jq
 ```
 
-Проверить frontend:
+### Включить Balancer у Host
 
 ```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer -lc "test -f /opt/app/frontend/index.html && find /opt/app/frontend/assets -maxdepth 1 -type f | head"
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" \
+  -d '{
+    "enabled": true,
+    "strategy": "LEAST_ASSIGNED",
+    "unavailablePolicy": "HIDE_HOST",
+    "stickyEnabled": true,
+    "rebalanceExistingAssignmentsByTraffic": false,
+    "trafficMetric": null
+  }' | jq
 ```
 
-Если эта команда проходит, frontend лежит внутри image.
-
-## 7. Запуск с hard kill-switch
-
-Создайте `/opt/remnawave/docker-compose.override.yml`:
-
-```yaml
-services:
-  remnawave:
-    image: topor/remnawave-backend:native-balancer
-    environment:
-      HOST_BALANCER_ENABLED: "false"
-      HOST_BALANCER_DECISIONS_ENABLED: "true"
-```
-
-Запустите:
+### Добавить две целевые ноды
 
 ```bash
-cd /opt/remnawave
-docker compose up -d
-docker compose logs --tail=100 remnawave
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/targets" \
+  -d "{
+    \"targets\": [
+      {
+        \"nodeUuid\": \"$NODE_UUID_A\",
+        \"enabled\": true,
+        \"status\": \"ACTIVE\",
+        \"weight\": 1,
+        \"priority\": 100,
+        \"maxAssignedUsers\": null,
+        \"overrideAddress\": \"node-a.example.com\",
+        \"overridePort\": 443,
+        \"overrideSni\": null,
+        \"overrideHost\": null,
+        \"overridePath\": null
+      },
+      {
+        \"nodeUuid\": \"$NODE_UUID_B\",
+        \"enabled\": true,
+        \"status\": \"ACTIVE\",
+        \"weight\": 1,
+        \"priority\": 100,
+        \"maxAssignedUsers\": null,
+        \"overrideAddress\": \"node-b.example.com\",
+        \"overridePort\": 443,
+        \"overrideSni\": null,
+        \"overrideHost\": null,
+        \"overridePath\": null
+      }
+    ]
+  }" | jq
 ```
 
-Проверьте, что env попал в compose:
+## 4. Validation targets
+
+### Запустить validation
 
 ```bash
-docker compose config | grep HOST_BALANCER_ENABLED
+curl -sS -X POST \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/targets/validate" \
+  -d "{
+    \"targets\": [
+      {
+        \"localId\": \"local-a\",
+        \"nodeUuid\": \"$NODE_UUID_A\",
+        \"enabled\": true,
+        \"status\": \"ACTIVE\",
+        \"weight\": 1,
+        \"priority\": 100,
+        \"overrideAddress\": \"node-a.example.com\",
+        \"overridePort\": 443
+      }
+    ]
+  }" | jq
 ```
 
-На этом этапе подписки должны работать как раньше, потому что `HOST_BALANCER_ENABLED=false`.
+Ожидаемый успешный target:
 
-## 8. Проверка UI
-
-Откройте Remnawave panel.
-
-Проверьте:
-
-1. `Настройки Remnawave -> Host Balancer`.
-2. Статус env kill-switch.
-3. Warning при `HOST_BALANCER_ENABLED=false`.
-4. `Hosts -> Host edit/create -> Balancing`.
-5. Наличие `Предпросмотр выбора`.
-6. Наличие `Последние решения`.
-
-Если блока `Balancing` нет, вероятнее всего image собран не из root `Dockerfile` или frontend взят официальный.
-
-## 9. Включение Balancer для теста
-
-### 9.1 Включить env
-
-В override:
-
-```yaml
-services:
-  remnawave:
-    environment:
-      HOST_BALANCER_ENABLED: "true"
-      HOST_BALANCER_DECISIONS_ENABLED: "true"
+```json
+{
+  "valid": true,
+  "severity": "ok",
+  "reasons": []
+}
 ```
 
-Применить:
+Ошибка отсутствующего inbound:
+
+```json
+{
+  "valid": false,
+  "severity": "error",
+  "reasons": ["target node lacks required inbound"]
+}
+```
+
+Для `DISABLED` target отсутствие inbound должно быть warning:
+
+```json
+{
+  "valid": true,
+  "severity": "warning",
+  "reasons": ["target node lacks required inbound"]
+}
+```
+
+## 5. Preview выбора
+
+Preview является dry-run. Он не создает assignment и не меняет существующий assignment.
+
+### Preview по `userUuid`
 
 ```bash
-docker compose up -d
+curl -sS \
+  -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/preview?userUuid=$USER_UUID" | jq
 ```
 
-### 9.2 Включить global UI setting
+### Preview по `shortUuid`
 
-Откройте:
+```bash
+curl -sS \
+  -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/preview?shortUuid=$SHORT_UUID" | jq
+```
+
+Проверьте поля:
 
 ```text
-Настройки Remnawave -> Host Balancer
+resolvedUserUuid
+shortUuid
+hostUuid
+hostRemark
+enabled
+strategy
+stickyEnabled
+unavailablePolicy
+existingAssignment
+assignmentAction
+selectedTarget
+candidates
+excludedTargets
+warnings
+finalHostOverrides
+fallbackPolicyResult
 ```
 
-Включите:
+Если нет `userUuid` и `shortUuid`, endpoint должен вернуть `400`.
 
-```text
-Глобально включить Host Balancer
-```
+Если пользователь не найден, endpoint должен вернуть `404`.
 
-### 9.3 Включить на тестовом Host
+## 6. Получение подписки и decode
 
-Откройте:
-
-```text
-Hosts -> тестовый Host -> Balancing
-```
-
-Включите `Balancing`.
-
-Рекомендуемый первый тест:
-
-- strategy: `LEAST_ASSIGNED`;
-- sticky: enabled;
-- unavailablePolicy: `ORIGINAL_HOST` для безопасного старта или `HIDE_HOST`, если вы явно тестируете скрытие Host;
-- один или два target.
-
-## 10. Добавить targets
-
-В targets table:
-
-1. Нажмите `Добавить target`.
-2. Выберите node.
-3. Проверьте auto-fill:
-   - `overrideAddress = node.address`;
-   - `overridePort = Host port` или node/default port, если доступен.
-4. Проверьте node status.
-5. Проверьте inbound compatibility.
-6. Сохраните Host.
-
-В DevTools Network при сохранении должны быть:
-
-- `PUT /api/host-balancers/:hostUuid`;
-- `PUT /api/host-balancers/:hostUuid/targets`;
-- `PATCH /api/hosts/...`, если менялась обычная Host form.
-
-## 11. Проверить preview
-
-В `Предпросмотр выбора` введите:
-
-- полный `userUuid`;
-- или `shortUuid`.
-
-Нажмите `Проверить выбор`.
-
-Ожидаемый результат:
-
-- loading не зависает;
-- показан selected target или понятная ошибка;
-- видны candidates;
-- видны excluded targets;
-- виден final address/port;
-- если target исключен, видна причина.
-
-Preview не создает assignments.
-
-Проверка через API:
+### Скачать подписку
 
 ```bash
-curl -H "Authorization: Bearer <token>" \
-  "https://<api-domain>/api/host-balancers/<hostUuid>/preview?shortUuid=<shortUuid>"
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/$SHORT_UUID" -o subscription.txt
 ```
 
-Или:
+### Python decode script
+
+Некоторые ответы подписки приходят как обычный текст, некоторые как base64. Этот скрипт пытается показать оба варианта.
 
 ```bash
-curl -H "Authorization: Bearer <token>" \
-  "https://<api-domain>/api/host-balancers/<hostUuid>/preview?userUuid=<userUuid>"
+python3 - <<'PY'
+from pathlib import Path
+import base64
+
+raw = Path("subscription.txt").read_bytes().strip()
+
+print("=== raw preview ===")
+print(raw[:500].decode("utf-8", errors="replace"))
+
+print("\n=== base64 decoded preview ===")
+try:
+    padded = raw + b"=" * (-len(raw) % 4)
+    decoded = base64.b64decode(padded, validate=False)
+    print(decoded[:2000].decode("utf-8", errors="replace"))
+except Exception as exc:
+    print(f"decode failed: {exc}")
+PY
 ```
 
-## 12. Проверить реальную генерацию подписки
+Проверьте, что в результате есть `overrideAddress` выбранного target, а remark остался от исходного публичного `Host`.
 
-Запросите подписку реальным клиентским User-Agent:
+## 7. SQL диагностика
+
+Подключение:
 
 ```bash
-curl -A "v2rayN" "https://<sub-domain>/<shortUuid>"
+docker compose exec postgres psql -U remnawave remnawave
 ```
 
-Если получаете `App not supported`, вы, вероятно, попали в browser/subpage branch или используете неподдерживаемый User-Agent. Повторите с User-Agent реального клиента.
+Если контейнер называется иначе:
 
-## 13. Проверить assignments
+```bash
+docker ps
+```
 
-После реальной генерации подписки:
+### Проверить настройки Balancer
 
 ```sql
-SELECT host_uuid, user_uuid, target_uuid, reason, last_used_at, updated_at
-FROM host_balancer_assignments
-WHERE host_uuid = '<hostUuid>'
-ORDER BY updated_at DESC
-LIMIT 20;
-```
-
-Ожидаемо:
-
-- preview не создает строку;
-- реальная подписка создает или обновляет assignment;
-- при sticky enabled повторная генерация использует тот же target, если он валиден.
-
-## 14. Проверить decision audit
-
-В UI:
-
-```text
-Host edit -> Balancing -> Последние решения
-```
-
-Проверьте колонки:
-
-- время;
-- masked `userUuid`;
-- выбранная цель;
-- strategy;
-- reason;
-- assignmentAction;
-- final address;
-- candidates count;
-- excluded count;
-- warnings.
-
-Откройте detail row:
-
-- candidates;
-- excludedTargets;
-- selectedTarget;
-- finalHostOverrides;
-- unavailablePolicy.
-
-Через API:
-
-```bash
-curl -H "Authorization: Bearer <token>" \
-  "https://<api-domain>/api/host-balancers/<hostUuid>/decisions?limit=50"
-```
-
-В БД:
-
-```sql
-SELECT host_uuid, user_uuid, target_uuid, strategy, reason, diagnostics, created_at
-FROM host_balancer_decisions
-WHERE host_uuid = '<hostUuid>'
-ORDER BY created_at DESC
-LIMIT 50;
-```
-
-Decision audit хранится с retention: последние 5000 решений.
-
-## 15. Диагностика типовых проблем
-
-### 15.1 Targets не сохраняются из UI
-
-Симптомы:
-
-- Save нажимается, но targets не появляются в БД;
-- settings сохранены, targets нет.
-
-Проверить DevTools Network:
-
-- `PUT /api/host-balancers/:hostUuid`;
-- `PUT /api/host-balancers/:hostUuid/targets`.
-
-Проверить БД:
-
-```sql
-SELECT *
-FROM host_balancer_targets
-WHERE balancer_uuid IN (
-  SELECT uuid
-  FROM host_balancers
-  WHERE host_uuid = '<hostUuid>'
-);
-```
-
-Если ручной `PUT /targets` работает, а UI нет, проблема во frontend save-flow. В текущей реализации targets входят в save-flow и ошибка сохранения targets должна быть показана оператору.
-
-### 15.2 target node lacks required inbound
-
-Симптом:
-
-```text
-target node lacks required inbound
-```
-
-Русский перевод в UI:
-
-```text
-На ноде нет нужного inbound
-```
-
-Причина: выбранная target-нода не содержит inbound, который использует Host.
-
-Проверить:
-
-- inbound compatibility в targets table;
-- `excludedTargets` в preview;
-- `excludedTargets` в decision audit;
-- config profile inbound у Host;
-- active inbound UUIDs на node.
-
-Решение:
-
-- добавьте нужный inbound на target-ноду;
-- или выберите другую node;
-- или оставьте target disabled как черновик.
-
-### 15.3 Host исчезает из подписки
-
-Проверить `unavailablePolicy`:
-
-- `HIDE_HOST` скрывает Host, если нет доступных targets;
-- `ORIGINAL_HOST` оставляет исходный Host;
-- `KEEP_LAST_IF_POSSIBLE` пытается использовать последний валидный assignment.
-
-Проверить:
-
-- targets enabled;
-- target status;
-- node connected;
-- inbound compatibility;
-- decision audit reason.
-
-Если все targets excluded и policy `HIDE_HOST`, исчезновение Host ожидаемо.
-
-### 15.4 App not supported через curl
-
-Причина часто не в Balancer, а в route/User-Agent subscription endpoint.
-
-Используйте User-Agent реального клиента:
-
-```bash
-curl -A "v2rayN" "https://<sub-domain>/<shortUuid>"
-```
-
-Или проверяйте конкретный endpoint, который использует ваш клиент.
-
-### 15.5 Original Host CSV random мешает тесту
-
-Если у исходного Host уже есть CSV/random/shuffle поведение, результат может выглядеть как работа Balancer.
-
-Для чистого теста:
-
-- используйте один Host;
-- временно отключите random/shuffle;
-- смотрите final address в decision audit;
-- смотрите assignment в БД.
-
-### 15.6 Sticky выключен и пользователь получает разные targets
-
-Если sticky disabled, пользователь может получать разные targets на разных генерациях.
-
-Для стабильного поведения:
-
-- включите `stickyEnabled`;
-- проверьте `host_balancer_assignments`;
-- не включайте rebalance existing assignments, если не хотите переносить пользователей.
-
-## 16. Минимальные SQL-проверки
-
-Settings:
-
-```sql
-SELECT *
+SELECT
+  uuid,
+  host_uuid,
+  enabled,
+  strategy,
+  unavailable_policy,
+  sticky_enabled,
+  rebalance_existing_assignments_by_traffic,
+  traffic_metric,
+  created_at,
+  updated_at
 FROM host_balancers
-WHERE host_uuid = '<hostUuid>';
+WHERE host_uuid = '<HOST_UUID>';
 ```
 
-Targets:
+### Проверить targets
 
 ```sql
-SELECT *
+SELECT
+  uuid,
+  balancer_uuid,
+  node_uuid,
+  enabled,
+  status,
+  weight,
+  priority,
+  max_assigned_users,
+  override_address,
+  override_port,
+  override_sni,
+  override_host,
+  override_path,
+  created_at,
+  updated_at
 FROM host_balancer_targets
-WHERE balancer_uuid IN (
-  SELECT uuid FROM host_balancers WHERE host_uuid = '<hostUuid>'
+WHERE balancer_uuid = (
+  SELECT uuid FROM host_balancers WHERE host_uuid = '<HOST_UUID>'
 )
 ORDER BY priority ASC, weight DESC, created_at ASC;
 ```
 
-Assignments:
+### Проверить assignments
 
 ```sql
-SELECT *
+SELECT
+  uuid,
+  host_uuid,
+  user_uuid,
+  target_uuid,
+  reason,
+  last_used_at,
+  created_at,
+  updated_at
 FROM host_balancer_assignments
-WHERE host_uuid = '<hostUuid>'
+WHERE host_uuid = '<HOST_UUID>'
 ORDER BY updated_at DESC;
 ```
 
-Decisions:
+### Проверить decisions
 
 ```sql
-SELECT created_at, user_uuid, target_uuid, strategy, reason, diagnostics
+SELECT
+  uuid,
+  host_uuid,
+  user_uuid,
+  target_uuid,
+  strategy,
+  reason,
+  diagnostics,
+  created_at
 FROM host_balancer_decisions
-WHERE host_uuid = '<hostUuid>'
+WHERE host_uuid = '<HOST_UUID>'
 ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-Global setting:
+### Посчитать targets и assignments
 
 ```sql
-SELECT host_balancer_global_enabled
-FROM remnawave_settings
-LIMIT 1;
+SELECT status, enabled, COUNT(*)
+FROM host_balancer_targets
+WHERE balancer_uuid = (
+  SELECT uuid FROM host_balancers WHERE host_uuid = '<HOST_UUID>'
+)
+GROUP BY status, enabled
+ORDER BY status, enabled;
 ```
 
-## 17. Откат
-
-Откат делайте от мягкого к жесткому.
-
-### 17.1 Выключить env
-
-Самый быстрый аварийный rollback:
-
-```yaml
-services:
-  remnawave:
-    environment:
-      HOST_BALANCER_ENABLED: "false"
+```sql
+SELECT target_uuid, COUNT(*) AS assignments
+FROM host_balancer_assignments
+WHERE host_uuid = '<HOST_UUID>'
+GROUP BY target_uuid
+ORDER BY assignments ASC;
 ```
 
-Применить:
+## 8. Сценарии статусов target
+
+### ACTIVE
+
+`ACTIVE` target участвует в выборе, если:
+
+- `enabled = true`;
+- node существует;
+- node подключена;
+- node не отключена администратором;
+- на node есть required inbound;
+- не превышен `maxAssignedUsers`.
+
+Проверка:
 
 ```bash
-cd /opt/remnawave
-docker compose up -d
+curl -sS -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/preview?shortUuid=$SHORT_UUID" | jq '.response.selectedTarget'
 ```
 
-Результат: Balancer полностью игнорируется backend, даже если UI settings включены.
+### DRAINING
 
-### 17.2 Выключить global UI setting
+`DRAINING` target не должен получать новые назначения, но может сохраняться для старых sticky assignments, если старый target еще допустим.
 
-Откройте:
+Проверка:
+
+1. Создайте assignment на target.
+2. Переведите target в `DRAINING`.
+3. Запросите подписку тем же пользователем.
+4. Убедитесь, что sticky assignment может быть переиспользован.
+5. Запросите preview для нового пользователя и убедитесь, что `DRAINING` не выбран как новый target.
+
+### DISABLED
+
+`DISABLED` target не участвует в балансировке.
+
+Validation для `DISABLED` target может показывать warning, но сохранение допустимо.
+
+Проверка:
+
+```sql
+UPDATE host_balancer_targets
+SET status = 'DISABLED'
+WHERE uuid = '<TARGET_UUID>';
+```
+
+Затем preview должен исключить target с reason:
 
 ```text
-Настройки Remnawave -> Host Balancer
+target disabled
 ```
 
-Выключите глобальный переключатель.
+### DEAD
 
-### 17.3 Отключить конкретный Host
+`DEAD` target считается аварийным и не участвует в выборе.
 
-Откройте:
+Проверка:
+
+```sql
+UPDATE host_balancer_targets
+SET status = 'DEAD'
+WHERE uuid = '<TARGET_UUID>';
+```
+
+Preview должен исключить target. Если доступных targets нет, должна сработать `unavailablePolicy`.
+
+## 9. Проверка LEAST_ASSIGNED
+
+### Настроить стратегию
+
+```bash
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" \
+  -d '{
+    "enabled": true,
+    "strategy": "LEAST_ASSIGNED",
+    "unavailablePolicy": "HIDE_HOST",
+    "stickyEnabled": true,
+    "rebalanceExistingAssignmentsByTraffic": false,
+    "trafficMetric": null
+  }' | jq
+```
+
+### Проверить распределение assignments
+
+Сделайте несколько запросов подписки разными пользователями:
+
+```bash
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/<shortUuid-1>" >/dev/null
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/<shortUuid-2>" >/dev/null
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/<shortUuid-3>" >/dev/null
+```
+
+Проверьте counts:
+
+```sql
+SELECT target_uuid, COUNT(*) AS assignments
+FROM host_balancer_assignments
+WHERE host_uuid = '<HOST_UUID>'
+GROUP BY target_uuid
+ORDER BY assignments ASC;
+```
+
+Ожидание: новый пользователь получает target с меньшим числом assignments.
+
+## 10. Проверка LEAST_TRAFFIC
+
+### Настроить стратегию
+
+```bash
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" \
+  -d '{
+    "enabled": true,
+    "strategy": "LEAST_TRAFFIC",
+    "unavailablePolicy": "HIDE_HOST",
+    "stickyEnabled": true,
+    "rebalanceExistingAssignmentsByTraffic": false,
+    "trafficMetric": "CURRENT_PERIOD"
+  }' | jq
+```
+
+### Проверить текущий traffic по node
+
+```sql
+SELECT uuid, name, address, traffic_used_bytes
+FROM nodes
+WHERE uuid IN ('<NODE_UUID_A>', '<NODE_UUID_B>')
+ORDER BY traffic_used_bytes ASC;
+```
+
+### Проверить preview
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/preview?shortUuid=$SHORT_UUID" | jq '.response.candidates'
+```
+
+Ожидание: selected target соответствует ноде с меньшим traffic score.
+
+Важно: traffic strategy не является realtime-балансировкой активных соединений. Она использует последние доступные данные статистики.
+
+Если `stickyEnabled=true` и assignment уже существует, старый target может быть переиспользован. Для пересчета существующих sticky assignments включите:
 
 ```text
-Hosts -> Host edit -> Balancing
+rebalanceExistingAssignmentsByTraffic
 ```
 
-Выключите Balancing у проблемного Host.
+## 11. Проверка sticky
 
-### 17.4 Вернуть image remnawave/backend:2
+### Sticky включен
 
-В compose:
+```bash
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" \
+  -d '{
+    "enabled": true,
+    "strategy": "LEAST_ASSIGNED",
+    "unavailablePolicy": "HIDE_HOST",
+    "stickyEnabled": true,
+    "rebalanceExistingAssignmentsByTraffic": false,
+    "trafficMetric": null
+  }' | jq
+```
+
+Сделайте два запроса подписки одним пользователем:
+
+```bash
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/$SHORT_UUID" >/dev/null
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/$SHORT_UUID" >/dev/null
+```
+
+Проверьте assignment:
+
+```sql
+SELECT user_uuid, host_uuid, target_uuid, reason, last_used_at
+FROM host_balancer_assignments
+WHERE host_uuid = '<HOST_UUID>' AND user_uuid = '<USER_UUID>';
+```
+
+Ожидание: `target_uuid` остается тем же, `last_used_at` обновляется.
+
+### Sticky выключен
+
+```bash
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" \
+  -d '{
+    "enabled": true,
+    "strategy": "RANDOM",
+    "unavailablePolicy": "HIDE_HOST",
+    "stickyEnabled": false,
+    "rebalanceExistingAssignmentsByTraffic": false,
+    "trafficMetric": null
+  }' | jq
+```
+
+Сделайте несколько запросов. Пользователь может получать разные targets, потому что закрепление выключено.
+
+## 12. Проверка unavailablePolicy
+
+### HIDE_HOST
+
+Сделайте все targets недоступными:
+
+```sql
+UPDATE host_balancer_targets
+SET status = 'DISABLED'
+WHERE balancer_uuid = (
+  SELECT uuid FROM host_balancers WHERE host_uuid = '<HOST_UUID>'
+);
+```
+
+Установите:
+
+```text
+unavailablePolicy = HIDE_HOST
+```
+
+Запросите подписку. Ожидание: исходный Host не попадает в подписку.
+
+### ORIGINAL_HOST
+
+Установите:
+
+```text
+unavailablePolicy = ORIGINAL_HOST
+```
+
+Запросите подписку. Ожидание: используется обычная логика Remnawave без target overrides.
+
+### KEEP_LAST_IF_POSSIBLE
+
+Установите:
+
+```text
+unavailablePolicy = KEEP_LAST_IF_POSSIBLE
+```
+
+Если у пользователя есть старый валидный assignment, он может быть использован. Если нет, поведение зависит от fallback-логики и диагностики preview.
+
+## 13. Decisions audit
+
+### Получить последние решения
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $API_TOKEN" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID/decisions?limit=50" | jq
+```
+
+Проверьте:
+
+```text
+selectedTarget
+candidates
+excludedTargets
+reason
+finalHostOverrides
+assignmentAction
+```
+
+### Проверить, что userUuid masked
+
+В API-ответе пользователь должен быть замаскирован, если endpoint не отдает full UUID для admin-режима.
+
+## 14. Типовые диагностики
+
+### targets не появились в БД
+
+Проверьте Network в браузере:
+
+```text
+PUT /api/host-balancers/:hostUuid
+PUT /api/host-balancers/:hostUuid/targets
+```
+
+Проверьте SQL:
+
+```sql
+SELECT COUNT(*)
+FROM host_balancer_targets
+WHERE balancer_uuid = (
+  SELECT uuid FROM host_balancers WHERE host_uuid = '<HOST_UUID>'
+);
+```
+
+### Нет нужного inbound
+
+Проверьте inbound Host:
+
+```sql
+SELECT uuid, remark, config_profile_inbound_uuid
+FROM hosts
+WHERE uuid = '<HOST_UUID>';
+```
+
+Проверьте inbound ноды:
+
+```sql
+SELECT node_uuid, config_profile_inbound_uuid
+FROM config_profile_inbounds_to_nodes
+WHERE node_uuid = '<NODE_UUID>';
+```
+
+Если `config_profile_inbound_uuid` Host отсутствует у node, target будет невалиден.
+
+### Host исчез из подписки
+
+Проверьте:
+
+```sql
+SELECT unavailable_policy
+FROM host_balancers
+WHERE host_uuid = '<HOST_UUID>';
+```
+
+Если `HIDE_HOST` и candidates пустые, Host скрывается.
+
+### Проверка не тем клиентом
+
+Для curl используйте:
+
+```bash
+curl -sS -H 'User-Agent: v2rayN/7.0' "$SUB_URL/$SHORT_UUID"
+```
+
+Если правила ответа завязаны на другой клиент, подставьте нужный `User-Agent`.
+
+## 15. Откат
+
+### Аварийно выключить env
 
 ```yaml
-services:
-  remnawave:
-    image: remnawave/backend:2
+environment:
+  HOST_BALANCER_ENABLED: "false"
 ```
-
-Применить:
 
 ```bash
-cd /opt/remnawave
-docker compose up -d
-docker compose logs --tail=100 remnawave
+docker compose up -d backend
 ```
 
-### 17.5 Restore DB только как крайняя мера
-
-Обычно restore DB не нужен:
-
-- env выключает применение Balancer;
-- global UI setting выключает применение Balancer;
-- Host setting выключает применение Balancer;
-- targets/assignments могут остаться в БД.
-
-Restore используйте только если нужно полностью вернуться к старой схеме или данные повреждены.
-
-Перед restore сделайте свежий backup текущего состояния.
-
-Пример:
+### Выключить глобально через API
 
 ```bash
-cd /opt/remnawave
-docker compose stop remnawave
-docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists < remnawave-before-native-balancer.dump
-docker compose up -d
+curl -sS -X PATCH \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/remnawave-settings" \
+  -d '{"hostBalancerGlobalEnabled":false}' | jq
 ```
 
-## 18. Acceptance checklist
+### Выключить конкретный Host
 
-Перед завершением теста убедитесь:
+```bash
+curl -sS -X PUT \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$PANEL_URL/api/host-balancers/$HOST_UUID" \
+  -d '{
+    "enabled": false,
+    "strategy": "LEAST_ASSIGNED",
+    "unavailablePolicy": "HIDE_HOST",
+    "stickyEnabled": true,
+    "rebalanceExistingAssignmentsByTraffic": false,
+    "trafficMetric": null
+  }' | jq
+```
 
-- новый image запущен;
-- обычная subscription-page работает;
-- `HOST_BALANCER_ENABLED` выставлен по выбранной схеме;
-- global UI setting понятен оператору;
-- Balancing включен только на тестовом Host;
-- targets сохраняются из UI;
-- preview показывает selected/excluded/final address;
-- real subscription создает assignment;
-- decision audit показывает причину выбора target;
-- rollback через env проверен или понятен оператору.
+### Вернуть официальный образ
+
+```yaml
+image: remnawave/backend:2
+```
+
+```bash
+docker compose pull backend
+docker compose up -d backend
+```
+
+### Restore DB только как крайняя мера
+
+Перед restore сделайте резервную копию текущего состояния:
+
+```bash
+docker exec -t remnawave-postgres pg_dump -U remnawave remnawave > remnawave-db-before-restore.sql
+```
+
+Остановите backend:
+
+```bash
+docker compose stop backend
+```
+
+Восстановите backup:
+
+```bash
+docker exec -i remnawave-postgres psql -U remnawave remnawave < remnawave-db-before-native-balancer.sql
+```
+
+Запустите backend:
+
+```bash
+docker compose up -d backend
+```
+
+## 16. Acceptance checklist
+
+- `HOST_BALANCER_ENABLED=false` полностью отключает применение Balancer.
+- `HOST_BALANCER_ENABLED=true` разрешает Balancer, но требует глобального включения в UI.
+- Глобальная настройка включается и выключается в `Настройки Remnawave -> Host Balancer`.
+- Конкретный Host балансируется только если включен его блок `Балансировка`.
+- Targets сохраняются через `PUT /api/host-balancers/:hostUuid/targets`.
+- Validation показывает проблему до сохранения active target.
+- Preview показывает выбранную цель или понятную fallback policy.
+- Decisions позволяют понять, почему пользователь получил target.
+- Assignments появляются после реального subscription request.
+- Откат через env не требует удаления данных из БД.
