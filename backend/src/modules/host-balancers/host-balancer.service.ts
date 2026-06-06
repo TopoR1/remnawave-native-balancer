@@ -35,11 +35,26 @@ type TargetDiagnostics = {
     nodeUuid?: string | null;
     nodeName?: string | null;
     nodeAddress?: string | null;
+    countryCode?: string | null;
+    countryEmoji?: string | null;
+    profileUuid?: string | null;
+    inboundUuid?: string | null;
+    inboundTag?: string | null;
+    inboundType?: string | null;
+    inboundNetwork?: string | null;
+    inboundPort?: number | null;
+    overrideAddress?: string | null;
+    overridePort?: number | null;
     address?: string | null;
     port?: number | null;
+    status?: HostBalancerTarget['status'];
+    compatibilityStatus?: 'compatible' | 'missing_inbound' | 'node_disconnected' | 'node_disabled' | 'unknown';
     trafficBytes?: string | null;
+    trafficSource?: 'snapshot' | 'node_current' | 'not_loaded' | 'unavailable';
     weight?: number;
     priority?: number;
+    assignmentsCount?: number;
+    assignmentsSource?: 'snapshot';
     assignments?: number;
     score?: number;
     selected?: boolean;
@@ -377,6 +392,7 @@ export class HostBalancerService {
                         settings.targets,
                         nodeStates,
                         assignmentCounts,
+                        hostForPreview.configProfileInboundUuid,
                     ),
                 ),
             );
@@ -500,6 +516,7 @@ export class HostBalancerService {
                     excludedTargets,
                     'reused',
                     ctx.assignmentCounts,
+                    ctx.nodeStates,
                 );
             }
         }
@@ -511,21 +528,29 @@ export class HostBalancerService {
                 stickyTarget,
                 ctx.nodeStates,
             );
+            const diagnostics: HostApplyDiagnostics = {
+                candidates: [],
+                excludedTargets,
+                selectedTarget: fallback.target ? { targetUuid: fallback.target.uuid } : null,
+                warnings: [],
+                assignment: fallback.target ? 'reused' : 'skipped',
+                finalHostOverrides: fallback.target
+                    ? this.resolveFinalHostOverrides(ctx.host, fallback.target)
+                    : fallback.host
+                      ? this.resolveHostFields(fallback.host)
+                      : null,
+            };
+
             return {
                 host: fallback.host,
                 selectedTarget: fallback.target,
-                diagnostics: {
-                    candidates: [],
-                    excludedTargets,
-                    selectedTarget: fallback.target ? { targetUuid: fallback.target.uuid } : null,
-                    warnings: [],
-                    assignment: fallback.target ? 'reused' : 'skipped',
-                    finalHostOverrides: fallback.target
-                        ? this.resolveFinalHostOverrides(ctx.host, fallback.target)
-                        : fallback.host
-                          ? this.resolveHostFields(fallback.host)
-                          : null,
-                },
+                diagnostics: this.enrichTargetDiagnostics(
+                    diagnostics,
+                    ctx.balancer.targets,
+                    ctx.nodeStates,
+                    ctx.assignmentCounts,
+                    ctx.host.configProfileInboundUuid,
+                ),
             };
         }
 
@@ -549,7 +574,9 @@ export class HostBalancerService {
             excludedTargets,
             assignment,
             ctx.assignmentCounts,
+            ctx.nodeStates,
             selection,
+            ctx.host.configProfileInboundUuid,
         );
     }
 
@@ -993,21 +1020,29 @@ export class HostBalancerService {
         excludedTargets: TargetDiagnostics[],
         assignment: AssignmentAction,
         assignmentCounts: Map<string, number>,
+        nodeStates: Map<string, HostBalancerNodeState>,
         selection?: SelectTargetResult,
+        requiredInboundUuid?: string | null,
     ) {
         const diagnostics =
             selection ?? this.selectionResult(selected, candidates, assignmentCounts, false);
         return {
             host: this.cloneWithTargetOverrides(host, selected),
             selectedTarget: selected,
-            diagnostics: {
-                candidates: diagnostics.candidates,
-                excludedTargets,
-                selectedTarget: diagnostics.selectedTarget,
-                warnings: diagnostics.warnings,
-                assignment,
-                finalHostOverrides: this.resolveFinalHostOverrides(host, selected),
-            },
+            diagnostics: this.enrichTargetDiagnostics(
+                {
+                    candidates: diagnostics.candidates,
+                    excludedTargets,
+                    selectedTarget: diagnostics.selectedTarget,
+                    warnings: diagnostics.warnings,
+                    assignment,
+                    finalHostOverrides: this.resolveFinalHostOverrides(host, selected),
+                },
+                candidates,
+                nodeStates,
+                assignmentCounts,
+                requiredInboundUuid ?? host.configProfileInboundUuid,
+            ),
         };
     }
 
@@ -1072,11 +1107,7 @@ export class HostBalancerService {
                 diagnostics: this.toJsonSafe({
                     unavailablePolicy: balancer.unavailablePolicy,
                     assignmentAction,
-                    excludedTargets: decision.diagnostics.excludedTargets.map((target) => ({
-                        targetUuid: target.targetUuid,
-                        nodeUuid: target.nodeUuid ?? null,
-                        reason: target.reason,
-                    })),
+                    excludedTargets: decision.diagnostics.excludedTargets,
                     candidates: decision.diagnostics.candidates,
                     selectedTarget: decision.diagnostics.selectedTarget,
                     warnings: decision.diagnostics.warnings,
@@ -1258,22 +1289,75 @@ export class HostBalancerService {
         targets: HostBalancerTarget[],
         nodeStates: Map<string, HostBalancerNodeState>,
         assignmentCounts: Map<string, number>,
+        requiredInboundUuid: string | null,
     ): PreviewHostBalancerCommand.Response['response']['diagnostics'] {
+        return this.enrichTargetDiagnostics(
+            diagnostics,
+            targets,
+            nodeStates,
+            assignmentCounts,
+            requiredInboundUuid,
+        ) as PreviewHostBalancerCommand.Response['response']['diagnostics'];
+    }
+
+    private enrichTargetDiagnostics<T extends { candidates?: TargetDiagnostics[]; excludedTargets?: TargetDiagnostics[]; selectedTarget?: TargetDiagnostics | null }>(
+        diagnostics: T,
+        targets: HostBalancerTarget[],
+        nodeStates: Map<string, HostBalancerNodeState>,
+        assignmentCounts: Map<string, number>,
+        requiredInboundUuid: string | null,
+    ): T {
         const targetByUuid = new Map(targets.map((target) => [target.uuid, target]));
         const enrich = (target: TargetDiagnostics): TargetDiagnostics => {
             const source = targetByUuid.get(target.targetUuid);
             const node = source?.nodeUuid ? nodeStates.get(source.nodeUuid) : null;
+            const inbound = requiredInboundUuid
+                ? (node?.inbounds ?? []).find((item) => item.uuid === requiredInboundUuid)
+                : null;
+            const assignmentsCount = assignmentCounts.get(target.targetUuid) ?? 0;
+            const trafficBytes =
+                target.trafficBytes !== undefined && target.trafficBytes !== null
+                    ? target.trafficBytes
+                    : node?.trafficUsedBytes !== undefined && node?.trafficUsedBytes !== null
+                      ? node.trafficUsedBytes.toString()
+                      : undefined;
 
             return {
                 ...target,
                 nodeUuid: target.nodeUuid ?? source?.nodeUuid ?? null,
                 nodeName: node?.name ?? null,
                 nodeAddress: node?.address ?? null,
-                address: source?.overrideAddress ?? node?.address ?? null,
-                port: source?.overridePort ?? node?.port ?? null,
+                countryCode: node?.countryCode ?? null,
+                countryEmoji: node?.countryEmoji ?? null,
+                profileUuid: node?.activeConfigProfileUuid ?? inbound?.profileUuid ?? null,
+                inboundUuid: inbound?.uuid ?? null,
+                inboundTag: inbound?.tag ?? null,
+                inboundType: inbound?.type ?? null,
+                inboundNetwork: inbound?.network ?? null,
+                inboundPort: inbound?.port ?? null,
+                overrideAddress: source?.overrideAddress ?? null,
+                overridePort: source?.overridePort ?? null,
+                address: target.address ?? source?.overrideAddress ?? node?.address ?? null,
+                port: target.port ?? source?.overridePort ?? node?.port ?? null,
+                status: source?.status,
+                compatibilityStatus:
+                    target.compatibilityStatus ??
+                    this.resolveTargetCompatibilityStatus(target.reason, node ?? null, inbound),
                 weight: source?.weight ?? target.weight,
                 priority: source?.priority,
-                assignments: assignmentCounts.get(target.targetUuid) ?? 0,
+                assignments: target.assignments ?? assignmentsCount,
+                assignmentsCount: target.assignmentsCount ?? assignmentsCount,
+                assignmentsSource: target.assignmentsSource ?? 'snapshot',
+                trafficBytes,
+                trafficSource:
+                    target.trafficSource ??
+                    (trafficBytes === undefined
+                        ? 'not_loaded'
+                        : target.trafficBytes === undefined || target.trafficBytes === null
+                          ? 'node_current'
+                          : trafficBytes === null
+                            ? 'unavailable'
+                            : 'snapshot'),
                 severity: target.reason ? this.previewTargetSeverity(target.reason) : 'info',
             };
         };
@@ -1284,6 +1368,38 @@ export class HostBalancerService {
             excludedTargets: (diagnostics.excludedTargets ?? []).map(enrich),
             selectedTarget: diagnostics.selectedTarget ? enrich(diagnostics.selectedTarget) : null,
         };
+    }
+
+    private resolveTargetCompatibilityStatus(
+        reason: string | undefined,
+        node: HostBalancerNodeState | null,
+        inbound:
+            | {
+                  uuid: string;
+              }
+            | null
+            | undefined,
+    ): TargetDiagnostics['compatibilityStatus'] {
+        if (reason === 'target node lacks required inbound') {
+            return 'missing_inbound';
+        }
+        if (reason === 'target node disconnected') {
+            return 'node_disconnected';
+        }
+        if (reason === 'target node disabled') {
+            return 'node_disabled';
+        }
+        if (!node) {
+            return 'unknown';
+        }
+        if (node.isDisabled) {
+            return 'node_disabled';
+        }
+        if (!node.isConnected || node.isConnecting) {
+            return 'node_disconnected';
+        }
+
+        return inbound ? 'compatible' : 'unknown';
     }
 
     private previewTargetSeverity(reason: string): 'info' | 'warning' | 'error' {

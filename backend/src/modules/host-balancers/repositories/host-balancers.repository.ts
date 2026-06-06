@@ -1,6 +1,7 @@
 import {
     HostBalancerAssignment,
     HostBalancerStrategy,
+    HostBalancerTargetStatus,
     HostBalancerTrafficMetric,
     HostBalancerUnavailablePolicy,
     Prisma,
@@ -30,10 +31,22 @@ export type HostBalancerNodeState = {
     name: string;
     address: string;
     port: number | null;
+    countryCode: string | null;
+    countryEmoji: string | null;
+    activeConfigProfileUuid: string | null;
+    trafficUsedBytes: bigint | null;
     isConnected: boolean;
     isConnecting: boolean;
     isDisabled: boolean;
     activeInboundUuids: Set<string>;
+    inbounds: Array<{
+        uuid: string;
+        profileUuid: string;
+        tag: string;
+        type: string;
+        network: string | null;
+        port: number | null;
+    }>;
 };
 
 export type CreateHostBalancerDecisionDto = {
@@ -56,12 +69,39 @@ type HostBalancerDecisionFinalOverrides = {
 type HostBalancerDecisionExcludedTarget = {
     targetUuid: string;
     nodeUuid?: string | null;
+    nodeName?: string | null;
+    nodeAddress?: string | null;
+    countryCode?: string | null;
+    countryEmoji?: string | null;
+    profileUuid?: string | null;
+    inboundUuid?: string | null;
+    inboundTag?: string | null;
+    inboundType?: string | null;
+    inboundNetwork?: string | null;
+    inboundPort?: number | null;
+    overrideAddress?: string | null;
+    overridePort?: number | null;
+    address?: string | null;
+    port?: number | null;
+    status?: HostBalancerTargetStatus;
+    compatibilityStatus?:
+        | 'compatible'
+        | 'missing_inbound'
+        | 'node_disconnected'
+        | 'node_disabled'
+        | 'unknown';
+    assignments?: number;
+    assignmentsCount?: number;
+    assignmentsSource?: 'snapshot';
     trafficBytes?: string | null;
+    trafficSource?: 'snapshot' | 'node_current' | 'not_loaded' | 'unavailable';
     weight?: number;
+    priority?: number;
     score?: number;
     selected?: boolean;
     fallbackUsed?: boolean;
     reason?: string;
+    severity?: 'info' | 'warning' | 'error';
 };
 
 @Injectable()
@@ -256,12 +296,25 @@ export class HostBalancersRepository {
                 name: true,
                 address: true,
                 port: true,
+                countryCode: true,
+                activeConfigProfileUuid: true,
+                trafficUsedBytes: true,
                 isConnected: true,
                 isConnecting: true,
                 isDisabled: true,
                 configProfileInboundsToNodes: {
                     select: {
                         configProfileInboundUuid: true,
+                        configProfileInbounds: {
+                            select: {
+                                uuid: true,
+                                profileUuid: true,
+                                tag: true,
+                                type: true,
+                                network: true,
+                                port: true,
+                            },
+                        },
                     },
                 },
             },
@@ -275,6 +328,10 @@ export class HostBalancersRepository {
                     name: node.name,
                     address: node.address,
                     port: node.port,
+                    countryCode: node.countryCode,
+                    countryEmoji: this.resolveCountryEmoji(node.countryCode),
+                    activeConfigProfileUuid: node.activeConfigProfileUuid,
+                    trafficUsedBytes: node.trafficUsedBytes ?? null,
                     isConnected: node.isConnected,
                     isConnecting: node.isConnecting,
                     isDisabled: node.isDisabled,
@@ -282,6 +339,9 @@ export class HostBalancersRepository {
                         node.configProfileInboundsToNodes.map(
                             (inbound) => inbound.configProfileInboundUuid,
                         ),
+                    ),
+                    inbounds: node.configProfileInboundsToNodes.map(
+                        (inbound) => inbound.configProfileInbounds,
                     ),
                 },
             ]),
@@ -480,6 +540,15 @@ export class HostBalancersRepository {
         );
     }
 
+    private isHostBalancerTargetStatus(value: unknown): value is HostBalancerTargetStatus {
+        return (
+            value === 'ACTIVE' ||
+            value === 'DRAINING' ||
+            value === 'DISABLED' ||
+            value === 'DEAD'
+        );
+    }
+
     private resolveDecisionExcludedTargets(value: unknown): HostBalancerDecisionExcludedTarget[] {
         if (!Array.isArray(value)) {
             return [];
@@ -496,17 +565,142 @@ export class HostBalancersRepository {
                     typeof item['nodeUuid'] === 'string' || item['nodeUuid'] === null
                         ? item['nodeUuid']
                         : undefined,
+                nodeName:
+                    typeof item['nodeName'] === 'string' || item['nodeName'] === null
+                        ? item['nodeName']
+                        : undefined,
+                nodeAddress:
+                    typeof item['nodeAddress'] === 'string' || item['nodeAddress'] === null
+                        ? item['nodeAddress']
+                        : undefined,
+                countryCode:
+                    typeof item['countryCode'] === 'string' || item['countryCode'] === null
+                        ? item['countryCode']
+                        : undefined,
+                countryEmoji:
+                    typeof item['countryEmoji'] === 'string' || item['countryEmoji'] === null
+                        ? item['countryEmoji']
+                        : undefined,
+                profileUuid:
+                    typeof item['profileUuid'] === 'string' || item['profileUuid'] === null
+                        ? item['profileUuid']
+                        : undefined,
+                inboundUuid:
+                    typeof item['inboundUuid'] === 'string' || item['inboundUuid'] === null
+                        ? item['inboundUuid']
+                        : undefined,
+                inboundTag:
+                    typeof item['inboundTag'] === 'string' || item['inboundTag'] === null
+                        ? item['inboundTag']
+                        : undefined,
+                inboundType:
+                    typeof item['inboundType'] === 'string' || item['inboundType'] === null
+                        ? item['inboundType']
+                        : undefined,
+                inboundNetwork:
+                    typeof item['inboundNetwork'] === 'string' || item['inboundNetwork'] === null
+                        ? item['inboundNetwork']
+                        : undefined,
+                inboundPort:
+                    typeof item['inboundPort'] === 'number' || item['inboundPort'] === null
+                        ? item['inboundPort']
+                        : undefined,
+                overrideAddress:
+                    typeof item['overrideAddress'] === 'string' ||
+                    item['overrideAddress'] === null
+                        ? item['overrideAddress']
+                        : undefined,
+                overridePort:
+                    typeof item['overridePort'] === 'number' || item['overridePort'] === null
+                        ? item['overridePort']
+                        : undefined,
+                address:
+                    typeof item['address'] === 'string' || item['address'] === null
+                        ? item['address']
+                        : undefined,
+                port:
+                    typeof item['port'] === 'number' || item['port'] === null
+                        ? item['port']
+                        : undefined,
+                status: this.isHostBalancerTargetStatus(item['status'])
+                    ? item['status']
+                    : undefined,
+                compatibilityStatus:
+                    this.isCompatibilityStatus(item['compatibilityStatus'])
+                        ? item['compatibilityStatus']
+                        : undefined,
+                assignments:
+                    typeof item['assignments'] === 'number' ? item['assignments'] : undefined,
+                assignmentsCount:
+                    typeof item['assignmentsCount'] === 'number'
+                        ? item['assignmentsCount']
+                        : typeof item['assignments'] === 'number'
+                          ? item['assignments']
+                          : undefined,
+                assignmentsSource:
+                    item['assignmentsSource'] === 'snapshot'
+                        ? item['assignmentsSource']
+                        : undefined,
                 trafficBytes:
                     typeof item['trafficBytes'] === 'string' || item['trafficBytes'] === null
                         ? item['trafficBytes']
                         : undefined,
+                trafficSource:
+                    this.isTrafficSource(item['trafficSource'])
+                        ? item['trafficSource']
+                        : undefined,
                 weight: typeof item['weight'] === 'number' ? item['weight'] : undefined,
+                priority: typeof item['priority'] === 'number' ? item['priority'] : undefined,
                 score: typeof item['score'] === 'number' ? item['score'] : undefined,
                 selected: typeof item['selected'] === 'boolean' ? item['selected'] : undefined,
                 fallbackUsed:
                     typeof item['fallbackUsed'] === 'boolean' ? item['fallbackUsed'] : undefined,
                 reason: typeof item['reason'] === 'string' ? item['reason'] : undefined,
+                severity: this.isDiagnosticsSeverity(item['severity'])
+                    ? item['severity']
+                    : undefined,
             }));
+    }
+
+    private isCompatibilityStatus(
+        value: unknown,
+    ): value is NonNullable<HostBalancerDecisionExcludedTarget['compatibilityStatus']> {
+        return (
+            value === 'compatible' ||
+            value === 'missing_inbound' ||
+            value === 'node_disconnected' ||
+            value === 'node_disabled' ||
+            value === 'unknown'
+        );
+    }
+
+    private isTrafficSource(
+        value: unknown,
+    ): value is NonNullable<HostBalancerDecisionExcludedTarget['trafficSource']> {
+        return (
+            value === 'snapshot' ||
+            value === 'node_current' ||
+            value === 'not_loaded' ||
+            value === 'unavailable'
+        );
+    }
+
+    private isDiagnosticsSeverity(
+        value: unknown,
+    ): value is NonNullable<HostBalancerDecisionExcludedTarget['severity']> {
+        return value === 'info' || value === 'warning' || value === 'error';
+    }
+
+    private resolveCountryEmoji(countryCode: string | null): string | null {
+        if (!countryCode || countryCode === 'XX') {
+            return null;
+        }
+
+        return countryCode
+            .toUpperCase()
+            .replace(/./g, (char) =>
+                String.fromCodePoint(127397 + char.charCodeAt(0)),
+            );
     }
 
     private sanitizeDecisionDiagnostics(value: Record<string, unknown>): Record<string, unknown> {

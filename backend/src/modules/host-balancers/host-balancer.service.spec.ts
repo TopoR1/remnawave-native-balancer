@@ -22,6 +22,7 @@ const TARGET_UUID_2 = '66666666-6666-4666-8666-666666666666';
 const NODE_UUID = '55555555-5555-4555-8555-555555555555';
 const NODE_UUID_2 = '99999999-9999-4999-8999-999999999999';
 const INBOUND_UUID = '77777777-7777-4777-8777-777777777777';
+const PROFILE_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 function createBalancer(overrides = {}) {
     return {
@@ -148,10 +149,24 @@ function createService(
                         name: 'Node A',
                         address: 'node-a.example.com',
                         port: 8443,
+                        countryCode: 'NL',
+                        countryEmoji: '🇳🇱',
+                        activeConfigProfileUuid: PROFILE_UUID,
+                        trafficUsedBytes: 1024n,
                         isConnected: true,
                         isConnecting: false,
                         isDisabled: false,
                         activeInboundUuids: new Set([INBOUND_UUID]),
+                        inbounds: [
+                            {
+                                uuid: INBOUND_UUID,
+                                profileUuid: PROFILE_UUID,
+                                tag: 'vless-reality',
+                                type: 'vless',
+                                network: 'tcp',
+                                port: 443,
+                            },
+                        ],
                     },
                 ],
                 [
@@ -161,10 +176,24 @@ function createService(
                         name: 'Node B',
                         address: 'node-b.example.com',
                         port: 9443,
+                        countryCode: 'DE',
+                        countryEmoji: '🇩🇪',
+                        activeConfigProfileUuid: PROFILE_UUID,
+                        trafficUsedBytes: 2048n,
                         isConnected: true,
                         isConnecting: false,
                         isDisabled: false,
                         activeInboundUuids: new Set([INBOUND_UUID]),
+                        inbounds: [
+                            {
+                                uuid: INBOUND_UUID,
+                                profileUuid: PROFILE_UUID,
+                                tag: 'vless-reality',
+                                type: 'vless',
+                                network: 'tcp',
+                                port: 443,
+                            },
+                        ],
                     },
                 ],
             ]),
@@ -263,7 +292,13 @@ describe('HostBalancerService', () => {
             assert.equal(result.response.balancerEnabled, true);
             assert.equal(result.response.assignmentAction, 'would_create');
             assert.equal(result.response.selectedTarget?.nodeName, 'Node A');
+            assert.equal(result.response.selectedTarget?.countryEmoji, '🇳🇱');
+            assert.equal(result.response.selectedTarget?.inboundTag, 'vless-reality');
             assert.equal(result.response.selectedTarget?.assignments, 0);
+            assert.equal(result.response.selectedTarget?.assignmentsCount, 0);
+            assert.equal(result.response.selectedTarget?.assignmentsSource, 'snapshot');
+            assert.equal(result.response.selectedTarget?.trafficBytes, '1024');
+            assert.equal(result.response.selectedTarget?.trafficSource, 'node_current');
             assert.equal(result.response.diagnostics.wouldCreateAssignment, false);
             assert.equal(result.response.diagnostics.selectedTargetUuid, TARGET_UUID);
             assert.equal(result.response.diagnostics.assignment, 'created');
@@ -507,14 +542,36 @@ describe('HostBalancerService', () => {
                             diagnostics: {
                                 unavailablePolicy: 'HIDE_HOST',
                                 assignmentAction: 'created',
-                                candidates: [{ targetUuid: TARGET_UUID, selected: true }],
+                                candidates: [
+                                    {
+                                        targetUuid: TARGET_UUID,
+                                        nodeName: 'Node A',
+                                        countryEmoji: '🇳🇱',
+                                        inboundTag: 'vless-reality',
+                                        assignmentsCount: 2,
+                                        assignmentsSource: 'snapshot',
+                                        trafficBytes: '1024',
+                                        trafficSource: 'node_current',
+                                        selected: true,
+                                    },
+                                ],
                                 excludedTargets: [
                                     {
                                         targetUuid: TARGET_UUID_2,
                                         reason: 'target node lacks required inbound',
                                     },
                                 ],
-                                selectedTarget: { targetUuid: TARGET_UUID, selected: true },
+                                selectedTarget: {
+                                    targetUuid: TARGET_UUID,
+                                    nodeName: 'Node A',
+                                    countryEmoji: '🇳🇱',
+                                    inboundTag: 'vless-reality',
+                                    assignmentsCount: 2,
+                                    assignmentsSource: 'snapshot',
+                                    trafficBytes: '1024',
+                                    trafficSource: 'node_current',
+                                    selected: true,
+                                },
                                 warnings: ['target node lacks required inbound'],
                                 finalHostOverrides: {
                                     address: 'safe.example.com',
@@ -549,20 +606,45 @@ describe('HostBalancerService', () => {
         assert.equal(decisions[0].userUuid, '22222222...2222');
         assert.equal(decisions[0].userUuidMasked, '22222222...2222');
         assert.equal(decisions[0].candidates[0].targetUuid, TARGET_UUID);
+        assert.equal(decisions[0].candidates[0].nodeName, 'Node A');
+        assert.equal(decisions[0].candidates[0].assignmentsCount, 2);
+        assert.equal(decisions[0].candidates[0].trafficBytes, '1024');
         assert.equal(decisions[0].excludedTargets[0].reason, 'target node lacks required inbound');
         assert.equal(decisions[0].diagnostics.password, undefined);
         assert.equal(decisions[0].diagnostics.token, undefined);
         assert.deepEqual(JSON.parse(JSON.stringify(decisions[0].diagnostics)), {
             unavailablePolicy: 'HIDE_HOST',
             assignmentAction: 'created',
-            candidates: [{ targetUuid: TARGET_UUID, selected: true }],
+            candidates: [
+                {
+                    targetUuid: TARGET_UUID,
+                    nodeName: 'Node A',
+                    countryEmoji: '🇳🇱',
+                    inboundTag: 'vless-reality',
+                    assignmentsCount: 2,
+                    assignmentsSource: 'snapshot',
+                    trafficBytes: '1024',
+                    trafficSource: 'node_current',
+                    selected: true,
+                },
+            ],
             excludedTargets: [
                 {
                     targetUuid: TARGET_UUID_2,
                     reason: 'target node lacks required inbound',
                 },
             ],
-            selectedTarget: { targetUuid: TARGET_UUID, selected: true },
+            selectedTarget: {
+                targetUuid: TARGET_UUID,
+                nodeName: 'Node A',
+                countryEmoji: '🇳🇱',
+                inboundTag: 'vless-reality',
+                assignmentsCount: 2,
+                assignmentsSource: 'snapshot',
+                trafficBytes: '1024',
+                trafficSource: 'node_current',
+                selected: true,
+            },
             warnings: ['target node lacks required inbound'],
             finalHostOverrides: {
                 address: 'safe.example.com',
@@ -1215,6 +1297,13 @@ describe('HostBalancerService', () => {
         assert.equal(decisionRecord.diagnostics.assignmentAction, 'created');
         assert.equal(decisionRecord.diagnostics.unavailablePolicy, 'HIDE_HOST');
         assert.equal(decisionRecord.diagnostics.finalHostOverrides.address, 'audit.example.com');
+        assert.equal(decisionRecord.diagnostics.selectedTarget.nodeName, 'Node A');
+        assert.equal(decisionRecord.diagnostics.selectedTarget.countryEmoji, '🇳🇱');
+        assert.equal(decisionRecord.diagnostics.selectedTarget.inboundTag, 'vless-reality');
+        assert.equal(decisionRecord.diagnostics.selectedTarget.assignmentsCount, 0);
+        assert.equal(decisionRecord.diagnostics.selectedTarget.assignmentsSource, 'snapshot');
+        assert.equal(decisionRecord.diagnostics.selectedTarget.trafficBytes, '1024');
+        assert.equal(decisionRecord.diagnostics.selectedTarget.trafficSource, 'node_current');
     });
 
     it('writes decision on HIDE_HOST when no targets are available', async () => {
@@ -1242,6 +1331,8 @@ describe('HostBalancerService', () => {
         assert.equal(decisionRecord.reason, 'unavailable:HIDE_HOST:hidden');
         assert.equal(decisionRecord.diagnostics.assignmentAction, 'skipped');
         assert.equal(decisionRecord.diagnostics.excludedTargets[0].reason, 'target disabled');
+        assert.equal(decisionRecord.diagnostics.excludedTargets[0].nodeName, 'Node A');
+        assert.equal(decisionRecord.diagnostics.excludedTargets[0].assignmentsSource, 'snapshot');
         assert.equal(decisionRecord.diagnostics.finalHostOverrides, null);
     });
 

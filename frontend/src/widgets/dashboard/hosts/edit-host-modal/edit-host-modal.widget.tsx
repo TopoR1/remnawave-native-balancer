@@ -1,7 +1,7 @@
 import { UpdateHostCommand } from '@remnawave/backend-contract'
 import { zodResolver } from 'mantine-form-zod-resolver'
 import { notifications } from '@mantine/notifications'
-import { memo, useEffect, useRef, useState } from 'react'
+import { type FormEvent, memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PiListChecks } from 'react-icons/pi'
 import { modals } from '@mantine/modals'
@@ -305,12 +305,28 @@ export const EditHostModalWidget = memo(() => {
         }
     })
 
-    const handleSubmit = form.onSubmit(async (values) => {
+    const handleSubmit = async (event?: FormEvent<HTMLFormElement>) => {
+        event?.preventDefault()
+
         if (!host) {
             return
         }
 
         const shouldUpdateHost = form.isDirty() && form.isTouched()
+        const shouldSaveBalancing = hostBalancingDraft.touched
+
+        if (!shouldUpdateHost && !shouldSaveBalancing) {
+            return
+        }
+
+        if (shouldUpdateHost) {
+            const validation = form.validate()
+            if (validation.hasErrors) {
+                return
+            }
+        }
+
+        const values = form.getValues()
 
         let xHttpExtraParams
         let muxParams
@@ -380,7 +396,9 @@ export const EditHostModalWidget = memo(() => {
                     }
                 })
             }
-            await saveHostBalancing(host.uuid)
+            if (shouldSaveBalancing) {
+                await saveHostBalancing(host.uuid)
+            }
             handleClose()
             await queryClient.refetchQueries({
                 queryKey: QueryKeys.hosts.getAllTags.queryKey
@@ -388,7 +406,7 @@ export const EditHostModalWidget = memo(() => {
         } catch {
             // handled by mutation hooks
         }
-    })
+    }
 
     const handleCloneHost = () => {
         if (!host) {

@@ -64,6 +64,21 @@ describe('host balancing save flow', () => {
         assert.equal(shouldEnableHostSave(false, draft.touched), true)
     })
 
+    it('enables Save when balancing top-level settings change', () => {
+        const patches = [
+            { enabled: false },
+            { rebalanceExistingAssignmentsByTraffic: true },
+            { trafficMetric: 'LAST_1H' as const }
+        ]
+
+        for (const patch of patches) {
+            const draft = patchHostBalancingDraft(draftWithTarget({ touched: false }), patch)
+
+            assert.equal(draft.touched, true)
+            assert.equal(shouldEnableHostSave(false, draft.touched), true)
+        }
+    })
+
     it('enables Save when a target is added', () => {
         const draft = patchHostBalancingDraft(
             {
@@ -76,6 +91,15 @@ describe('host balancing save flow', () => {
             }
         )
 
+        assert.equal(shouldEnableHostSave(false, draft.touched), true)
+    })
+
+    it('enables Save when a target is removed', () => {
+        const draft = patchHostBalancingDraft(draftWithTarget({ touched: false }), {
+            targets: []
+        })
+
+        assert.equal(draft.touched, true)
         assert.equal(shouldEnableHostSave(false, draft.touched), true)
     })
 

@@ -242,12 +242,24 @@ export function HostBalancingForm({
         const activeTargets = draft.targets.filter(
             (target) => target.enabled !== false && (target.status ?? 'ACTIVE') === 'ACTIVE'
         )
+        const validationByLocalId = new Map(
+            draft.targets.map((target, index) => [target.localId, validation?.targets[index]])
+        )
+        const activeValid = activeTargets.filter((target) => {
+            const targetValidation = validationByLocalId.get(target.localId)
+            return targetValidation ? targetValidation.severity !== 'error' : false
+        }).length
+        const incompatible = (validation?.targets ?? []).filter(
+            (target) => target.hasRequiredInbound === false
+        ).length
 
         return {
             total: draft.targets.length,
             active: activeTargets.length,
+            activeValid,
             valid: validation?.summary.valid ?? draft.targets.length,
             errors: validation?.summary.errors ?? 0,
+            incompatible,
             assignments: draft.targets.reduce((sum, target) => sum + (target.assignments ?? 0), 0)
         }
     }, [draft.targets, validation])
@@ -553,6 +565,16 @@ export function HostBalancingForm({
                                     {t('base-host-form.no-balancer-targets')}
                                 </Alert>
                             )}
+                            {draft.targets.length > 0 && validation && targetSummary.activeValid === 0 && (
+                                <Alert color="red" variant="light">
+                                    {t('base-host-form.no-valid-active-targets-warning')}
+                                </Alert>
+                            )}
+                            {draft.targets.length > 0 && validation && targetSummary.incompatible === draft.targets.length && (
+                                <Alert color="red" variant="light">
+                                    {t('base-host-form.all-targets-incompatible-warning')}
+                                </Alert>
+                            )}
 
                             <SimpleGrid cols={{ base: 1, xl: 2 }}>
                                 {draft.targets.map((target, index) => {
@@ -583,6 +605,12 @@ export function HostBalancingForm({
                                     const participates =
                                         isActiveTarget &&
                                         (targetValidation?.severity ?? 'warning') === 'ok'
+                                    const participationReason = targetParticipationReason(
+                                        target,
+                                        targetValidation,
+                                        nodeStatus,
+                                        t
+                                    )
                                     const hasMissingInbound =
                                         targetValidation?.hasRequiredInbound === false
                                     const hasAddressMismatch =
@@ -640,14 +668,19 @@ export function HostBalancingForm({
                                                             </Badge>
                                                             {validationBadge(targetValidation, t)}
                                                         </Group>
-                                                        <Group gap={4} justify="flex-end" wrap="wrap">
-                                                            <Badge color="dark" variant="light">
-                                                                {t('base-host-form.selection-state')}
-                                                            </Badge>
-                                                            {participationBadge(participates, t)}
-                                                        </Group>
-                                                    </Stack>
+                                                <Group gap={4} justify="flex-end" wrap="wrap">
+                                                    <Badge color="dark" variant="light">
+                                                        {t('base-host-form.selection-state')}
+                                                    </Badge>
+                                                    {participationBadge(participates, t)}
                                                 </Group>
+                                                {!participates && (
+                                                    <Text c="red" size="xs" ta="right">
+                                                        {participationReason}
+                                                    </Text>
+                                                )}
+                                            </Stack>
+                                        </Group>
 
                                                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                                                     <TargetInfo
@@ -1018,8 +1051,13 @@ export function HostBalancingForm({
                                             requiredInboundUuid,
                                             t
                                         )
-                                        const canAdd =
-                                            !existingTarget && hasRequiredInbound !== false
+                                        const disabledReason = targetNodePickerDisabledReason({
+                                            existingTarget: !!existingTarget,
+                                            hasRequiredInbound,
+                                            nodeStatus,
+                                            t
+                                        })
+                                        const canAdd = !disabledReason
 
                                         return (
                                             <Card
@@ -1089,7 +1127,19 @@ export function HostBalancingForm({
                                                                     )}
                                                                 </Badge>
                                                             )}
+                                                            {!disabledReason && (
+                                                                <Badge color="teal" variant="light">
+                                                                    {t(
+                                                                        'base-host-form.compatibility-compatible'
+                                                                    )}
+                                                                </Badge>
+                                                            )}
                                                         </Group>
+                                                        {disabledReason && (
+                                                            <Alert color="red" variant="light">
+                                                                {disabledReason}
+                                                            </Alert>
+                                                        )}
                                                         {hasRequiredInbound === false && (
                                                             <Text c="red" size="sm">
                                                                 {t(
@@ -1116,6 +1166,7 @@ export function HostBalancingForm({
                                                         disabled={!canAdd}
                                                         onClick={() => addTarget(node)}
                                                         size="xs"
+                                                        title={disabledReason ?? undefined}
                                                     >
                                                         {t('base-host-form.select-target-node')}
                                                     </Button>
@@ -1390,7 +1441,7 @@ function DecisionDetail({ decision }: { decision: HostBalancerDecision }) {
                         label={t('base-host-form.selected-target')}
                         value={
                             selectedTarget
-                                ? `${decisionSelectedTargetLabel(decision)} · ${decisionTargetAddressPort(selectedTarget)}`
+                                ? `${targetDisplayName(selectedTarget)} · ${decisionTargetAddressPort(selectedTarget)}`
                                 : t('base-host-form.no-selected-target')
                         }
                     />
@@ -1489,7 +1540,7 @@ function PreviewResult({ preview }: { preview: HostBalancerPreview }) {
                                 {targetAddressPort(selectedTarget)}
                             </Text>
                             <Text c="dimmed" size="xs">
-                                {maskUuid(selectedTarget.targetUuid)}
+                                {targetProfileLabel(selectedTarget, t)}
                             </Text>
                         </Stack>
                     </Card>
@@ -1498,6 +1549,20 @@ function PreviewResult({ preview }: { preview: HostBalancerPreview }) {
                         {fallbackPolicyResult
                             ? translateFallbackPolicyResult(fallbackPolicyResult.result, t)
                             : t('base-host-form.preview-no-candidates')}
+                    </Alert>
+                )}
+
+                {fallbackPolicyResult && (
+                    <Alert color="yellow" variant="light">
+                        <Stack gap={2}>
+                            <Text fw={600} size="sm">
+                                {t('base-host-form.fallback-policy-result')}
+                            </Text>
+                            <Text size="sm">
+                                {translateUnavailablePolicyName(fallbackPolicyResult.policy, t)}:{' '}
+                                {translateFallbackPolicyResult(fallbackPolicyResult.result, t)}
+                            </Text>
+                        </Stack>
                     </Alert>
                 )}
 
@@ -1602,16 +1667,19 @@ function DiagnosticsTable({
                                     <Text c="dimmed" size="xs">
                                         {targetAddressPort(row)}
                                     </Text>
+                                    <Text c="dimmed" size="xs">
+                                        {targetProfileLabel(row, t)}
+                                    </Text>
                                 </Stack>
                             </Table.Td>
                             <Table.Td>
                                 {t('base-host-form.traffic-score')}: {formatPreviewScore(row.score)}
                             </Table.Td>
                             <Table.Td>
-                                {t('base-host-form.assignments')}: {row.assignments ?? 0}
+                                {t('base-host-form.assignments')}: {formatAssignmentsSnapshot(row, t)}
                             </Table.Td>
                             <Table.Td>
-                                {t('base-host-form.traffic')}: {row.trafficBytes ?? '-'}
+                                {t('base-host-form.traffic')}: {formatTrafficSnapshot(row, t)}
                             </Table.Td>
                             <Table.Td>
                                 {row.reason ? translateDiagnosticText(row.reason, t) : ''}
@@ -1691,7 +1759,8 @@ function translateSelectionReason(
 }
 
 function targetDisplayName(row: PreviewDiagnosticsRow) {
-    return row.nodeName ?? row.nodeAddress ?? row.address ?? '-'
+    const name = row.nodeName ?? row.nodeAddress ?? row.address ?? '-'
+    return row.countryEmoji ? `${row.countryEmoji} ${name}` : name
 }
 
 function targetAddressPort(row: PreviewDiagnosticsRow) {
@@ -1699,6 +1768,49 @@ function targetAddressPort(row: PreviewDiagnosticsRow) {
     const port = row.port ?? '-'
 
     return `${address}:${port}`
+}
+
+function targetProfileLabel(row: PreviewDiagnosticsRow, t: TFunction) {
+    if (row.inboundTag) {
+        return `${row.profileUuid ? maskUuid(row.profileUuid) : t('base-host-form.node-profile-unknown')} · ${row.inboundTag} · ${row.inboundType ?? '-'}${row.inboundNetwork ? `/${row.inboundNetwork}` : ''}`
+    }
+
+    if (row.inboundUuid) {
+        return `${t('base-host-form.profile-inbound')}: ${maskUuid(row.inboundUuid)}`
+    }
+
+    return String(t('base-host-form.node-profile-unknown'))
+}
+
+function formatAssignmentsSnapshot(row: PreviewDiagnosticsRow, t: TFunction) {
+    const value = row.assignmentsCount ?? row.assignments
+    if (value === undefined) {
+        return String(t('base-host-form.no-diagnostic-data'))
+    }
+
+    return `${value} (${t('base-host-form.diagnostic-snapshot-value')})`
+}
+
+function formatTrafficSnapshot(row: PreviewDiagnosticsRow, t: TFunction) {
+    if (row.trafficBytes === undefined || row.trafficBytes === null) {
+        return String(t('base-host-form.no-diagnostic-data'))
+    }
+
+    return `${prettyBytesUtil(row.trafficBytes)} (${translateDiagnosticSource(row.trafficSource, t)})`
+}
+
+function translateDiagnosticSource(
+    source: PreviewDiagnosticsRow['trafficSource'] | undefined,
+    t: TFunction
+) {
+    const keys = {
+        snapshot: 'base-host-form.diagnostic-snapshot-value',
+        node_current: 'base-host-form.diagnostic-current-node-value',
+        not_loaded: 'base-host-form.no-diagnostic-data',
+        unavailable: 'base-host-form.no-diagnostic-data'
+    } as const
+
+    return String(t(keys[source ?? 'not_loaded']))
 }
 
 function formatPreviewScore(score: number | undefined) {
@@ -1812,6 +1924,67 @@ function participationBadge(participates: boolean, t: TFunction) {
                 : t('base-host-form.target-not-participating')}
         </Badge>
     )
+}
+
+function targetParticipationReason(
+    target: DraftTarget,
+    validation: HostBalancerTargetValidation | null,
+    nodeStatus: 'connected' | 'connecting' | 'disabled' | 'disconnected' | 'unknown',
+    t: TFunction
+) {
+    if (target.enabled === false) {
+        return String(t('base-host-form.target-not-participating-disabled'))
+    }
+    if ((target.status ?? 'ACTIVE') === 'DRAINING') {
+        return String(t('base-host-form.target-not-participating-draining'))
+    }
+    if ((target.status ?? 'ACTIVE') === 'DISABLED' || (target.status ?? 'ACTIVE') === 'DEAD') {
+        return String(t('base-host-form.target-not-participating-status'))
+    }
+    if (validation?.hasRequiredInbound === false) {
+        return String(t('base-host-form.validation-reason-missing-inbound'))
+    }
+    if (nodeStatus === 'disabled') {
+        return String(t('base-host-form.validation-reason-node-disabled'))
+    }
+    if (nodeStatus === 'disconnected' || nodeStatus === 'connecting') {
+        return String(t('base-host-form.validation-reason-node-disconnected'))
+    }
+    if (validation?.reasons[0]) {
+        return translateValidationReason(validation.reasons[0], t)
+    }
+
+    return String(t('base-host-form.validation-pending-warning'))
+}
+
+function targetNodePickerDisabledReason({
+    existingTarget,
+    hasRequiredInbound,
+    nodeStatus,
+    t
+}: {
+    existingTarget: boolean
+    hasRequiredInbound: boolean | null
+    nodeStatus: 'connected' | 'connecting' | 'disabled' | 'disconnected' | 'unknown'
+    t: TFunction
+}) {
+    if (existingTarget) {
+        return String(t('base-host-form.target-node-already-added'))
+    }
+    if (hasRequiredInbound === false) {
+        return String(t('base-host-form.validation-reason-missing-inbound'))
+    }
+    if (nodeStatus === 'disabled') {
+        return String(t('base-host-form.validation-reason-node-disabled'))
+    }
+    if (nodeStatus === 'disconnected') {
+        return String(t('base-host-form.validation-reason-node-disconnected'))
+    }
+    if (nodeStatus === 'connecting') {
+        return String(t('base-host-form.validation-reason-node-connecting'))
+    }
+
+    return null
 }
 
 function statusBadge(status: HostBalancerTargetStatus, t: TFunction) {

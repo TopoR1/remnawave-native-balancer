@@ -7,6 +7,7 @@ import {
     UpdateHostCommand
 } from '@remnawave/backend-contract'
 import { UseFormReturnType } from '@mantine/form'
+import { FormEventHandler } from 'react'
 
 import { HostBalancingDraft } from '../host-balancing-draft'
 import { HostBalancerTargetsValidation } from '@shared/api/hooks'
@@ -18,7 +19,7 @@ export interface IProps<T extends CreateHostCommand.Request | UpdateHostCommand.
     hostBalancingDraft: HostBalancingDraft
     hostUuid?: string
     handleCloneHost?: () => void
-    handleSubmit: () => void
+    handleSubmit: FormEventHandler<HTMLFormElement>
     internalSquads: GetInternalSquadsCommand.Response['response']['internalSquads']
     isSubmitting: boolean
     nodes: GetAllNodesCommand.Response['response']

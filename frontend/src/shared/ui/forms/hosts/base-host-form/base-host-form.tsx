@@ -180,8 +180,7 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
     }, [form.errors])
 
     const hostFormChanged = form.isDirty() && form.isTouched()
-    const canSave =
-        form.isValid() && shouldEnableHostSave(hostFormChanged, hostBalancingDraft.touched)
+    const canSave = shouldEnableHostSave(hostFormChanged && form.isValid(), hostBalancingDraft.touched)
 
     const patternHoverCard = (showSingle = true, showMulti = true, showWildcard = true) => {
         return (

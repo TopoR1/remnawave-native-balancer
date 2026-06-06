@@ -1,6 +1,7 @@
 type DecisionTarget = {
     targetUuid: string
     nodeName?: string | null
+    countryEmoji?: string | null
     address?: string | null
     nodeAddress?: string | null
     port?: number | null
@@ -19,12 +20,15 @@ type DecisionDisplay = {
 }
 
 export function decisionSelectedTargetLabel(decision: DecisionDisplay) {
-    return (
+    const label =
         decision.selectedTarget?.nodeName ??
         decision.selectedTarget?.nodeAddress ??
         decision.selectedTarget?.address ??
         '-'
-    )
+
+    return decision.selectedTarget?.countryEmoji && label !== '-'
+        ? `${decision.selectedTarget.countryEmoji} ${label}`
+        : label
 }
 
 export function decisionTargetAddressPort(target?: DecisionTarget | null) {

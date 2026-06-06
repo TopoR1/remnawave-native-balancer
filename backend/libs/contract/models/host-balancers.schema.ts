@@ -54,11 +54,28 @@ const HostBalancerPreviewDiagnosticsTargetSchema = z.object({
     nodeUuid: z.string().uuid().nullable().optional(),
     nodeName: z.string().nullable().optional(),
     nodeAddress: z.string().nullable().optional(),
+    countryCode: z.string().nullable().optional(),
+    countryEmoji: z.string().nullable().optional(),
+    profileUuid: z.string().uuid().nullable().optional(),
+    inboundUuid: z.string().uuid().nullable().optional(),
+    inboundTag: z.string().nullable().optional(),
+    inboundType: z.string().nullable().optional(),
+    inboundNetwork: z.string().nullable().optional(),
+    inboundPort: z.number().int().nullable().optional(),
+    overrideAddress: z.string().nullable().optional(),
+    overridePort: z.number().int().nullable().optional(),
     address: z.string().nullable().optional(),
     port: z.number().int().nullable().optional(),
+    status: HostBalancerTargetStatusSchema.optional(),
+    compatibilityStatus: z
+        .enum(['compatible', 'missing_inbound', 'node_disconnected', 'node_disabled', 'unknown'])
+        .optional(),
     trafficBytes: z.string().nullable().optional(),
+    trafficSource: z.enum(['snapshot', 'node_current', 'not_loaded', 'unavailable']).optional(),
     weight: z.number().int().min(1).optional(),
     priority: z.number().int().min(0).optional(),
+    assignmentsCount: z.number().int().min(0).optional(),
+    assignmentsSource: z.enum(['snapshot']).optional(),
     assignments: z.number().int().min(0).optional(),
     score: z.number().optional(),
     selected: z.boolean().optional(),
@@ -178,16 +195,7 @@ export const HostBalancerTargetsValidationSchema = z.object({
     }),
 });
 
-const HostBalancerDecisionDiagnosticsTargetSchema = z.object({
-    targetUuid: z.string().uuid(),
-    nodeUuid: z.string().uuid().nullable().optional(),
-    trafficBytes: z.string().nullable().optional(),
-    weight: z.number().int().min(1).optional(),
-    score: z.number().optional(),
-    selected: z.boolean().optional(),
-    fallbackUsed: z.boolean().optional(),
-    reason: z.string().optional(),
-});
+const HostBalancerDecisionDiagnosticsTargetSchema = HostBalancerPreviewDiagnosticsTargetSchema;
 
 const HostBalancerDecisionFinalOverridesSchema = z
     .object({
