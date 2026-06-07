@@ -8,6 +8,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { fail, ok, TResult } from '@common/types';
+import { prettyBytesUtil } from '@common/utils/bytes/pretty-bytes.util';
 import { ERRORS } from '@libs/contracts/constants';
 import {
     PreviewHostBalancerCommand,
@@ -26,6 +27,27 @@ import {
 } from './repositories/host-balancers.repository';
 
 type TargetWithWarning = HostBalancerTarget & { warning?: string | null };
+type EnrichedHostBalancerTarget = TargetWithWarning & {
+    nodeName?: string | null;
+    nodeAddress?: string | null;
+    countryCode?: string | null;
+    countryEmoji?: string | null;
+    profileUuid?: string | null;
+    profileName?: string | null;
+    inboundUuid?: string | null;
+    inboundName?: string | null;
+    inboundTag?: string | null;
+    inboundType?: string | null;
+    inboundNetwork?: string | null;
+    inboundPort?: number | null;
+    compatibilityStatus?: TargetDiagnostics['compatibilityStatus'];
+    assignmentsCount?: number | null;
+    trafficBytes?: string | null;
+    formattedTraffic?: string | null;
+};
+type EnrichedHostBalancerWithTargets = Omit<HostBalancerWithTargets, 'targets'> & {
+    targets: EnrichedHostBalancerTarget[];
+};
 type AssignmentAction = 'none' | 'reused' | 'created' | 'reassigned' | 'skipped';
 type DecisionAssignmentAction = Exclude<AssignmentAction, 'none'>;
 type PreviewAssignmentAction = 'preview_only' | 'reused' | 'would_create' | 'would_reassign';
@@ -38,7 +60,9 @@ type TargetDiagnostics = {
     countryCode?: string | null;
     countryEmoji?: string | null;
     profileUuid?: string | null;
+    profileName?: string | null;
     inboundUuid?: string | null;
+    inboundName?: string | null;
     inboundTag?: string | null;
     inboundType?: string | null;
     inboundNetwork?: string | null;
@@ -95,10 +119,20 @@ export class HostBalancerService {
         @Optional() private readonly configService?: ConfigService,
     ) {}
 
-    public async getSettings(hostUuid: string): Promise<TResult<HostBalancerWithTargets | null>> {
+    public async getSettings(
+        hostUuid: string,
+    ): Promise<TResult<EnrichedHostBalancerWithTargets | null>> {
         try {
-            const settings = await this.hostBalancersRepository.findByHostUuid(hostUuid);
-            return ok(settings ? this.withTargetWarnings(settings) : null);
+            const [settings, host] = await Promise.all([
+                this.hostBalancersRepository.findByHostUuid(hostUuid),
+                this.hostBalancersRepository.findHost(hostUuid),
+            ]);
+
+            if (!settings) {
+                return ok(null);
+            }
+
+            return ok(await this.enrichSettings(settings, host ? this.hostRecordToRawInbound(host) : null));
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_HOST_BALANCER_ERROR);
@@ -1330,7 +1364,9 @@ export class HostBalancerService {
                 countryCode: node?.countryCode ?? null,
                 countryEmoji: node?.countryEmoji ?? null,
                 profileUuid: node?.activeConfigProfileUuid ?? inbound?.profileUuid ?? null,
+                profileName: node?.activeConfigProfileName ?? inbound?.profileName ?? null,
                 inboundUuid: inbound?.uuid ?? null,
+                inboundName: inbound?.tag ?? null,
                 inboundTag: inbound?.tag ?? null,
                 inboundType: inbound?.type ?? null,
                 inboundNetwork: inbound?.network ?? null,
@@ -1444,6 +1480,99 @@ export class HostBalancerService {
             ...settings,
             targets: this.withWarnings(settings.targets),
         };
+    }
+
+    private async enrichSettings(
+        settings: HostBalancerWithTargets,
+        host: HostWithRawInbound | null,
+    ): Promise<EnrichedHostBalancerWithTargets> {
+        const [assignmentCounts, nodeStates] = await Promise.all([
+            this.hostBalancersRepository.countAssignmentsByTarget(
+                settings.targets.map((target) => target.uuid),
+            ),
+            this.loadNodeStates([settings]),
+        ]);
+
+        return {
+            ...settings,
+            targets: settings.targets.map((target) =>
+                this.enrichStoredTarget(
+                    target,
+                    nodeStates,
+                    assignmentCounts,
+                    host?.configProfileInboundUuid ?? null,
+                ),
+            ),
+        };
+    }
+
+    private enrichStoredTarget(
+        target: HostBalancerTarget,
+        nodeStates: Map<string, HostBalancerNodeState>,
+        assignmentCounts: Map<string, number>,
+        requiredInboundUuid: string | null,
+    ): EnrichedHostBalancerTarget {
+        const node = target.nodeUuid ? (nodeStates.get(target.nodeUuid) ?? null) : null;
+        const inbound = requiredInboundUuid
+            ? (node?.inbounds ?? []).find((item) => item.uuid === requiredInboundUuid)
+            : null;
+        const trafficBytes =
+            node?.trafficUsedBytes === undefined || node?.trafficUsedBytes === null
+                ? null
+                : node.trafficUsedBytes.toString();
+
+        return this.withWarning({
+            ...target,
+            nodeName: node?.name ?? null,
+            nodeAddress: node?.address ?? null,
+            countryCode: node?.countryCode ?? null,
+            countryEmoji: node?.countryEmoji ?? null,
+            profileUuid: node?.activeConfigProfileUuid ?? inbound?.profileUuid ?? null,
+            profileName: node?.activeConfigProfileName ?? inbound?.profileName ?? null,
+            inboundUuid: inbound?.uuid ?? null,
+            inboundName: inbound?.tag ?? null,
+            inboundTag: inbound?.tag ?? null,
+            inboundType: inbound?.type ?? null,
+            inboundNetwork: inbound?.network ?? null,
+            inboundPort: inbound?.port ?? null,
+            compatibilityStatus: this.resolveStoredTargetCompatibilityStatus(
+                node,
+                inbound,
+                requiredInboundUuid,
+            ),
+            assignmentsCount: assignmentCounts.get(target.uuid) ?? 0,
+            trafficBytes,
+            formattedTraffic: trafficBytes === null ? null : prettyBytesUtil(trafficBytes, true, 3, true),
+        });
+    }
+
+    private resolveStoredTargetCompatibilityStatus(
+        node: HostBalancerNodeState | null,
+        inbound:
+            | {
+                  uuid: string;
+              }
+            | null
+            | undefined,
+        requiredInboundUuid: string | null,
+    ): TargetDiagnostics['compatibilityStatus'] {
+        if (!node) {
+            return 'unknown';
+        }
+        if (node.isDisabled) {
+            return 'node_disabled';
+        }
+        if (!node.isConnected || node.isConnecting) {
+            return 'node_disconnected';
+        }
+        if (requiredInboundUuid && !inbound) {
+            return 'missing_inbound';
+        }
+        if (requiredInboundUuid && inbound) {
+            return 'compatible';
+        }
+
+        return 'unknown';
     }
 
     private withWarnings<T extends HostBalancerTarget>(

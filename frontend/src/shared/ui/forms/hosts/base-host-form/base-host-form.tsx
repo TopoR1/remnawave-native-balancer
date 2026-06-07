@@ -584,6 +584,7 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                 </SectionCard.Root>
 
                                 <HostBalancingForm
+                                    configProfiles={configProfiles}
                                     draft={hostBalancingDraft}
                                     hostPort={form.getValues().port}
                                     hostUuid={hostUuid}

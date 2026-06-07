@@ -9,7 +9,27 @@ import type {
 export type DraftTarget = HostBalancerTargetInput & {
     localId: string
     assignments?: number
+    assignmentsCount?: number | null
     trafficBytes?: string | null
+    formattedTraffic?: string | null
+    nodeName?: string | null
+    nodeAddress?: string | null
+    countryCode?: string | null
+    countryEmoji?: string | null
+    profileUuid?: string | null
+    profileName?: string | null
+    inboundUuid?: string | null
+    inboundName?: string | null
+    inboundTag?: string | null
+    inboundType?: string | null
+    inboundNetwork?: string | null
+    inboundPort?: number | null
+    compatibilityStatus?:
+        | 'compatible'
+        | 'missing_inbound'
+        | 'node_disconnected'
+        | 'node_disabled'
+        | 'unknown'
 }
 
 export type HostBalancingDraft = {
@@ -89,7 +109,23 @@ export function hostBalancerToDraft(settings: HostBalancer | null): HostBalancin
                 overridePort: target.overridePort,
                 overrideSni: target.overrideSni,
                 overrideHost: target.overrideHost,
-                overridePath: target.overridePath
+                overridePath: target.overridePath,
+                assignmentsCount: target.assignmentsCount,
+                trafficBytes: target.trafficBytes,
+                formattedTraffic: target.formattedTraffic,
+                nodeName: target.nodeName,
+                nodeAddress: target.nodeAddress,
+                countryCode: target.countryCode,
+                countryEmoji: target.countryEmoji,
+                profileUuid: target.profileUuid,
+                profileName: target.profileName,
+                inboundUuid: target.inboundUuid,
+                inboundName: target.inboundName,
+                inboundTag: target.inboundTag,
+                inboundType: target.inboundType,
+                inboundNetwork: target.inboundNetwork,
+                inboundPort: target.inboundPort,
+                compatibilityStatus: target.compatibilityStatus
             })) ?? [],
         touched: false
     }

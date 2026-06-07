@@ -34,6 +34,7 @@ export type HostBalancerNodeState = {
     countryCode: string | null;
     countryEmoji: string | null;
     activeConfigProfileUuid: string | null;
+    activeConfigProfileName: string | null;
     trafficUsedBytes: bigint | null;
     isConnected: boolean;
     isConnecting: boolean;
@@ -42,6 +43,7 @@ export type HostBalancerNodeState = {
     inbounds: Array<{
         uuid: string;
         profileUuid: string;
+        profileName: string;
         tag: string;
         type: string;
         network: string | null;
@@ -74,7 +76,9 @@ type HostBalancerDecisionExcludedTarget = {
     countryCode?: string | null;
     countryEmoji?: string | null;
     profileUuid?: string | null;
+    profileName?: string | null;
     inboundUuid?: string | null;
+    inboundName?: string | null;
     inboundTag?: string | null;
     inboundType?: string | null;
     inboundNetwork?: string | null;
@@ -298,6 +302,11 @@ export class HostBalancersRepository {
                 port: true,
                 countryCode: true,
                 activeConfigProfileUuid: true,
+                activeConfigProfile: {
+                    select: {
+                        name: true,
+                    },
+                },
                 trafficUsedBytes: true,
                 isConnected: true,
                 isConnecting: true,
@@ -309,6 +318,11 @@ export class HostBalancersRepository {
                             select: {
                                 uuid: true,
                                 profileUuid: true,
+                                profile: {
+                                    select: {
+                                        name: true,
+                                    },
+                                },
                                 tag: true,
                                 type: true,
                                 network: true,
@@ -331,6 +345,7 @@ export class HostBalancersRepository {
                     countryCode: node.countryCode,
                     countryEmoji: this.resolveCountryEmoji(node.countryCode),
                     activeConfigProfileUuid: node.activeConfigProfileUuid,
+                    activeConfigProfileName: node.activeConfigProfile?.name ?? null,
                     trafficUsedBytes: node.trafficUsedBytes ?? null,
                     isConnected: node.isConnected,
                     isConnecting: node.isConnecting,
@@ -340,9 +355,15 @@ export class HostBalancersRepository {
                             (inbound) => inbound.configProfileInboundUuid,
                         ),
                     ),
-                    inbounds: node.configProfileInboundsToNodes.map(
-                        (inbound) => inbound.configProfileInbounds,
-                    ),
+                    inbounds: node.configProfileInboundsToNodes.map((inbound) => ({
+                        uuid: inbound.configProfileInbounds.uuid,
+                        profileUuid: inbound.configProfileInbounds.profileUuid,
+                        profileName: inbound.configProfileInbounds.profile.name,
+                        tag: inbound.configProfileInbounds.tag,
+                        type: inbound.configProfileInbounds.type,
+                        network: inbound.configProfileInbounds.network,
+                        port: inbound.configProfileInbounds.port,
+                    })),
                 },
             ]),
         );
@@ -585,9 +606,17 @@ export class HostBalancersRepository {
                     typeof item['profileUuid'] === 'string' || item['profileUuid'] === null
                         ? item['profileUuid']
                         : undefined,
+                profileName:
+                    typeof item['profileName'] === 'string' || item['profileName'] === null
+                        ? item['profileName']
+                        : undefined,
                 inboundUuid:
                     typeof item['inboundUuid'] === 'string' || item['inboundUuid'] === null
                         ? item['inboundUuid']
+                        : undefined,
+                inboundName:
+                    typeof item['inboundName'] === 'string' || item['inboundName'] === null
+                        ? item['inboundName']
                         : undefined,
                 inboundTag:
                     typeof item['inboundTag'] === 'string' || item['inboundTag'] === null

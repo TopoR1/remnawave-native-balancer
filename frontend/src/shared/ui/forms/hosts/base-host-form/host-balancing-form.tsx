@@ -41,6 +41,7 @@ import {
     HostBalancerDecision,
     HostBalancerPreview,
     HostBalancerPreviewSchema,
+    QueryKeys,
     HostBalancerStrategy,
     HostBalancerTargetInput,
     HostBalancerTargetStatus,
@@ -53,7 +54,7 @@ import {
     useValidateHostBalancerTargets
 } from '@shared/api/hooks'
 import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
-import { instance } from '@shared/api'
+import { instance, queryClient } from '@shared/api'
 import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
 import { prettyBytesUtil } from '@shared/utils/bytes'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
@@ -85,8 +86,20 @@ import {
     decisionSelectedTargetLabel,
     decisionTargetAddressPort
 } from './host-balancing-decision-display'
+import { formatTargetAssignments, formatTargetTraffic } from './host-balancing-target-display'
 
 type HostBalancerNode = GetAllNodesCommand.Response['response'][number]
+type HostBalancerConfigProfile = {
+    inbounds: {
+        network: null | string
+        profileUuid: string
+        tag: string
+        type: string
+        uuid: string
+    }[]
+    name: string
+    uuid: string
+}
 type PreviewSimulatorAction =
     | 'preview_only'
     | 'would_create'
@@ -96,6 +109,8 @@ type PreviewSimulatorAction =
 type LegacyPreviewAction = 'preview_only' | 'reused' | 'would_create' | 'would_reassign'
 type PreviewFallbackResult = 'hidden' | 'original_host' | 'last_assignment' | 'none'
 type PreviewDiagnosticsRow = NonNullable<NonNullable<HostBalancerPreview['candidates']>[number]>
+type PreviewDiagnosticsTrafficSource =
+    PreviewDiagnosticsRow extends { trafficSource?: infer Source } ? Source : never
 type HostBalancerHelpKey =
     | 'base-host-form.help-policy-hide-host-description'
     | 'base-host-form.help-policy-keep-last-description'
@@ -124,8 +139,14 @@ type HostBalancerHelpKey =
     | 'base-host-form.traffic-metric'
     | 'base-host-form.unavailable-policy'
     | 'base-host-form.weight'
+type DescribedSelectOption = {
+    description: string
+    label: string
+    value: string
+}
 
 type IProps = {
+    configProfiles: HostBalancerConfigProfile[]
     draft: HostBalancingDraft
     hostPort?: number
     hostUuid?: string
@@ -140,6 +161,7 @@ const HOST_BALANCER_BUILD_MARKER = 'Native Host Balancer UI'
 const TRAFFIC_STRATEGIES: HostBalancerStrategy[] = ['LEAST_TRAFFIC', 'WEIGHTED_LEAST_TRAFFIC']
 
 export function HostBalancingForm({
+    configProfiles,
     draft,
     hostPort,
     hostUuid,
@@ -169,6 +191,19 @@ export function HostBalancingForm({
     })
 
     const nodeByUuid = useMemo(() => new Map(nodes.map((node) => [node.uuid, node])), [nodes])
+    const configProfileByUuid = useMemo(
+        () => new Map(configProfiles.map((profile) => [profile.uuid, profile])),
+        [configProfiles]
+    )
+    const refetchHostBalancerSettings = () => {
+        if (!hostUuid) {
+            return Promise.resolve()
+        }
+
+        return queryClient.refetchQueries({
+            queryKey: QueryKeys.hostBalancers.getSettings(hostUuid).queryKey
+        })
+    }
 
     const isTrafficStrategy = TRAFFIC_STRATEGIES.includes(draft.strategy)
     const validationPayload = useMemo(
@@ -260,7 +295,10 @@ export function HostBalancingForm({
             valid: validation?.summary.valid ?? draft.targets.length,
             errors: validation?.summary.errors ?? 0,
             incompatible,
-            assignments: draft.targets.reduce((sum, target) => sum + (target.assignments ?? 0), 0)
+            assignments: draft.targets.reduce(
+                (sum, target) => sum + (target.assignmentsCount ?? target.assignments ?? 0),
+                0
+            )
         }
     }, [draft.targets, validation])
 
@@ -343,6 +381,55 @@ export function HostBalancingForm({
             <HelpTooltip description={String(t(descriptionKey))} label={String(t(labelKey))} />
         </Group>
     )
+    const strategyOptions: DescribedSelectOption[] = [
+        {
+            value: 'LEAST_ASSIGNED',
+            label: String(t('base-host-form.strategy-least-assigned')),
+            description: String(t('base-host-form.help-strategy-least-assigned-description'))
+        },
+        {
+            value: 'WEIGHTED',
+            label: String(t('base-host-form.strategy-weighted')),
+            description: String(t('base-host-form.help-strategy-weighted-description'))
+        },
+        {
+            value: 'LEAST_TRAFFIC',
+            label: String(t('base-host-form.strategy-least-traffic')),
+            description: String(t('base-host-form.help-strategy-least-traffic-description'))
+        },
+        {
+            value: 'WEIGHTED_LEAST_TRAFFIC',
+            label: String(t('base-host-form.strategy-weighted-least-traffic')),
+            description: String(t('base-host-form.help-strategy-weighted-least-traffic-description'))
+        },
+        {
+            value: 'PRIORITY_FAILOVER',
+            label: String(t('base-host-form.strategy-priority-failover')),
+            description: String(t('base-host-form.help-strategy-priority-failover-description'))
+        },
+        {
+            value: 'RANDOM',
+            label: String(t('base-host-form.strategy-random')),
+            description: String(t('base-host-form.help-strategy-random-description'))
+        }
+    ]
+    const policyOptions: DescribedSelectOption[] = [
+        {
+            value: 'HIDE_HOST',
+            label: String(t('base-host-form.policy-hide-host')),
+            description: String(t('base-host-form.help-policy-hide-host-description'))
+        },
+        {
+            value: 'ORIGINAL_HOST',
+            label: String(t('base-host-form.policy-original-host')),
+            description: String(t('base-host-form.help-policy-original-host-description'))
+        },
+        {
+            value: 'KEEP_LAST_IF_POSSIBLE',
+            label: String(t('base-host-form.policy-keep-last')),
+            description: String(t('base-host-form.help-policy-keep-last-description'))
+        }
+    ]
 
     return (
         <SectionCard.Root>
@@ -376,86 +463,72 @@ export function HostBalancingForm({
                 <SectionCard.Section>
                     <Stack gap="md">
                         <Group align="flex-start" grow>
-                            <Select
-                                allowDeselect={false}
-                                data={[
-                                    {
-                                        value: 'LEAST_ASSIGNED',
-                                        label: t('base-host-form.strategy-least-assigned')
-                                    },
-                                    {
-                                        value: 'WEIGHTED',
-                                        label: t('base-host-form.strategy-weighted')
-                                    },
-                                    {
-                                        value: 'LEAST_TRAFFIC',
-                                        label: t('base-host-form.strategy-least-traffic')
-                                    },
-                                    {
-                                        value: 'WEIGHTED_LEAST_TRAFFIC',
-                                        label: t('base-host-form.strategy-weighted-least-traffic')
-                                    },
-                                    {
-                                        value: 'PRIORITY_FAILOVER',
-                                        label: t('base-host-form.strategy-priority-failover')
-                                    },
-                                    {
-                                        value: 'RANDOM',
-                                        label: t('base-host-form.strategy-random')
+                            <Stack flex={1} gap={4}>
+                                <Select
+                                    allowDeselect={false}
+                                    data={strategyOptions}
+                                    label={helpLabel(
+                                        'base-host-form.strategy',
+                                        'base-host-form.help-strategy-description'
+                                    )}
+                                    onChange={(value) =>
+                                        patchDraft({ strategy: value as HostBalancerStrategy })
                                     }
-                                ]}
-                                description={t(strategyHelpKey(draft.strategy))}
-                                label={helpLabel(
-                                    'base-host-form.strategy',
-                                    'base-host-form.help-strategy-description'
-                                )}
-                                onChange={(value) =>
-                                    patchDraft({ strategy: value as HostBalancerStrategy })
-                                }
-                                value={draft.strategy}
-                            />
-                            <Select
-                                allowDeselect={false}
-                                data={[
-                                    {
-                                        value: 'HIDE_HOST',
-                                        label: t('base-host-form.policy-hide-host')
-                                    },
-                                    {
-                                        value: 'ORIGINAL_HOST',
-                                        label: t('base-host-form.policy-original-host')
-                                    },
-                                    {
-                                        value: 'KEEP_LAST_IF_POSSIBLE',
-                                        label: t('base-host-form.policy-keep-last')
+                                    renderOption={({ option }) => (
+                                        <DescribedSelectItem
+                                            option={option as DescribedSelectOption}
+                                        />
+                                    )}
+                                    value={draft.strategy}
+                                />
+                                <Text c="dimmed" size="xs">
+                                    {t(strategyHelpKey(draft.strategy))}
+                                </Text>
+                            </Stack>
+                            <Stack flex={1} gap={4}>
+                                <Select
+                                    allowDeselect={false}
+                                    data={policyOptions}
+                                    label={helpLabel(
+                                        'base-host-form.unavailable-policy',
+                                        'base-host-form.help-unavailable-policy-description'
+                                    )}
+                                    onChange={(value) =>
+                                        patchDraft({
+                                            unavailablePolicy:
+                                                value as HostBalancerUnavailablePolicy
+                                        })
                                     }
-                                ]}
-                                description={t(policyHelpKey(draft.unavailablePolicy))}
-                                label={helpLabel(
-                                    'base-host-form.unavailable-policy',
-                                    'base-host-form.help-unavailable-policy-description'
-                                )}
-                                onChange={(value) =>
-                                    patchDraft({
-                                        unavailablePolicy: value as HostBalancerUnavailablePolicy
-                                    })
-                                }
-                                value={draft.unavailablePolicy}
-                            />
+                                    renderOption={({ option }) => (
+                                        <DescribedSelectItem
+                                            option={option as DescribedSelectOption}
+                                        />
+                                    )}
+                                    value={draft.unavailablePolicy}
+                                />
+                                <Text c="dimmed" size="xs">
+                                    {t(policyHelpKey(draft.unavailablePolicy))}
+                                </Text>
+                            </Stack>
                         </Group>
 
                         <Group align="flex-start" grow>
-                            <Switch
-                                checked={draft.stickyEnabled}
-                                color="teal.8"
-                                label={helpLabel(
-                                    'base-host-form.sticky-assignments',
-                                    'base-host-form.help-sticky-assignments-description'
-                                )}
-                                onChange={(event) =>
-                                    patchDraft({ stickyEnabled: event.currentTarget.checked })
-                                }
-                            />
+                            <Stack flex={1} gap={4}>
+                                <Switch
+                                    checked={draft.stickyEnabled}
+                                    color="teal.8"
+                                    label={helpLabel(
+                                        'base-host-form.sticky-assignments',
+                                        'base-host-form.help-sticky-assignments-description'
+                                    )}
+                                    onChange={(event) =>
+                                        patchDraft({ stickyEnabled: event.currentTarget.checked })
+                                    }
+                                />
+                                <Text c="dimmed" size="xs">
+                                    {t('base-host-form.help-sticky-assignments-description')}
+                                </Text>
+                            </Stack>
                             {isTrafficStrategy && (
                                 <Switch
                                     checked={draft.rebalanceExistingAssignmentsByTraffic}
@@ -583,19 +656,25 @@ export function HostBalancingForm({
                                         ? nodeByUuid.get(target.nodeUuid)
                                         : undefined
                                     const nodeName =
+                                        target.nodeName ??
                                         targetValidation?.nodeName ??
                                         node?.name ??
                                         t('base-host-form.target-node-not-selected')
                                     const nodeAddress =
-                                        targetValidation?.nodeAddress ?? node?.address ?? '-'
+                                        target.nodeAddress ??
+                                        targetValidation?.nodeAddress ??
+                                        node?.address ??
+                                        '-'
                                     const subscriptionAddress =
                                         target.overrideAddress ||
                                         t('base-host-form.original-host-address')
                                     const subscriptionPort = target.overridePort ?? hostPort ?? '-'
                                     const nodeStatus =
                                         targetValidation?.nodeStatus ?? resolveLocalNodeStatus(node)
-                                    const profileInbound = nodeProfileInboundLabel(
+                                    const profileInbound = targetProfileInboundLabel(
+                                        target,
                                         node,
+                                        configProfileByUuid,
                                         requiredInboundUuid,
                                         t
                                     )
@@ -612,7 +691,8 @@ export function HostBalancingForm({
                                         t
                                     )
                                     const hasMissingInbound =
-                                        targetValidation?.hasRequiredInbound === false
+                                        targetValidation?.hasRequiredInbound === false ||
+                                        target.compatibilityStatus === 'missing_inbound'
                                     const hasAddressMismatch =
                                         !!target.overrideAddress &&
                                         !!node?.address &&
@@ -674,7 +754,7 @@ export function HostBalancingForm({
                                                     </Badge>
                                                     {participationBadge(participates, t)}
                                                 </Group>
-                                                {!participates && (
+                                                {!participates && !hasMissingInbound && (
                                                     <Text c="red" size="xs" ta="right">
                                                         {participationReason}
                                                     </Text>
@@ -711,18 +791,19 @@ export function HostBalancingForm({
                                                         label={t(
                                                             'base-host-form.inbound-compatibility'
                                                         )}
-                                                        value={inboundCompatibilityBadge(
+                                                        value={targetCompatibilityBadge(
+                                                            target,
                                                             targetValidation,
                                                             t
                                                         )}
                                                     />
                                                     <TargetInfo
                                                         label={t('base-host-form.assignments')}
-                                                        value={target.assignments ?? 0}
+                                                        value={formatTargetAssignments(target, t)}
                                                     />
                                                     <TargetInfo
                                                         label={t('base-host-form.traffic')}
-                                                        value={target.trafficBytes ?? '-'}
+                                                        value={formatTargetTraffic(target, t)}
                                                     />
                                                     <TargetInfo
                                                         label={helpLabel(
@@ -999,7 +1080,11 @@ export function HostBalancingForm({
                             onClose={() => setTargetPickerOpen(false)}
                             opened={isTargetPickerOpen}
                             size="xl"
-                            title={t('base-host-form.add-target-node')}
+                            title={
+                                <Text fw={700} size="lg">
+                                    {t('base-host-form.add-target-node')}
+                                </Text>
+                            }
                         >
                             <Stack gap="md">
                                 <Group align="flex-end">
@@ -1046,8 +1131,11 @@ export function HostBalancingForm({
                                         const existingTarget = draft.targets.find(
                                             (target) => target.nodeUuid === node.uuid
                                         )
-                                        const profileInbound = nodeProfileInboundLabel(
+                                        const profileInbound = targetProfileInboundLabel(
+                                            existingTarget ??
+                                                ({ localId: `node-picker-${node.uuid}` } as DraftTarget),
                                             node,
+                                            configProfileByUuid,
                                             requiredInboundUuid,
                                             t
                                         )
@@ -1091,17 +1179,35 @@ export function HostBalancingForm({
                                                                     'base-host-form.assignments'
                                                                 )}
                                                                 value={
-                                                                    existingTarget?.assignments ??
-                                                                    0
+                                                                    existingTarget
+                                                                        ? formatTargetAssignments(
+                                                                              existingTarget,
+                                                                              t
+                                                                          )
+                                                                        : t(
+                                                                              'base-host-form.no-diagnostic-data'
+                                                                          )
                                                                 }
                                                             />
                                                             <TargetInfo
                                                                 label={t('base-host-form.traffic')}
                                                                 value={
-                                                                    existingTarget?.trafficBytes ??
-                                                                    prettyBytesUtil(
-                                                                        node.trafficUsedBytes
-                                                                    )
+                                                                    existingTarget
+                                                                        ? formatTargetTraffic(
+                                                                              existingTarget,
+                                                                              t
+                                                                          )
+                                                                        : node.trafficUsedBytes ===
+                                                                                null ||
+                                                                            node.trafficUsedBytes ===
+                                                                                undefined
+                                                                          ? t(
+                                                                                'base-host-form.no-diagnostic-data'
+                                                                            )
+                                                                          : prettyBytesUtil(
+                                                                                node.trafficUsedBytes,
+                                                                                true
+                                                                            )
                                                                 }
                                                             />
                                                             <TargetInfo
@@ -1136,30 +1242,25 @@ export function HostBalancingForm({
                                                             )}
                                                         </Group>
                                                         {disabledReason && (
-                                                            <Alert color="red" variant="light">
-                                                                {disabledReason}
-                                                            </Alert>
-                                                        )}
-                                                        {hasRequiredInbound === false && (
-                                                            <Text c="red" size="sm">
-                                                                {t(
-                                                                    'base-host-form.validation-reason-missing-inbound'
-                                                                )}
-                                                            </Text>
-                                                        )}
-                                                        {nodeStatus !== 'connected' && (
-                                                            <Text
-                                                                c={
-                                                                    nodeStatus === 'connecting'
-                                                                        ? 'yellow'
-                                                                        : 'red'
+                                                            <Alert
+                                                                color={
+                                                                    existingTarget ? 'gray' : 'red'
                                                                 }
-                                                                size="sm"
+                                                                title={
+                                                                    hasRequiredInbound === false
+                                                                        ? t(
+                                                                              'base-host-form.missing-inbound-alert-title'
+                                                                          )
+                                                                        : undefined
+                                                                }
+                                                                variant="light"
                                                             >
-                                                                {t(
-                                                                    'base-host-form.node-state-warning'
-                                                                )}
-                                                            </Text>
+                                                                {hasRequiredInbound === false
+                                                                    ? t(
+                                                                          'base-host-form.missing-inbound-alert-description'
+                                                                      )
+                                                                    : disabledReason}
+                                                            </Alert>
                                                         )}
                                                     </Stack>
                                                     <Button
@@ -1234,7 +1335,12 @@ export function HostBalancingForm({
                             decisions={decisionsQuery.data ?? []}
                             hostUuid={hostUuid}
                             isLoading={decisionsQuery.isFetching}
-                            onRefresh={() => decisionsQuery.refetch()}
+                            onRefresh={async () => {
+                                await Promise.all([
+                                    decisionsQuery.refetch(),
+                                    refetchHostBalancerSettings()
+                                ])
+                            }}
                         />
                     </Stack>
                 </SectionCard.Section>
@@ -1615,6 +1721,19 @@ function resolvePreviewResultMessage(preview: HostBalancerPreview, t: TFunction)
     return String(t('base-host-form.preview-no-candidates'))
 }
 
+function DescribedSelectItem({ option }: { option: DescribedSelectOption }) {
+    return (
+        <Stack gap={2}>
+            <Text fw={600} size="sm">
+                {option.label}
+            </Text>
+            <Text c="dimmed" size="xs">
+                {option.description}
+            </Text>
+        </Stack>
+    )
+}
+
 function DiagnosticsTable({
     excluded = false,
     rows,
@@ -1771,12 +1890,23 @@ function targetAddressPort(row: PreviewDiagnosticsRow) {
 }
 
 function targetProfileLabel(row: PreviewDiagnosticsRow, t: TFunction) {
+    if (!row.inboundTag && (row.inboundName || row.inboundType || row.profileName)) {
+        const profile = row.profileName ?? t('base-host-form.node-profile-not-found')
+        const inbound = row.inboundName ?? t('base-host-form.inbound-unknown')
+        const protocol = row.inboundType
+            ? `${row.inboundType}${row.inboundNetwork ? `/${row.inboundNetwork}` : ''}`
+            : null
+
+        return [profile, inbound, protocol].filter(Boolean).join(' · ')
+    }
+
     if (row.inboundTag) {
-        return `${row.profileUuid ? maskUuid(row.profileUuid) : t('base-host-form.node-profile-unknown')} · ${row.inboundTag} · ${row.inboundType ?? '-'}${row.inboundNetwork ? `/${row.inboundNetwork}` : ''}`
+        const profile = row.profileName ?? t('base-host-form.node-profile-not-found')
+        return `${profile} · ${row.inboundName ?? row.inboundTag} · ${row.inboundType ?? '-'}${row.inboundNetwork ? `/${row.inboundNetwork}` : ''}`
     }
 
     if (row.inboundUuid) {
-        return `${t('base-host-form.profile-inbound')}: ${maskUuid(row.inboundUuid)}`
+        return `${t('base-host-form.node-profile-not-found')} · ${t('base-host-form.inbound-unknown')}`
     }
 
     return String(t('base-host-form.node-profile-unknown'))
@@ -1800,7 +1930,7 @@ function formatTrafficSnapshot(row: PreviewDiagnosticsRow, t: TFunction) {
 }
 
 function translateDiagnosticSource(
-    source: PreviewDiagnosticsRow['trafficSource'] | undefined,
+    source: PreviewDiagnosticsTrafficSource | undefined,
     t: TFunction
 ) {
     const keys = {
@@ -1888,29 +2018,39 @@ function NodeTitle({
     )
 }
 
-function nodeProfileInboundLabel(
+function targetProfileInboundLabel(
+    target: DraftTarget,
     node: HostBalancerNode | undefined,
-    requiredInboundUuid?: string,
-    t?: TFunction
+    configProfileByUuid: Map<string, HostBalancerConfigProfile>,
+    requiredInboundUuid: string | undefined,
+    t: TFunction
 ) {
+    const backendInboundName = target.inboundName ?? target.inboundTag
+    if (backendInboundName || target.inboundType || target.profileName) {
+        const profile = target.profileName ?? String(t('base-host-form.node-profile-not-found'))
+        const inbound = backendInboundName ?? String(t('base-host-form.inbound-unknown'))
+        const protocol = target.inboundType
+            ? `${target.inboundType}${target.inboundNetwork ? `/${target.inboundNetwork}` : ''}`
+            : null
+
+        return [profile, inbound, protocol].filter(Boolean).join(' · ')
+    }
+
     if (!node) {
-        return t ? String(t('base-host-form.node-profile-unknown')) : '-'
+        return String(t('base-host-form.node-profile-unknown'))
     }
 
     const inbound = requiredInboundUuid
         ? node.configProfile.activeInbounds.find((item) => item.uuid === requiredInboundUuid)
         : undefined
 
-    const profile = node.configProfile.activeConfigProfileUuid
-        ? maskUuid(node.configProfile.activeConfigProfileUuid)
-        : t
-          ? String(t('base-host-form.node-profile-not-active'))
-          : '-'
+    const profileUuid = node.configProfile.activeConfigProfileUuid ?? inbound?.profileUuid ?? null
+    const profile = profileUuid
+        ? (configProfileByUuid.get(profileUuid)?.name ?? String(t('base-host-form.node-profile-not-found')))
+        : String(t('base-host-form.node-profile-not-found'))
 
     if (!inbound) {
-        return t
-            ? String(t('base-host-form.node-profile-inbound-missing', { profile }))
-            : profile
+        return `${profile} · ${t('base-host-form.required-inbound-not-found')}`
     }
 
     return `${profile} · ${inbound.tag} · ${inbound.type}${inbound.network ? `/${inbound.network}` : ''}`
@@ -2053,6 +2193,52 @@ function inboundCompatibilityBadge(validation: HostBalancerTargetValidation | nu
             {validation.hasRequiredInbound
                 ? t('base-host-form.compatibility-compatible')
                 : t('base-host-form.compatibility-missing-inbound')}
+        </Badge>
+    )
+}
+
+function targetCompatibilityBadge(
+    target: DraftTarget,
+    validation: HostBalancerTargetValidation | null,
+    t: TFunction
+) {
+    if (validation) {
+        return inboundCompatibilityBadge(validation, t)
+    }
+
+    const status = target.compatibilityStatus
+    if (status === 'compatible') {
+        return (
+            <Badge color="teal" variant="light">
+                {t('base-host-form.compatibility-compatible')}
+            </Badge>
+        )
+    }
+    if (status === 'missing_inbound') {
+        return (
+            <Badge color="red" variant="light">
+                {t('base-host-form.compatibility-missing-inbound')}
+            </Badge>
+        )
+    }
+    if (status === 'node_disabled') {
+        return (
+            <Badge color="red" variant="light">
+                {t('base-host-form.node-status-disabled')}
+            </Badge>
+        )
+    }
+    if (status === 'node_disconnected') {
+        return (
+            <Badge color="red" variant="light">
+                {t('base-host-form.node-status-disconnected')}
+            </Badge>
+        )
+    }
+
+    return (
+        <Badge color="gray" variant="light">
+            {t('base-host-form.compatibility-unknown')}
         </Badge>
     )
 }
