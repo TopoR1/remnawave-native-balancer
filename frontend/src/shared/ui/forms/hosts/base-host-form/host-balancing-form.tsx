@@ -10,20 +10,21 @@ import {
     Group,
     Modal,
     NumberInput,
-    ScrollArea,
     Select,
     SimpleGrid,
     Stack,
     Switch,
     Table,
     Text,
-    TextInput,
-    Tooltip
+    TextInput
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
+import { GetNodesCommand } from '@remnawave/backend-contract'
 import { isAxiosError } from 'axios'
-import { useTranslation } from 'react-i18next'
 import { TFunction } from 'i18next'
+import { nanoid } from 'nanoid'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
     PiCheckDuotone,
     PiCopyDuotone,
@@ -33,10 +34,8 @@ import {
     PiTrashDuotone
 } from 'react-icons/pi'
 import { TbActivityHeartbeat, TbAlertTriangle, TbPlayerPause, TbSkull } from 'react-icons/tb'
-import { nanoid } from 'nanoid'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { GetAllNodesCommand } from '@remnawave/backend-contract'
 
+import { instance, queryClient } from '@shared/api'
 import {
     HostBalancerDecision,
     HostBalancerPreview,
@@ -54,12 +53,11 @@ import {
     useValidateHostBalancerTargets
 } from '@shared/api/hooks'
 import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
-import { instance, queryClient } from '@shared/api'
-import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
-import { prettyBytesUtil } from '@shared/utils/bytes'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { HelpTooltip } from '@shared/ui/help-tooltip'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
+import { prettifyBytesUtil } from '@shared/utils/bytes'
+import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
 
 export {
     DEFAULT_HOST_BALANCING_DRAFT,
@@ -72,13 +70,6 @@ export {
 export type { HostBalancingDraft } from './host-balancing-draft'
 
 import {
-    DraftTarget,
-    HostBalancingDraft,
-    patchHostBalancingDraft,
-    sanitizeHostBalancingDraft,
-    updateHostBalancingTarget
-} from './host-balancing-draft'
-import {
     decisionCandidatesCount,
     decisionExcludedCount,
     decisionFinalAddress,
@@ -86,9 +77,16 @@ import {
     decisionSelectedTargetLabel,
     decisionTargetAddressPort
 } from './host-balancing-decision-display'
+import {
+    DraftTarget,
+    HostBalancingDraft,
+    patchHostBalancingDraft,
+    sanitizeHostBalancingDraft,
+    updateHostBalancingTarget
+} from './host-balancing-draft'
 import { formatTargetAssignments, formatTargetTraffic } from './host-balancing-target-display'
 
-type HostBalancerNode = GetAllNodesCommand.Response['response'][number]
+type HostBalancerNode = GetNodesCommand.Response['response'][number]
 type HostBalancerConfigProfile = {
     inbounds: {
         network: null | string
@@ -109,8 +107,11 @@ type PreviewSimulatorAction =
 type LegacyPreviewAction = 'preview_only' | 'reused' | 'would_create' | 'would_reassign'
 type PreviewFallbackResult = 'hidden' | 'original_host' | 'last_assignment' | 'none'
 type PreviewDiagnosticsRow = NonNullable<NonNullable<HostBalancerPreview['candidates']>[number]>
-type PreviewDiagnosticsTrafficSource =
-    PreviewDiagnosticsRow extends { trafficSource?: infer Source } ? Source : never
+type PreviewDiagnosticsTrafficSource = PreviewDiagnosticsRow extends {
+    trafficSource?: infer Source
+}
+    ? Source
+    : never
 type HostBalancerHelpKey =
     | 'base-host-form.help-policy-hide-host-description'
     | 'base-host-form.help-policy-keep-last-description'
@@ -150,7 +151,7 @@ type IProps = {
     draft: HostBalancingDraft
     hostPort?: number
     hostUuid?: string
-    nodes: GetAllNodesCommand.Response['response']
+    nodes: GetNodesCommand.Response['response']
     onChange: (draft: HostBalancingDraft) => void
     onValidationChange?: (validation: HostBalancerTargetsValidation | null) => void
     requiredInboundUuid?: string
@@ -400,7 +401,9 @@ export function HostBalancingForm({
         {
             value: 'WEIGHTED_LEAST_TRAFFIC',
             label: String(t('base-host-form.strategy-weighted-least-traffic')),
-            description: String(t('base-host-form.help-strategy-weighted-least-traffic-description'))
+            description: String(
+                t('base-host-form.help-strategy-weighted-least-traffic-description')
+            )
         },
         {
             value: 'PRIORITY_FAILOVER',
@@ -456,7 +459,10 @@ export function HostBalancingForm({
                         onChange={(event) => patchDraft({ enabled: event.currentTarget.checked })}
                     />
                 </Group>
-                <HostBalancerRuntimeStatus hostEnabled={draft.enabled} settings={remnawaveSettings} />
+                <HostBalancerRuntimeStatus
+                    hostEnabled={draft.enabled}
+                    settings={remnawaveSettings}
+                />
             </SectionCard.Section>
 
             {draft.enabled && (
@@ -638,16 +644,20 @@ export function HostBalancingForm({
                                     {t('base-host-form.no-balancer-targets')}
                                 </Alert>
                             )}
-                            {draft.targets.length > 0 && validation && targetSummary.activeValid === 0 && (
-                                <Alert color="red" variant="light">
-                                    {t('base-host-form.no-valid-active-targets-warning')}
-                                </Alert>
-                            )}
-                            {draft.targets.length > 0 && validation && targetSummary.incompatible === draft.targets.length && (
-                                <Alert color="red" variant="light">
-                                    {t('base-host-form.all-targets-incompatible-warning')}
-                                </Alert>
-                            )}
+                            {draft.targets.length > 0 &&
+                                validation &&
+                                targetSummary.activeValid === 0 && (
+                                    <Alert color="red" variant="light">
+                                        {t('base-host-form.no-valid-active-targets-warning')}
+                                    </Alert>
+                                )}
+                            {draft.targets.length > 0 &&
+                                validation &&
+                                targetSummary.incompatible === draft.targets.length && (
+                                    <Alert color="red" variant="light">
+                                        {t('base-host-form.all-targets-incompatible-warning')}
+                                    </Alert>
+                                )}
 
                             <SimpleGrid cols={{ base: 1, xl: 2 }}>
                                 {draft.targets.map((target, index) => {
@@ -722,13 +732,20 @@ export function HostBalancingForm({
                                                         />
                                                     </Stack>
                                                     <Stack align="flex-end" gap={4}>
-                                                        <Group gap={4} justify="flex-end" wrap="wrap">
+                                                        <Group
+                                                            gap={4}
+                                                            justify="flex-end"
+                                                            wrap="wrap"
+                                                        >
                                                             <Badge color="dark" variant="light">
                                                                 {t(
                                                                     'base-host-form.target-admin-status'
                                                                 )}
                                                             </Badge>
-                                                            {statusBadge(target.status ?? 'ACTIVE', t)}
+                                                            {statusBadge(
+                                                                target.status ?? 'ACTIVE',
+                                                                t
+                                                            )}
                                                             <HelpTooltip
                                                                 description={String(
                                                                     t(
@@ -740,7 +757,11 @@ export function HostBalancingForm({
                                                                 )}
                                                             />
                                                         </Group>
-                                                        <Group gap={4} justify="flex-end" wrap="wrap">
+                                                        <Group
+                                                            gap={4}
+                                                            justify="flex-end"
+                                                            wrap="wrap"
+                                                        >
                                                             <Badge color="dark" variant="light">
                                                                 {t(
                                                                     'base-host-form.technical-state'
@@ -748,25 +769,29 @@ export function HostBalancingForm({
                                                             </Badge>
                                                             {validationBadge(targetValidation, t)}
                                                         </Group>
-                                                <Group gap={4} justify="flex-end" wrap="wrap">
-                                                    <Badge color="dark" variant="light">
-                                                        {t('base-host-form.selection-state')}
-                                                    </Badge>
-                                                    {participationBadge(participates, t)}
+                                                        <Group
+                                                            gap={4}
+                                                            justify="flex-end"
+                                                            wrap="wrap"
+                                                        >
+                                                            <Badge color="dark" variant="light">
+                                                                {t(
+                                                                    'base-host-form.selection-state'
+                                                                )}
+                                                            </Badge>
+                                                            {participationBadge(participates, t)}
+                                                        </Group>
+                                                        {!participates && !hasMissingInbound && (
+                                                            <Text c="red" size="xs" ta="right">
+                                                                {participationReason}
+                                                            </Text>
+                                                        )}
+                                                    </Stack>
                                                 </Group>
-                                                {!participates && !hasMissingInbound && (
-                                                    <Text c="red" size="xs" ta="right">
-                                                        {participationReason}
-                                                    </Text>
-                                                )}
-                                            </Stack>
-                                        </Group>
 
                                                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                                                     <TargetInfo
-                                                        label={t(
-                                                            'base-host-form.profile-inbound'
-                                                        )}
+                                                        label={t('base-host-form.profile-inbound')}
                                                         value={profileInbound}
                                                     />
                                                     <TargetInfo
@@ -1133,7 +1158,9 @@ export function HostBalancingForm({
                                         )
                                         const profileInbound = targetProfileInboundLabel(
                                             existingTarget ??
-                                                ({ localId: `node-picker-${node.uuid}` } as DraftTarget),
+                                                ({
+                                                    localId: `node-picker-${node.uuid}`
+                                                } as DraftTarget),
                                             node,
                                             configProfileByUuid,
                                             requiredInboundUuid,
@@ -1204,7 +1231,7 @@ export function HostBalancingForm({
                                                                           ? t(
                                                                                 'base-host-form.no-diagnostic-data'
                                                                             )
-                                                                          : prettyBytesUtil(
+                                                                          : prettifyBytesUtil(
                                                                                 node.trafficUsedBytes,
                                                                                 true
                                                                             )
@@ -1483,12 +1510,9 @@ function DecisionsAuditBlock({
                                                 color={expanded ? 'blue' : 'gray'}
                                                 variant="light"
                                             >
-                                                {t(
-                                                    'base-host-form.decision-candidates-count',
-                                                    {
-                                                        count: decisionCandidatesCount(decision)
-                                                    }
-                                                )}
+                                                {t('base-host-form.decision-candidates-count', {
+                                                    count: decisionCandidatesCount(decision)
+                                                })}
                                             </Badge>
                                             <Badge
                                                 color={
@@ -1795,7 +1819,8 @@ function DiagnosticsTable({
                                 {t('base-host-form.traffic-score')}: {formatPreviewScore(row.score)}
                             </Table.Td>
                             <Table.Td>
-                                {t('base-host-form.assignments')}: {formatAssignmentsSnapshot(row, t)}
+                                {t('base-host-form.assignments')}:{' '}
+                                {formatAssignmentsSnapshot(row, t)}
                             </Table.Td>
                             <Table.Td>
                                 {t('base-host-form.traffic')}: {formatTrafficSnapshot(row, t)}
@@ -1926,7 +1951,7 @@ function formatTrafficSnapshot(row: PreviewDiagnosticsRow, t: TFunction) {
         return String(t('base-host-form.no-diagnostic-data'))
     }
 
-    return `${prettyBytesUtil(row.trafficBytes)} (${translateDiagnosticSource(row.trafficSource, t)})`
+    return `${prettifyBytesUtil(row.trafficBytes)} (${translateDiagnosticSource(row.trafficSource, t)})`
 }
 
 function translateDiagnosticSource(
@@ -2007,7 +2032,9 @@ function NodeTitle({
 }) {
     return (
         <Group align="flex-start" gap="sm" wrap="nowrap">
-            <Group mt={2}>{node ? resolveCountryCode(node.countryCode, 22) : resolveCountryCode('XX', 22)}</Group>
+            <Group mt={2}>
+                {node ? resolveCountryCode(node.countryCode, 22) : resolveCountryCode('XX', 22)}
+            </Group>
             <Stack gap={2}>
                 <Text fw={700}>{title}</Text>
                 <Text c="dimmed" size="sm">
@@ -2046,7 +2073,8 @@ function targetProfileInboundLabel(
 
     const profileUuid = node.configProfile.activeConfigProfileUuid ?? inbound?.profileUuid ?? null
     const profile = profileUuid
-        ? (configProfileByUuid.get(profileUuid)?.name ?? String(t('base-host-form.node-profile-not-found')))
+        ? (configProfileByUuid.get(profileUuid)?.name ??
+          String(t('base-host-form.node-profile-not-found')))
         : String(t('base-host-form.node-profile-not-found'))
 
     if (!inbound) {

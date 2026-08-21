@@ -1,37 +1,26 @@
 import { ApiTokenEntity } from '../entities/api-token.entity';
 
 export class FindAllApiTokensResponseModel {
-    public apiKeys: {
-        createdAt: Date;
-        token: string;
-        tokenName: string;
-        updatedAt: Date;
+    public tokens: {
         uuid: string;
+        name: string;
+        expireAt: Date;
+        scopes: string[];
+
+        createdAt: Date;
+        updatedAt: Date;
     }[];
 
-    public docs: {
-        isDocsEnabled: boolean;
-        scalarPath: null | string;
-        swaggerPath: null | string;
-    };
-
-    constructor(
-        data: ApiTokenEntity,
-        docs: { isDocsEnabled: boolean; scalarPath: null | string; swaggerPath: null | string },
-    ) {
-        this.apiKeys = [
+    constructor(data: ApiTokenEntity) {
+        this.tokens = [
             {
                 uuid: data.uuid,
-                token: data.token,
-                tokenName: data.tokenName,
+                name: data.name,
+                expireAt: data.expireAt,
+                scopes: data.scopes,
                 createdAt: data.createdAt,
                 updatedAt: data.updatedAt,
             },
         ];
-        this.docs = {
-            isDocsEnabled: docs.isDocsEnabled,
-            scalarPath: docs.scalarPath,
-            swaggerPath: docs.swaggerPath,
-        };
     }
 }

@@ -1,11 +1,13 @@
-import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 
 import { fail, ok, TResult } from '@common/types';
 import { ERRORS } from '@libs/contracts/constants';
 
-import { NodePluginRepository } from '../../repositories/node-plugins.repository';
 import { NodePluginEntity } from '../../entities/node-plugin.entity';
+import { NodePluginRepository } from '../../repositories/node-plugins.repository';
+import { SharedListsRepository } from '../../repositories/shared-lists.repository';
+import { injectSharedLists } from '../../utils';
 import { GetPluginByUuidQuery } from './get-plugin-by-uuid.query';
 
 @QueryHandler(GetPluginByUuidQuery)
@@ -14,7 +16,10 @@ export class GetPluginByUuidHandler implements IQueryHandler<
     TResult<NodePluginEntity>
 > {
     private readonly logger = new Logger(GetPluginByUuidHandler.name);
-    constructor(private readonly nodePluginsRepository: NodePluginRepository) {}
+    constructor(
+        private readonly nodePluginsRepository: NodePluginRepository,
+        private readonly sharedListsRepository: SharedListsRepository,
+    ) {}
 
     async execute(query: GetPluginByUuidQuery): Promise<TResult<NodePluginEntity>> {
         try {
@@ -23,6 +28,10 @@ export class GetPluginByUuidHandler implements IQueryHandler<
             if (!nodePlugin) {
                 return fail(ERRORS.NODE_PLUGIN_NOT_FOUND);
             }
+
+            const sharedLists = await this.sharedListsRepository.getAllSharedLists();
+
+            nodePlugin.pluginConfig = injectSharedLists(nodePlugin.pluginConfig, sharedLists);
 
             return ok(nodePlugin);
         } catch (error) {

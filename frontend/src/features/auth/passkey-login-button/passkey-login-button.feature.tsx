@@ -1,12 +1,12 @@
+import { Button } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
+import { GetStatusCommand } from '@remnawave/backend-contract'
 import {
     type PublicKeyCredentialRequestOptionsJSON,
     startAuthentication
 } from '@simplewebauthn/browser'
-import { GetStatusCommand } from '@remnawave/backend-contract'
-import { notifications } from '@mantine/notifications'
-import { TbFingerprint } from 'react-icons/tb'
-import { Button } from '@mantine/core'
 import { useState } from 'react'
+import { TbFingerprint } from 'react-icons/tb'
 
 import { usePasskeyAuthenticationOptions, usePasskeyAuthenticationVerify } from '@shared/api/hooks'
 import { useAuth } from '@shared/hooks/use-auth'

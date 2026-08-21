@@ -1,8 +1,7 @@
+import { GetBandwidthStatsCommand } from '@contract/commands';
 import { createZodDto } from 'nestjs-zod';
 
-import { GetBandwidthStatsCommand } from '@contract/commands';
-
-export class GetBandwidthStatsRequestQueryDto extends createZodDto(
+export class GetBandwidthStatsQueryDto extends createZodDto(
     GetBandwidthStatsCommand.RequestQuerySchema,
 ) {}
 export class GetBandwidthStatsResponseDto extends createZodDto(

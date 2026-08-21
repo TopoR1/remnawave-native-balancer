@@ -9,12 +9,13 @@ import {
     ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
 
+import { HostWithRawInbound } from '../hosts/entities/host-with-inbound-tag.entity';
 import { HostBalancerService } from './host-balancer.service';
 import { HostBalancersRepository } from './repositories/host-balancers.repository';
-import { HostWithRawInbound } from '../hosts/entities/host-with-inbound-tag.entity';
 
 const HOST_UUID = '11111111-1111-4111-8111-111111111111';
 const USER_UUID = '22222222-2222-4222-8222-222222222222';
+const USER_ID = 42n;
 const SHORT_UUID = 'test-short-uuid';
 const BALANCER_UUID = '33333333-3333-4333-8333-333333333333';
 const TARGET_UUID = '44444444-4444-4444-8444-444444444444';
@@ -75,20 +76,22 @@ function createHost(overrides = {}) {
         alpn: null,
         fingerprint: null,
         securityLayer: 'DEFAULT',
-        xHttpExtraParams: null,
+        xhttpExtraParams: null,
         muxParams: null,
         sockoptParams: null,
         finalMask: null,
         isDisabled: false,
         serverDescription: null,
-        allowInsecure: false,
-        tag: null,
+        pinnedPeerCertSha256: null,
+        verifyPeerCertByName: null,
+        tags: [],
         isHidden: false,
         overrideSniFromAddress: false,
         keepSniBlank: false,
         vlessRouteId: null,
         shuffleHost: false,
         mihomoX25519: false,
+        mihomoIpVersion: null,
         configProfileUuid: null,
         configProfileInboundUuid: INBOUND_UUID,
         xrayJsonTemplateUuid: null,
@@ -535,7 +538,7 @@ describe('HostBalancerService', () => {
                         {
                             uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
                             hostUuid: HOST_UUID,
-                            userUuid: USER_UUID,
+                            userId: USER_ID,
                             targetUuid: TARGET_UUID,
                             strategy: 'LEAST_ASSIGNED',
                             reason: 'selected:LEAST_ASSIGNED:created',
@@ -588,7 +591,7 @@ describe('HostBalancerService', () => {
                         {
                             uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
                             hostUuid: HOST_UUID,
-                            userUuid: USER_UUID,
+                            userId: USER_ID,
                             targetUuid: null,
                             strategy: 'LEAST_ASSIGNED',
                             reason: 'unavailable:HIDE_HOST:hidden',
@@ -603,8 +606,8 @@ describe('HostBalancerService', () => {
         const decisions = await repository.listDecisions(HOST_UUID, 50);
 
         assert.equal(decisions.length, 2);
-        assert.equal(decisions[0].userUuid, '22222222...2222');
-        assert.equal(decisions[0].userUuidMasked, '22222222...2222');
+        assert.equal(decisions[0].userUuid, USER_ID.toString());
+        assert.equal(decisions[0].userUuidMasked, USER_ID.toString());
         assert.equal(decisions[0].candidates[0].targetUuid, TARGET_UUID);
         assert.equal(decisions[0].candidates[0].nodeName, 'Node A');
         assert.equal(decisions[0].candidates[0].assignmentsCount, 2);
@@ -881,7 +884,7 @@ describe('HostBalancerService', () => {
             ],
         });
 
-        const result = await service.applyToHostsForUser({ uuid: USER_UUID }, [host]);
+        const result = await service.applyToHostsForUser({ id: USER_ID }, [host]);
 
         assert.equal(result[0], host);
         assert.equal(result[0].address, 'origin.example.com');
@@ -905,7 +908,7 @@ describe('HostBalancerService', () => {
             ],
         });
 
-        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+        const [result] = await service.applyToHostsForUser({ id: USER_ID }, [createHost()]);
 
         assert.equal(result.remark, 'Original Remark');
         assert.equal(result.address, 'target.example.com');
@@ -1263,7 +1266,7 @@ describe('HostBalancerService', () => {
             },
         });
 
-        const result = await service.applyToHostsForUser({ uuid: USER_UUID }, [host]);
+        const result = await service.applyToHostsForUser({ id: USER_ID }, [host]);
 
         assert.equal(result[0], host);
         assert.equal(result[0].address, 'origin.example.com');
@@ -1286,11 +1289,11 @@ describe('HostBalancerService', () => {
             { decisionsEnabled: true },
         );
 
-        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+        const [result] = await service.applyToHostsForUser({ id: USER_ID }, [createHost()]);
 
         assert.equal(result.address, 'audit.example.com');
         assert.equal(decisionRecord.hostUuid, HOST_UUID);
-        assert.equal(decisionRecord.userUuid, USER_UUID);
+        assert.equal(decisionRecord.userId, USER_ID);
         assert.equal(decisionRecord.targetUuid, TARGET_UUID);
         assert.equal(decisionRecord.strategy, 'LEAST_ASSIGNED');
         assert.equal(decisionRecord.reason, 'selected:LEAST_ASSIGNED:created');
@@ -1354,7 +1357,7 @@ describe('HostBalancerService', () => {
             { decisionsEnabled: true },
         );
 
-        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+        const [result] = await service.applyToHostsForUser({ id: USER_ID }, [createHost()]);
 
         assert.equal(result.address, 'origin.example.com');
         assert.equal(decisionRecord.targetUuid, null);
@@ -1380,7 +1383,7 @@ describe('HostBalancerService', () => {
             { decisionsEnabled: true },
         );
 
-        const [result] = await service.applyToHostsForUser({ uuid: USER_UUID }, [createHost()]);
+        const [result] = await service.applyToHostsForUser({ id: USER_ID }, [createHost()]);
 
         assert.equal(result.address, 'safe.example.com');
     });

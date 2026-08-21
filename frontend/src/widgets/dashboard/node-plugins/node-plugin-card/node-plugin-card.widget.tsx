@@ -1,14 +1,14 @@
-import { PiCheck, PiCopy, PiCpu, PiPencil, PiTrashDuotone } from 'react-icons/pi'
-import { GetNodePluginsCommand } from '@remnawave/backend-contract'
-import { TbCopyCheck, TbEdit, TbPackage } from 'react-icons/tb'
-import { generatePath, useNavigate } from 'react-router-dom'
 import { CopyButton, Menu } from '@mantine/core'
+import { GetNodePluginsCommand } from '@remnawave/backend-contract'
 import { useTranslation } from 'react-i18next'
+import { PiCheck, PiCopy, PiCpu, PiPencil, PiTrashDuotone } from 'react-icons/pi'
+import { TbCopyCheck, TbEdit, TbPackage } from 'react-icons/tb'
+import { generatePath, useNavigate } from 'react-router'
 
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
+import { showModal } from '@shared/_modals/show-modal'
+import { ROUTES } from '@shared/constants'
 import { WithDndSortable } from '@shared/hocs/with-dnd-sortable'
 import { EntityCardShared } from '@shared/ui/entity-card'
-import { ROUTES } from '@shared/constants'
 
 interface IProps {
     handleCloneNodePlugin: (nodePluginUuid: string) => void
@@ -28,7 +28,6 @@ export function NodePluginCardWidget(props: IProps) {
     } = props
 
     const { t } = useTranslation()
-    const openModalWithData = useModalsStoreOpenWithData()
     const navigate = useNavigate()
 
     const navigateToNodePlugin = () => {
@@ -87,7 +86,8 @@ export function NodePluginCardWidget(props: IProps) {
                         <Menu.Item
                             leftSection={<PiPencil size={18} />}
                             onClick={() => {
-                                openModalWithData(MODALS.RENAME_SQUAD_OR_CONFIG_PROFILE_MODAL, {
+                                showModal('renameModal', {
+                                    renameFrom: 'nodePlugin',
                                     name: nodePlugin.name,
                                     uuid: nodePlugin.uuid
                                 })

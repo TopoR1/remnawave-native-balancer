@@ -1,7 +1,7 @@
+import type { DraftTarget } from './host-balancing-draft'
 import type { TFunction } from 'i18next'
 
-import type { DraftTarget } from './host-balancing-draft'
-import { prettyBytesUtil } from '../../../../utils/bytes/pretty-bytes/pretty-bytes.util.ts'
+import { prettifyBytesUtil } from '../../../../utils/bytes/pretty-bytes/pretty-bytes.util.ts'
 
 export function formatTargetAssignments(
     target: Pick<DraftTarget, 'assignments' | 'assignmentsCount'>,
@@ -25,7 +25,7 @@ export function formatTargetTraffic(
         return target.formattedTraffic
     }
     if (typeof target.trafficBytes === 'string') {
-        return prettyBytesUtil(target.trafficBytes)
+        return prettifyBytesUtil(target.trafficBytes)
     }
 
     return String(t('base-host-form.no-diagnostic-data'))

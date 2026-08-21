@@ -1,7 +1,9 @@
-import yaml from 'yaml';
+import { dump } from 'js-yaml';
 import _ from 'lodash';
 
 import { Injectable, Logger } from '@nestjs/common';
+
+import { FINGERPRINTS } from '@libs/contracts/constants';
 
 import { SubscriptionTemplateService } from '@modules/subscription-template/subscription-template.service';
 
@@ -46,6 +48,7 @@ interface ClashData {
 
 const UNSUPPORTED_TRANSPORTS = new Set(['hysteria', 'kcp', 'xhttp']);
 const UNSUPPORTED_PROTOCOLS = new Set(['hysteria', 'vless']);
+
 @Injectable()
 export class ClashGeneratorService {
     private readonly logger = new Logger(ClashGeneratorService.name);
@@ -141,7 +144,8 @@ export class ClashGeneratorService {
                     node.alpn = opts.alpn.split(',');
                 }
 
-                if (opts.allowInsecure) {
+                // allowInsecure
+                if (opts.pinnedPeerCertSha256) {
                     node['skip-cert-verify'] = true;
                 }
                 break;
@@ -154,12 +158,12 @@ export class ClashGeneratorService {
     }
 
     private resolveFingerprint(host: ResolvedProxyConfig): string {
-        switch (host.security) {
-            case 'tls':
-                return host.securityOptions.fingerprint ?? 'chrome';
-            default:
-                return 'chrome';
+        const raw = host.securityOptions?.fingerprint?.toLowerCase();
+        if (!raw) {
+            return 'chrome';
         }
+
+        return FINGERPRINTS.find((fp) => raw.includes(fp)) ?? 'chrome';
     }
 
     private resolveClashNetwork(host: ResolvedProxyConfig): string {
@@ -270,40 +274,48 @@ export class ClashGeneratorService {
         )) as Record<string, unknown>;
 
         try {
-            if (!Array.isArray(yamlConfig.proxies)) {
-                yamlConfig.proxies = [];
-            }
+            const sourceGroups = Array.isArray(yamlConfig['proxy-groups'])
+                ? (yamlConfig['proxy-groups'] as Record<string, unknown>[])
+                : [];
 
-            if (!Array.isArray(yamlConfig['proxy-groups'])) {
-                yamlConfig['proxy-groups'] = [];
-            }
+            const finalConfig: Record<string, unknown> = {
+                ...yamlConfig,
+                proxies: [
+                    ...(Array.isArray(yamlConfig.proxies)
+                        ? (yamlConfig.proxies as ProxyNode[])
+                        : []),
+                    ...data.proxies,
+                ],
+                'proxy-groups': sourceGroups.map((group) => {
+                    const remnawaveCustom = group.remnawave as Record<string, unknown> | undefined;
+                    const { remnawave: _remnawave, ...restGroup } = group;
+                    const cleanGroup = remnawaveCustom ? restGroup : group;
 
-            (yamlConfig.proxies as ProxyNode[]).push(...data.proxies);
+                    const remarks = this.resolveGroupRemarks(remnawaveCustom, proxyRemarks);
 
-            for (const group of yamlConfig['proxy-groups'] as Record<string, unknown>[]) {
-                if (!Array.isArray(group.proxies)) {
-                    group.proxies = [];
-                }
+                    return {
+                        ...cleanGroup,
+                        proxies: [
+                            ...(Array.isArray(cleanGroup.proxies)
+                                ? (cleanGroup.proxies as string[])
+                                : []),
+                            ...remarks,
+                        ],
+                    };
+                }),
+            };
 
-                const remarks = this.resolveGroupRemarks(group, proxyRemarks);
-
-                (group.proxies as string[]).push(...remarks);
-            }
-
-            return yaml.stringify(yamlConfig);
+            return dump(finalConfig);
         } catch (error) {
             this.logger.error('Error rendering yaml config:', error);
             return '';
         }
     }
 
-    private resolveGroupRemarks(group: Record<string, unknown>, proxyRemarks: string[]): string[] {
-        const remnawaveCustom = group.remnawave as Record<string, unknown> | undefined;
-
-        if (remnawaveCustom) {
-            delete group.remnawave;
-        }
-
+    private resolveGroupRemarks(
+        remnawaveCustom: Record<string, unknown> | undefined,
+        proxyRemarks: string[],
+    ): string[] {
         if (remnawaveCustom?.['include-proxies'] === false) {
             return [];
         }

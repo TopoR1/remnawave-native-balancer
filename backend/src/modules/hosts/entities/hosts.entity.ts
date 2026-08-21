@@ -1,10 +1,12 @@
-import { Hosts } from '@prisma/client';
-
 import {
     SUBSCRIPTION_TEMPLATE_TYPE_VALUES,
+    TMihomoIpVersion,
     TSecurityLayers,
     TSubscriptionTemplateType,
 } from '@contract/constants';
+import { Hosts } from '@prisma/client';
+
+import { THostMapper } from '@libs/contracts/models';
 
 export class HostsEntity implements Hosts {
     uuid: string;
@@ -18,15 +20,16 @@ export class HostsEntity implements Hosts {
     alpn: null | string;
     fingerprint: null | string;
     securityLayer: TSecurityLayers;
-    xHttpExtraParams: null | object;
+    xhttpExtraParams: null | object;
     muxParams: null | object;
     sockoptParams: null | object;
     finalMask: null | object;
     isDisabled: boolean;
     serverDescription: null | string;
-    allowInsecure: boolean;
-
-    tag: null | string;
+    pinnedPeerCertSha256: string | null;
+    verifyPeerCertByName: string | null;
+    mihomoIpVersion: TMihomoIpVersion | null;
+    tags: string[];
     isHidden: boolean;
 
     overrideSniFromAddress: boolean;
@@ -48,6 +51,8 @@ export class HostsEntity implements Hosts {
     excludedInternalSquads: {
         squadUuid: string;
     }[];
+
+    mapper: THostMapper;
 
     constructor(data: Partial<Hosts>) {
         Object.assign(this, data);

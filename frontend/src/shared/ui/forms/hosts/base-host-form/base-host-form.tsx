@@ -1,28 +1,42 @@
+import { DeleteHostFeature } from '@features/ui/dashboard/hosts/delete-host'
+import { HostSelectInboundFeature } from '@features/ui/dashboard/hosts/host-select-inbound/host-select-inbound.feature'
 import {
     ActionIcon,
+    Autocomplete,
     Badge,
     Button,
     Checkbox,
-    Drawer,
     Group,
     HoverCard,
-    JsonInput,
     MultiSelect,
     NumberInput,
-    px,
     Select,
     Stack,
     Switch,
     Tabs,
+    TagsInput,
     Text,
     TextInput,
     ThemeIcon,
     Tooltip,
     Transition
 } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import {
-    PiArrowUpDuotone,
-    PiCopyDuotone,
+    ALPN,
+    CreateHostCommand,
+    FINGERPRINTS,
+    MIHOMO_IP_VERSION,
+    SECURITY_LAYERS,
+    SUBSCRIPTION_TEMPLATE_TYPE,
+    UpdateHostCommand,
+    UpdateManyHostsCommand
+} from '@remnawave/backend-contract'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { HiQuestionMarkCircle } from 'react-icons/hi'
+import {
+    PiCaretDown,
     PiFloppyDiskDuotone,
     PiGearSixDuotone,
     PiInfo,
@@ -33,51 +47,35 @@ import {
     PiTag
 } from 'react-icons/pi'
 import {
-    ALPN,
-    CreateHostCommand,
-    FINGERPRINTS,
-    SECURITY_LAYERS,
-    SUBSCRIPTION_TEMPLATE_TYPE,
-    UpdateHostCommand
-} from '@remnawave/backend-contract'
-import {
+    TbArrowsExchange,
     TbCirclesRelation,
     TbCloudNetwork,
     TbEye,
     TbFileDescription,
     TbMask,
-    TbServer2
+    TbServer2,
+    TbStar
 } from 'react-icons/tb'
-import { HiQuestionMarkCircle } from 'react-icons/hi'
-import { useDisclosure } from '@mantine/hooks'
-import { useTranslation } from 'react-i18next'
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 
-import {
-    BASIC_MUX_PARAMS,
-    BASIC_SOCKOPT_PARAMS,
-    BASIC_XHTTP_EXTRA_PARAMS,
-    PASTE_BASIC_XHTTP_EXTRA_PARAMS
-} from '@shared/constants'
-import { HostSelectInboundFeature } from '@features/ui/dashboard/hosts/host-select-inbound/host-select-inbound.feature'
-import { HostTagsInputWidget } from '@widgets/dashboard/hosts/host-tags-input/host-tags-input'
-import { emojiFlag, resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
-import { PopoverWithInfoShared } from '@shared/ui/popovers/popover-with-info'
-import { DeleteHostFeature } from '@features/ui/dashboard/hosts/delete-host'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { MihomoLogo, SingboxLogo, StashLogo } from '@shared/ui/logos'
-import { TemplateInfoPopoverShared } from '@shared/ui/popovers'
+import { showModal } from '@shared/_modals/show-modal'
+import { useIsMobile } from '@shared/hooks'
 import { ChipMultiSelect } from '@shared/ui/chip-multi-select'
 import { DrawerFooter } from '@shared/ui/drawer-footer'
-import { handleFormErrors } from '@shared/utils/misc'
+import { MihomoLogo, SingboxLogo, StashLogo } from '@shared/ui/logos'
 import { XrayLogo } from '@shared/ui/logos/xray-logo'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import { TemplateInfoPopoverShared } from '@shared/ui/popovers'
+import { PopoverWithInfoShared } from '@shared/ui/popovers/popover-with-info'
 import { SectionCard } from '@shared/ui/section-card'
+import { TagInputPill } from '@shared/ui/tag-input-pill'
+import { emojiFlag, resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
 
-import { FinalMaskDrawer } from './final-mask.drawer'
 import { HostBalancingForm, shouldEnableHostSave } from './host-balancing-form'
-import classes from './HostTabs.module.css'
 import { IProps } from './interfaces'
+import { FINAL_MASK_MODAL_ID, FinalMaskModalContent } from './modals/final-mask.modal.content'
+import { MUX_MODAL_ID, MuxModalContent } from './modals/mux.modal.content'
+import { SOCKOPT_MODAL_ID, SockoptModalContent } from './modals/sockopt.modal.content'
+import { XHTTP_MODAL_ID, XhttpModalContent } from './modals/xhttp.modal.content'
 
 const SUBSCRIPTION_TYPES = {
     [SUBSCRIPTION_TEMPLATE_TYPE.XRAY_JSON]: {
@@ -106,7 +104,12 @@ const SUBSCRIPTION_TYPES = {
     }
 } as const
 
-export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCommand.Request>(
+export const BaseHostForm = <
+    T extends
+        | CreateHostCommand.RequestBody
+        | UpdateHostCommand.RequestBody
+        | UpdateManyHostsCommand.RequestBody
+>(
     props: IProps<T>
 ) => {
     const {
@@ -114,30 +117,41 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
         handleSubmit,
         configProfiles,
         isSubmitting,
-        handleCloneHost,
         nodes,
+        internalSquads,
+        subscriptionTemplates,
+        hostTags,
+        removeRequiredFields,
         hostUuid,
         hostBalancingDraft,
         onHostBalancingDraftChange,
-        onHostBalancingValidationChange,
-        internalSquads,
-        subscriptionTemplates
+        onHostBalancingValidationChange
     } = props
 
     const { t } = useTranslation()
-    const [opened, { open, close }] = useDisclosure(false)
     const [activeTab, setActiveTab] = useState<null | string>('basic')
-
-    const [muxParamsOpened, { open: openMuxParams, close: closeMuxParams }] = useDisclosure(false)
-    const [sockoptParamsOpened, { open: openSockoptParams, close: closeSockoptParams }] =
-        useDisclosure(false)
-
-    const [finalMaskOpened, { open: openFinalMask, close: closeFinalMask }] = useDisclosure(false)
+    const isMobile = useIsMobile()
+    const hostFormChanged = form.isDirty() && form.isTouched() && form.isValid()
+    const canSave = shouldEnableHostSave(hostFormChanged, hostBalancingDraft?.touched ?? false)
 
     const securityLayerLabels = {
         [SECURITY_LAYERS.TLS]: t('base-host-form.tls-transport-layer-security'),
         [SECURITY_LAYERS.NONE]: t('base-host-form.none'),
         [SECURITY_LAYERS.DEFAULT]: t('base-host-form.inbounds-default')
+    }
+
+    const resolveSelectedRawInbound = () => {
+        const { inbound } = form.getValues()
+
+        if (!inbound?.configProfileUuid || !inbound.configProfileInboundUuid) {
+            return undefined
+        }
+
+        return configProfiles
+            ?.find((configProfile) => configProfile.uuid === inbound.configProfileUuid)
+            ?.inbounds.find(
+                (profileInbound) => profileInbound.uuid === inbound.configProfileInboundUuid
+            )?.rawInbound
     }
 
     const isXhttpExtraButtonDisabled = () => {
@@ -174,13 +188,6 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
             configProfileUuid: true
         })
     }
-
-    useEffect(() => {
-        handleFormErrors(form, form.errors)
-    }, [form.errors])
-
-    const hostFormChanged = form.isDirty() && form.isTouched()
-    const canSave = shouldEnableHostSave(hostFormChanged && form.isValid(), hostBalancingDraft.touched)
 
     const patternHoverCard = (showSingle = true, showMulti = true, showWildcard = true) => {
         return (
@@ -241,62 +248,6 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
         )
     }
 
-    const vlessRouteHoverCard = () => {
-        return (
-            <HoverCard shadow="md" width={300} withArrow>
-                <HoverCard.Target>
-                    <ActionIcon color="gray" size="xs" variant="subtle">
-                        <HiQuestionMarkCircle size={20} />
-                    </ActionIcon>
-                </HoverCard.Target>
-                <HoverCard.Dropdown>
-                    <Stack gap="md">
-                        <Stack gap="sm">
-                            <Text c="dimmed" size="sm">
-                                Refer to the{' '}
-                                <Link
-                                    target="_blank"
-                                    to="https://xtls.github.io/config/routing.html"
-                                >
-                                    XTLS Documentation
-                                </Link>{' '}
-                                for more information.
-                            </Text>
-                        </Stack>
-                    </Stack>
-                </HoverCard.Dropdown>
-            </HoverCard>
-        )
-    }
-
-    const mihomoX25519HoverCard = () => {
-        return (
-            <HoverCard shadow="md" width={280} withArrow>
-                <HoverCard.Target>
-                    <ActionIcon color="gray" size="xs" variant="subtle">
-                        <HiQuestionMarkCircle size={20} />
-                    </ActionIcon>
-                </HoverCard.Target>
-                <HoverCard.Dropdown>
-                    <Stack gap="md">
-                        <Stack gap="sm">
-                            <Text c="dimmed" size="sm">
-                                Refer to the{' '}
-                                <Link
-                                    target="_blank"
-                                    to="https://wiki.metacubex.one/en/config/proxies/tls/#reality-optssupport-x25519mlkem768"
-                                >
-                                    Mihomo Documentation
-                                </Link>{' '}
-                                for more information.
-                            </Text>
-                        </Stack>
-                    </Stack>
-                </HoverCard.Dropdown>
-            </HoverCard>
-        )
-    }
-
     const shuffleHostHoverCard = () => {
         return (
             <HoverCard shadow="md" width={280} withArrow>
@@ -316,6 +267,19 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                 </HoverCard.Dropdown>
             </HoverCard>
         )
+    }
+
+    const tagsInputProps = form.getInputProps('tags')
+
+    const handleTagsChange = (value: string[]) => {
+        tagsInputProps.onChange?.(value)
+
+        form.setErrors((errors) =>
+            Object.fromEntries(
+                Object.entries(errors).filter(([key]) => key !== 'tags' && !key.startsWith('tags.'))
+            )
+        )
+        form.validateField('tags')
     }
 
     return (
@@ -339,11 +303,10 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
             </Group>
 
             <Tabs
-                classNames={classes}
                 keepMounted
+                keepMountedMode="display-none"
                 onChange={setActiveTab}
                 value={activeTab}
-                variant="unstyled"
             >
                 <Tabs.List grow mb="md">
                     <Tabs.Tab key="basic" leftSection={<PiNoteDuotone size={16} />} value="basic">
@@ -368,234 +331,242 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                         transition="fade"
                     >
                         {(styles) => (
-                            <Stack gap="md" style={styles}>
-                                <SectionCard.Root>
-                                    <SectionCard.Section>
-                                        <BaseOverlayHeader
-                                            iconColor="teal"
-                                            IconComponent={PiTag}
-                                            iconVariant="soft"
-                                            title={t('base-host-form.vital-parameters')}
-                                            titleOrder={5}
+                            <SectionCard.Root style={styles}>
+                                <SectionCard.Section>
+                                    <BaseOverlayHeader
+                                        iconColor="teal"
+                                        IconComponent={PiTag}
+                                        iconVariant="soft"
+                                        title={t('base-host-form.vital-parameters')}
+                                        titleOrder={5}
+                                    />
+                                </SectionCard.Section>
+                                <SectionCard.Section>
+                                    <Stack gap="md">
+                                        <TextInput
+                                            key={form.key('remark')}
+                                            label={t('base-host-form.remark')}
+                                            {...form.getInputProps('remark')}
+                                            leftSection={<TemplateInfoPopoverShared />}
+                                            required={!removeRequiredFields}
                                         />
-                                    </SectionCard.Section>
-                                    <SectionCard.Section>
-                                        <Stack gap="md">
+
+                                        <Stack gap="xs">
+                                            <HostSelectInboundFeature
+                                                activeConfigProfileInbound={
+                                                    form.getValues().inbound
+                                                        ?.configProfileInboundUuid ?? undefined
+                                                }
+                                                activeConfigProfileUuid={
+                                                    form.getValues().inbound?.configProfileUuid ??
+                                                    undefined
+                                                }
+                                                configProfiles={configProfiles}
+                                                onSaveInbound={saveInbound}
+                                            />
+                                        </Stack>
+
+                                        <Group
+                                            gap="xs"
+                                            grow
+                                            justify="space-between"
+                                            preventGrowOverflow={false}
+                                            w="100%"
+                                        >
                                             <TextInput
-                                                key={form.key('remark')}
-                                                label={t('base-host-form.remark')}
-                                                {...form.getInputProps('remark')}
-                                                leftSection={<TemplateInfoPopoverShared />}
-                                                required
-                                            />
-
-                                            <Stack gap="xs">
-                                                <HostSelectInboundFeature
-                                                    activeConfigProfileInbound={
-                                                        form.getValues().inbound
-                                                            ?.configProfileInboundUuid ?? undefined
-                                                    }
-                                                    activeConfigProfileUuid={
-                                                        form.getValues().inbound
-                                                            ?.configProfileUuid ?? undefined
-                                                    }
-                                                    configProfiles={configProfiles}
-                                                    onSaveInbound={saveInbound}
-                                                />
-                                            </Stack>
-
-                                            <Group
-                                                gap="xs"
-                                                grow
-                                                justify="space-between"
-                                                preventGrowOverflow={false}
-                                                w="100%"
-                                            >
-                                                <TextInput
-                                                    key={form.key('address')}
-                                                    label={t('base-host-form.address')}
-                                                    leftSection={
-                                                        <PopoverWithInfoShared
-                                                            text={
-                                                                <>
-                                                                    {t(
-                                                                        'base-host-form.address-description-line-1'
-                                                                    )}
-                                                                    <br />
-                                                                    {t(
-                                                                        'base-host-form.address-description-line-2'
-                                                                    )}
-                                                                </>
-                                                            }
-                                                        />
-                                                    }
-                                                    {...form.getInputProps('address')}
-                                                    placeholder={t(
-                                                        'base-host-form.e-g-example-com'
-                                                    )}
-                                                    required
-                                                    rightSection={patternHoverCard(
-                                                        true,
-                                                        true,
-                                                        true
-                                                    )}
-                                                    w="65%"
-                                                />
-
-                                                <NumberInput
-                                                    key={form.key('port')}
-                                                    label={t('base-host-form.port')}
-                                                    {...form.getInputProps('port')}
-                                                    allowDecimal={false}
-                                                    allowNegative={false}
-                                                    clampBehavior="strict"
-                                                    decimalScale={0}
-                                                    hideControls
-                                                    leftSection={
-                                                        <PopoverWithInfoShared
-                                                            text={
-                                                                <>
-                                                                    {t(
-                                                                        'base-host-form.port-description-line-1'
-                                                                    )}
-                                                                    <br />
-                                                                    <br />
-                                                                    {t(
-                                                                        'base-host-form.port-description-line-2'
-                                                                    )}
-                                                                </>
-                                                            }
-                                                        />
-                                                    }
-                                                    max={65535}
-                                                    min={1}
-                                                    placeholder={t('base-host-form.e-g-443')}
-                                                    required
-                                                    w="30%"
-                                                />
-                                            </Group>
-
-                                            <HostTagsInputWidget
-                                                key={form.key('tag')}
-                                                {...form.getInputProps('tag')}
-                                                value={form.getValues().tag}
-                                            />
-
-                                            <MultiSelect
-                                                clearButtonProps={{
-                                                    size: 'xs'
-                                                }}
-                                                data={nodes.map((node) => ({
-                                                    label: `${emojiFlag(node.countryCode)} ${node.name}${
-                                                        node.provider
-                                                            ? ` (${node.provider.name})`
-                                                            : ''
-                                                    }`,
-                                                    value: node.uuid
-                                                }))}
-                                                description={t(
-                                                    'base-host-form.pick-nodes-which-resolved-from-this-host-only-visual-assignment'
-                                                )}
-                                                inputWrapperOrder={[
-                                                    'label',
-                                                    'input',
-                                                    'description',
-                                                    'error'
-                                                ]}
-                                                key={form.key('nodes')}
-                                                label={t('base-host-form.nodes')}
-                                                leftSection={<TbServer2 size={16} />}
-                                                renderOption={(item) => {
-                                                    const node = nodes.find(
-                                                        (node) => node.uuid === item.option.value
-                                                    )
-                                                    if (!node) return null
-                                                    return (
-                                                        <>
-                                                            <Checkbox
-                                                                aria-hidden
-                                                                checked={item.checked}
-                                                                onChange={() => {}}
-                                                                style={{ pointerEvents: 'none' }}
-                                                                tabIndex={-1}
-                                                            />
-                                                            <Group
-                                                                gap={7}
-                                                                justify="space-between"
-                                                                w="100%"
-                                                            >
-                                                                <Group gap={7}>
-                                                                    {resolveCountryCode(
-                                                                        node.countryCode
-                                                                    )}
-                                                                    <span>{node.name}</span>
-                                                                </Group>
-                                                                {node.provider && (
-                                                                    <Badge color="gray" size="xs">
-                                                                        {node.provider.name}
-                                                                    </Badge>
+                                                key={form.key('address')}
+                                                label={t('base-host-form.address')}
+                                                leftSection={
+                                                    <PopoverWithInfoShared
+                                                        text={
+                                                            <>
+                                                                {t(
+                                                                    'base-host-form.address-description-line-1'
                                                                 )}
-                                                            </Group>
-                                                        </>
-                                                    )
-                                                }}
-                                                searchable
-                                                {...form.getInputProps('nodes')}
+                                                                <br />
+                                                                {t(
+                                                                    'base-host-form.address-description-line-2'
+                                                                )}
+                                                            </>
+                                                        }
+                                                    />
+                                                }
+                                                {...form.getInputProps('address')}
+                                                placeholder={t('base-host-form.e-g-example-com')}
+                                                required={!removeRequiredFields}
+                                                rightSection={patternHoverCard(true, true, true)}
+                                                w="65%"
                                             />
 
-                                            <MultiSelect
-                                                clearable
-                                                clearButtonProps={{
-                                                    size: 'xs'
-                                                }}
-                                                data={internalSquads.map((internalSquad) => ({
-                                                    label: internalSquad.name,
-                                                    value: internalSquad.uuid
-                                                }))}
-                                                description={t(
-                                                    'base-host-form.exclude-this-host-from-specific-internal-squads'
-                                                )}
-                                                inputWrapperOrder={[
-                                                    'label',
-                                                    'input',
-                                                    'description',
-                                                    'error'
-                                                ]}
-                                                key={form.key('excludedInternalSquads')}
-                                                label={t('base-host-form.excluded-internal-squads')}
-                                                leftSection={<TbCirclesRelation size={16} />}
-                                                renderOption={(item) => {
-                                                    return (
+                                            <NumberInput
+                                                key={form.key('port')}
+                                                label={t('base-host-form.port')}
+                                                {...form.getInputProps('port')}
+                                                allowDecimal={false}
+                                                allowNegative={false}
+                                                clampBehavior="strict"
+                                                decimalScale={0}
+                                                hideControls
+                                                leftSection={
+                                                    <PopoverWithInfoShared
+                                                        text={
+                                                            <>
+                                                                {t(
+                                                                    'base-host-form.port-description-line-1'
+                                                                )}
+                                                                <br />
+                                                                <br />
+                                                                {t(
+                                                                    'base-host-form.port-description-line-2'
+                                                                )}
+                                                            </>
+                                                        }
+                                                    />
+                                                }
+                                                max={65535}
+                                                min={1}
+                                                placeholder={t('base-host-form.e-g-443')}
+                                                required={!removeRequiredFields}
+                                                w="30%"
+                                            />
+                                        </Group>
+
+                                        <TagsInput
+                                            clearable
+                                            data={hostTags ?? []}
+                                            description={t(
+                                                'host-tags-input.tags-are-not-visible-to-end-users-tag-will-be-sent-with-raw-subscription-only'
+                                            )}
+                                            key={form.key('tags')}
+                                            label={t('use-nodes-table-widget.tags')}
+                                            leftSection={<TbStar size="16px" />}
+                                            maxTags={10}
+                                            placeholder="Enter tags (comma, space, semicolon)"
+                                            splitChars={[',', ' ', ';']}
+                                            {...tagsInputProps}
+                                            error={
+                                                Object.keys(form.errors)
+                                                    .filter((key) => key.startsWith('tags.'))
+                                                    .map((key) => form.errors[key])
+                                                    .join(', ') || tagsInputProps.error
+                                            }
+                                            onChange={handleTagsChange}
+                                            renderPill={({ value, onRemove }) => (
+                                                <TagInputPill onRemove={onRemove} value={value} />
+                                            )}
+                                        />
+
+                                        <MultiSelect
+                                            clearButtonProps={{
+                                                size: 'xs'
+                                            }}
+                                            data={nodes.map((node) => ({
+                                                label: `${emojiFlag(node.countryCode)} ${node.name}${
+                                                    node.provider ? ` (${node.provider.name})` : ''
+                                                }`,
+                                                value: node.uuid
+                                            }))}
+                                            description={t(
+                                                'base-host-form.pick-nodes-which-resolved-from-this-host-only-visual-assignment'
+                                            )}
+                                            inputWrapperOrder={[
+                                                'label',
+                                                'input',
+                                                'description',
+                                                'error'
+                                            ]}
+                                            key={form.key('nodes')}
+                                            label={t('base-host-form.nodes')}
+                                            leftSection={<TbServer2 size={16} />}
+                                            renderOption={(item) => {
+                                                const node = nodes.find(
+                                                    (node) => node.uuid === item.option.value
+                                                )
+                                                if (!node) return null
+                                                return (
+                                                    <>
                                                         <Checkbox
                                                             aria-hidden
                                                             checked={item.checked}
-                                                            label={item.option.label}
                                                             onChange={() => {}}
                                                             style={{ pointerEvents: 'none' }}
                                                             tabIndex={-1}
                                                         />
-                                                    )
-                                                }}
-                                                searchable
-                                                {...form.getInputProps('excludedInternalSquads')}
-                                            />
-                                        </Stack>
-                                    </SectionCard.Section>
-                                </SectionCard.Root>
+                                                        <Group
+                                                            gap={7}
+                                                            justify="space-between"
+                                                            w="100%"
+                                                        >
+                                                            <Group gap={7}>
+                                                                {resolveCountryCode(
+                                                                    node.countryCode
+                                                                )}
+                                                                <span>{node.name}</span>
+                                                            </Group>
+                                                            {node.provider && (
+                                                                <Badge color="gray" size="xs">
+                                                                    {node.provider.name}
+                                                                </Badge>
+                                                            )}
+                                                        </Group>
+                                                    </>
+                                                )
+                                            }}
+                                            renderPill={({ option, value, onRemove }) => (
+                                                <TagInputPill
+                                                    onRemove={onRemove}
+                                                    value={option?.label ?? value}
+                                                />
+                                            )}
+                                            searchable
+                                            {...form.getInputProps('nodes')}
+                                        />
 
-                                <HostBalancingForm
-                                    configProfiles={configProfiles}
-                                    draft={hostBalancingDraft}
-                                    hostPort={form.getValues().port}
-                                    hostUuid={hostUuid}
-                                    nodes={nodes ?? []}
-                                    onChange={onHostBalancingDraftChange}
-                                    onValidationChange={onHostBalancingValidationChange}
-                                    requiredInboundUuid={
-                                        form.getValues().inbound?.configProfileInboundUuid
-                                    }
-                                />
-                            </Stack>
+                                        <MultiSelect
+                                            clearable
+                                            clearButtonProps={{
+                                                size: 'xs'
+                                            }}
+                                            data={internalSquads.map((internalSquad) => ({
+                                                label: internalSquad.name,
+                                                value: internalSquad.uuid
+                                            }))}
+                                            description={t(
+                                                'base-host-form.exclude-this-host-from-specific-internal-squads'
+                                            )}
+                                            inputWrapperOrder={[
+                                                'label',
+                                                'input',
+                                                'description',
+                                                'error'
+                                            ]}
+                                            key={form.key('excludedInternalSquads')}
+                                            label={t('base-host-form.excluded-internal-squads')}
+                                            leftSection={<TbCirclesRelation size={16} />}
+                                            renderOption={(item) => {
+                                                return (
+                                                    <Checkbox
+                                                        aria-hidden
+                                                        checked={item.checked}
+                                                        label={item.option.label}
+                                                        onChange={() => {}}
+                                                        style={{ pointerEvents: 'none' }}
+                                                        tabIndex={-1}
+                                                    />
+                                                )
+                                            }}
+                                            renderPill={({ option, value, onRemove }) => (
+                                                <TagInputPill
+                                                    onRemove={onRemove}
+                                                    value={option?.label ?? value}
+                                                />
+                                            )}
+                                            searchable
+                                            {...form.getInputProps('excludedInternalSquads')}
+                                        />
+                                    </Stack>
+                                </SectionCard.Section>
+                            </SectionCard.Root>
                         )}
                     </Transition>
                 </Tabs.Panel>
@@ -818,19 +789,16 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                     w="40%"
                                                 />
 
-                                                <Select
+                                                <Autocomplete
                                                     clearable
-                                                    data={Object.values(FINGERPRINTS).map(
-                                                        (fingerprint) => ({
-                                                            label: fingerprint,
-                                                            value: fingerprint
-                                                        })
-                                                    )}
+                                                    clearSectionMode="both"
+                                                    data={FINGERPRINTS}
                                                     key={form.key('fingerprint')}
                                                     label={t('base-host-form.fingerprint')}
                                                     placeholder={t(
                                                         'base-host-form.fingerprint-e-g-chrome'
                                                     )}
+                                                    rightSection={<PiCaretDown size={16} />}
                                                     {...form.getInputProps('fingerprint')}
                                                     w="55%"
                                                 />
@@ -850,7 +818,21 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                 hideControls
                                                 max={65535}
                                                 min={0}
-                                                rightSection={vlessRouteHoverCard()}
+                                                rightSection={
+                                                    <ActionIcon
+                                                        color="gray"
+                                                        onClick={() => {
+                                                            window.open(
+                                                                'https://xtls.github.io/config/routing.html',
+                                                                '_blank'
+                                                            )
+                                                        }}
+                                                        size="xs"
+                                                        variant="subtle"
+                                                    >
+                                                        <HiQuestionMarkCircle size={20} />
+                                                    </ActionIcon>
+                                                }
                                             />
                                         </Stack>
                                     </SectionCard.Section>
@@ -965,7 +947,26 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                 color="gray"
                                                 disabled={isXhttpExtraButtonDisabled()}
                                                 leftSection={<PiPencilDuotone />}
-                                                onClick={open}
+                                                onClick={() => {
+                                                    modals.open({
+                                                        modalId: XHTTP_MODAL_ID,
+                                                        fullScreen: isMobile,
+                                                        title: (
+                                                            <BaseOverlayHeader
+                                                                iconColor="teal"
+                                                                IconComponent={PiPencilDuotone}
+                                                                iconVariant="soft"
+                                                                title={t(
+                                                                    'base-host-form.xhttp-extra-params'
+                                                                )}
+                                                            />
+                                                        ),
+                                                        centered: true,
+                                                        size: 'lg',
+                                                        withCloseButton: true,
+                                                        children: <XhttpModalContent form={form} />
+                                                    })
+                                                }}
                                                 variant="soft"
                                             >
                                                 xHTTP
@@ -974,7 +975,24 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                             <Button
                                                 color="gray"
                                                 leftSection={<TbCloudNetwork />}
-                                                onClick={openMuxParams}
+                                                onClick={() => {
+                                                    modals.open({
+                                                        modalId: MUX_MODAL_ID,
+                                                        fullScreen: isMobile,
+                                                        title: (
+                                                            <BaseOverlayHeader
+                                                                iconColor="teal"
+                                                                IconComponent={TbCloudNetwork}
+                                                                iconVariant="soft"
+                                                                title="MUX"
+                                                            />
+                                                        ),
+                                                        centered: true,
+                                                        size: 'lg',
+                                                        withCloseButton: true,
+                                                        children: <MuxModalContent form={form} />
+                                                    })
+                                                }}
                                                 variant="soft"
                                             >
                                                 Mux
@@ -983,7 +1001,26 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                             <Button
                                                 color="gray"
                                                 leftSection={<PiNetwork />}
-                                                onClick={openSockoptParams}
+                                                onClick={() => {
+                                                    modals.open({
+                                                        modalId: SOCKOPT_MODAL_ID,
+                                                        fullScreen: isMobile,
+                                                        title: (
+                                                            <BaseOverlayHeader
+                                                                iconColor="teal"
+                                                                IconComponent={PiNetwork}
+                                                                iconVariant="soft"
+                                                                title="SockOpt"
+                                                            />
+                                                        ),
+                                                        centered: true,
+                                                        size: 'lg',
+                                                        withCloseButton: true,
+                                                        children: (
+                                                            <SockoptModalContent form={form} />
+                                                        )
+                                                    })
+                                                }}
                                                 variant="soft"
                                             >
                                                 SockOpt
@@ -992,12 +1029,48 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                             <Button
                                                 color="gray"
                                                 leftSection={<TbMask />}
-                                                onClick={openFinalMask}
+                                                onClick={() => {
+                                                    modals.open({
+                                                        modalId: FINAL_MASK_MODAL_ID,
+                                                        fullScreen: isMobile,
+                                                        title: (
+                                                            <BaseOverlayHeader
+                                                                iconColor="teal"
+                                                                IconComponent={TbMask}
+                                                                iconVariant="soft"
+                                                                title="Final Mask"
+                                                            />
+                                                        ),
+                                                        centered: true,
+                                                        size: 'lg',
+                                                        withCloseButton: true,
+                                                        children: (
+                                                            <FinalMaskModalContent form={form} />
+                                                        )
+                                                    })
+                                                }}
                                                 variant="soft"
                                             >
                                                 Final Mask
                                             </Button>
                                         </Group>
+                                    </SectionCard.Section>
+
+                                    <SectionCard.Section>
+                                        <Button
+                                            color="gray"
+                                            fullWidth
+                                            leftSection={<TbArrowsExchange />}
+                                            onClick={() => {
+                                                showModal('hosts_hostMapperModal', {
+                                                    form,
+                                                    rawInbound: resolveSelectedRawInbound()
+                                                })
+                                            }}
+                                            variant="soft"
+                                        >
+                                            {t('base-host-form.mapper')}
+                                        </Button>
                                     </SectionCard.Section>
                                 </SectionCard.Root>
 
@@ -1078,6 +1151,56 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                 {...form.getInputProps('serverDescription')}
                                             />
 
+                                            <TextInput
+                                                key={form.key('pinnedPeerCertSha256')}
+                                                label={
+                                                    <Group gap={4} justify="flex-start">
+                                                        <Text fw={600} size="sm">
+                                                            Pinned Peer Cert SHA256
+                                                        </Text>
+                                                        <ActionIcon
+                                                            color="gray"
+                                                            onClick={() => {
+                                                                window.open(
+                                                                    'https://xtls.github.io/ru/config/transports/tls.html#tlsobject',
+                                                                    '_blank'
+                                                                )
+                                                            }}
+                                                            size="xs"
+                                                            variant="subtle"
+                                                        >
+                                                            <HiQuestionMarkCircle size={20} />
+                                                        </ActionIcon>
+                                                    </Group>
+                                                }
+                                                {...form.getInputProps('pinnedPeerCertSha256')}
+                                            />
+
+                                            <TextInput
+                                                key={form.key('verifyPeerCertByName')}
+                                                label={
+                                                    <Group gap={4} justify="flex-start">
+                                                        <Text fw={600} size="sm">
+                                                            Verify Peer Cert By Name
+                                                        </Text>
+                                                        <ActionIcon
+                                                            color="gray"
+                                                            onClick={() => {
+                                                                window.open(
+                                                                    'https://xtls.github.io/ru/config/transports/tls.html#tlsobject',
+                                                                    '_blank'
+                                                                )
+                                                            }}
+                                                            size="xs"
+                                                            variant="subtle"
+                                                        >
+                                                            <HiQuestionMarkCircle size={20} />
+                                                        </ActionIcon>
+                                                    </Group>
+                                                }
+                                                {...form.getInputProps('verifyPeerCertByName')}
+                                            />
+
                                             <Group gap="xs" justify="space-between">
                                                 <Group gap={4}>
                                                     <Text fw={600} size="sm">
@@ -1090,22 +1213,6 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                     key={form.key('shuffleHost')}
                                                     size="md"
                                                     {...form.getInputProps('shuffleHost', {
-                                                        type: 'checkbox'
-                                                    })}
-                                                />
-                                            </Group>
-
-                                            <Group gap="xs" justify="space-between">
-                                                <Group gap={4}>
-                                                    <Text fw={600} size="sm">
-                                                        {t('base-host-form.allow-insecure')}
-                                                    </Text>
-                                                </Group>
-                                                <Switch
-                                                    color="teal.8"
-                                                    key={form.key('allowInsecure')}
-                                                    size="md"
-                                                    {...form.getInputProps('allowInsecure', {
                                                         type: 'checkbox'
                                                     })}
                                                 />
@@ -1131,7 +1238,19 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                     <Text fw={600} size="sm">
                                                         {t('base-host-form.enable-x25519mlkem768')}
                                                     </Text>
-                                                    {mihomoX25519HoverCard()}
+                                                    <ActionIcon
+                                                        color="gray"
+                                                        onClick={() => {
+                                                            window.open(
+                                                                'https://wiki.metacubex.one/en/config/proxies/tls/#reality-optssupport-x25519mlkem768',
+                                                                '_blank'
+                                                            )
+                                                        }}
+                                                        size="xs"
+                                                        variant="subtle"
+                                                    >
+                                                        <HiQuestionMarkCircle size={20} />
+                                                    </ActionIcon>
                                                 </Group>
                                                 <Switch
                                                     color="teal.8"
@@ -1142,9 +1261,55 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                                                     })}
                                                 />
                                             </Group>
+
+                                            <Select
+                                                clearable
+                                                data={Object.values(MIHOMO_IP_VERSION).map(
+                                                    (ipVersion) => ({
+                                                        label: ipVersion,
+                                                        value: ipVersion
+                                                    })
+                                                )}
+                                                key={form.key('mihomoIpVersion')}
+                                                label={
+                                                    <Group gap={4} justify="flex-start">
+                                                        <Text fw={600} size="sm">
+                                                            Mihomo IP Version
+                                                        </Text>
+                                                        <ActionIcon
+                                                            color="gray"
+                                                            onClick={() => {
+                                                                window.open(
+                                                                    'https://wiki.metacubex.one/ru/config/proxies/#ip-version',
+                                                                    '_blank'
+                                                                )
+                                                            }}
+                                                            size="xs"
+                                                            variant="subtle"
+                                                        >
+                                                            <HiQuestionMarkCircle size={20} />
+                                                        </ActionIcon>
+                                                    </Group>
+                                                }
+                                                {...form.getInputProps('mihomoIpVersion')}
+                                            />
                                         </Stack>
                                     </SectionCard.Section>
                                 </SectionCard.Root>
+                                {hostBalancingDraft && onHostBalancingDraftChange && (
+                                    <HostBalancingForm
+                                        configProfiles={configProfiles}
+                                        draft={hostBalancingDraft}
+                                        hostPort={form.getValues().port}
+                                        hostUuid={hostUuid}
+                                        nodes={nodes}
+                                        onChange={onHostBalancingDraftChange}
+                                        onValidationChange={onHostBalancingValidationChange}
+                                        requiredInboundUuid={
+                                            form.getValues().inbound?.configProfileInboundUuid
+                                        }
+                                    />
+                                )}
                             </Stack>
                         )}
                     </Transition>
@@ -1161,198 +1326,15 @@ export const BaseHostForm = <T extends CreateHostCommand.Request | UpdateHostCom
                             loading={isSubmitting}
                             size="md"
                             type="submit"
+                            variant="soft"
                         >
                             {t('common.save')}
                         </Button>
                     </Group>
 
-                    <Group>
-                        {handleCloneHost && (
-                            <Tooltip label={t('base-host-form.clone')}>
-                                <ActionIcon
-                                    color="blue"
-                                    loading={isSubmitting}
-                                    onClick={handleCloneHost}
-                                    size="xl"
-                                    variant="light"
-                                >
-                                    <PiCopyDuotone size="24px" />
-                                </ActionIcon>
-                            </Tooltip>
-                        )}
-                        <DeleteHostFeature />
-                    </Group>
+                    {!!hostUuid && <DeleteHostFeature hostUuid={hostUuid} />}
                 </Group>
             </DrawerFooter>
-
-            <Drawer
-                onClose={close}
-                opened={opened}
-                overlayProps={{ backgroundOpacity: 0.6, blur: 0 }}
-                padding="lg"
-                position="right"
-                size="lg"
-                title={
-                    <BaseOverlayHeader
-                        iconColor="teal"
-                        IconComponent={PiPencilDuotone}
-                        iconVariant="soft"
-                        title={t('base-host-form.xhttp-extra-params')}
-                    />
-                }
-            >
-                <Stack gap="md">
-                    <Text size="sm">{t('base-host-form.extra-xhttp-description')}</Text>
-                    <JsonInput
-                        autosize
-                        formatOnBlur
-                        key={form.key('xHttpExtraParams')}
-                        minRows={15}
-                        placeholder={BASIC_XHTTP_EXTRA_PARAMS}
-                        validationError={t('base-host-form.invalid-json')}
-                        {...form.getInputProps('xHttpExtraParams')}
-                    />
-
-                    <Button
-                        color="gray"
-                        leftSection={<PiArrowUpDuotone size={px('1.2rem')} />}
-                        onClick={() => {
-                            // @ts-expect-error -- TODO: fix this
-                            form.setFieldValue('xHttpExtraParams', PASTE_BASIC_XHTTP_EXTRA_PARAMS)
-                        }}
-                        variant="light"
-                    >
-                        {t('base-host-form.fill-with-sample-xhttp-extra-params')}
-                    </Button>
-
-                    <Button onClick={close}>{t('common.close')}</Button>
-                </Stack>
-            </Drawer>
-
-            <Drawer
-                onClose={closeMuxParams}
-                opened={muxParamsOpened}
-                padding="lg"
-                position="right"
-                size="lg"
-                title={
-                    <BaseOverlayHeader
-                        iconColor="teal"
-                        IconComponent={TbCloudNetwork}
-                        iconVariant="soft"
-                        title="MUX"
-                    />
-                }
-            >
-                <Stack gap="md">
-                    <Stack gap={0}>
-                        <Text size="sm">
-                            {t('base-host-form.this-will-only-be-used-for-xray-json-output')}
-                        </Text>
-                        <Text size="sm">
-                            {t('base-host-form.please-ensure-you-provide-a-valid-json-mux-object')}
-                        </Text>
-                        <Text size="sm">
-                            {t('base-host-form.for-more-information-refer-to')}{' '}
-                            <Link
-                                target="_blank"
-                                to="https://xtls.github.io/ru/config/outbound.html#muxobject"
-                            >
-                                {t('base-host-form.xtls-documentation')}
-                            </Link>
-                            .
-                        </Text>
-                    </Stack>
-                    <JsonInput
-                        autosize
-                        formatOnBlur
-                        key={form.key('muxParams')}
-                        minRows={15}
-                        placeholder={BASIC_MUX_PARAMS}
-                        validationError={t('base-host-form.invalid-json')}
-                        {...form.getInputProps('muxParams')}
-                    />
-
-                    <Button
-                        color="gray"
-                        leftSection={<PiArrowUpDuotone size={px('1.2rem')} />}
-                        onClick={() => {
-                            // @ts-expect-error -- TODO: fix this
-                            form.setFieldValue('muxParams', BASIC_MUX_PARAMS)
-                        }}
-                        variant="light"
-                    >
-                        {t('base-host-form.paste-default-mux-params')}
-                    </Button>
-
-                    <Button onClick={closeMuxParams}>{t('common.close')}</Button>
-                </Stack>
-            </Drawer>
-
-            <Drawer
-                onClose={closeSockoptParams}
-                opened={sockoptParamsOpened}
-                padding="lg"
-                position="right"
-                size="lg"
-                title={
-                    <BaseOverlayHeader
-                        iconColor="teal"
-                        IconComponent={PiNetwork}
-                        iconVariant="soft"
-                        title="SockOpt"
-                    />
-                }
-            >
-                <Stack gap="md">
-                    <Stack gap={0}>
-                        <Text size="sm">
-                            {t('base-host-form.this-will-only-be-used-for-xray-json-output')}
-                        </Text>
-                        <Text size="sm">
-                            {t(
-                                'base-host-form.please-ensure-you-provide-a-valid-json-sockopt-object'
-                            )}
-                        </Text>
-                        <Text size="sm">
-                            {t('base-host-form.for-more-information-refer-to')}{' '}
-                            <Link
-                                target="_blank"
-                                to="https://xtls.github.io/ru/config/transport.html#sockoptobject"
-                            >
-                                {t('base-host-form.xtls-documentation')}
-                            </Link>
-                            .
-                        </Text>
-                    </Stack>
-
-                    <JsonInput
-                        autosize
-                        formatOnBlur
-                        key={form.key('sockoptParams')}
-                        minRows={15}
-                        placeholder={BASIC_SOCKOPT_PARAMS}
-                        validationError={t('base-host-form.invalid-json')}
-                        {...form.getInputProps('sockoptParams')}
-                    />
-
-                    <Button
-                        color="gray"
-                        leftSection={<PiArrowUpDuotone size={px('1.2rem')} />}
-                        onClick={() => {
-                            // @ts-expect-error -- TODO: fix this
-                            form.setFieldValue('sockoptParams', BASIC_SOCKOPT_PARAMS)
-                        }}
-                        variant="light"
-                    >
-                        {t('base-host-form.paste-default-sockopt-params')}
-                    </Button>
-
-                    <Button onClick={closeSockoptParams}>{t('common.close')}</Button>
-                </Stack>
-            </Drawer>
-
-            <FinalMaskDrawer close={closeFinalMask} form={form} opened={finalMaskOpened} />
         </form>
     )
 }

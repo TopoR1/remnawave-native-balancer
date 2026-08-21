@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 import { REST_API, SUBSCRIPTION_PAGE_CONFIGS_ROUTES } from '../../api';
-import { SubscriptionPageConfigSchema } from '../../models';
 import { getEndpointDetails } from '../../constants';
+import { SubscriptionPageConfigSchema } from '../../models';
 
-export namespace GetSubscriptionPageConfigsCommand {
+export namespace GetSubpageConfigsCommand {
     export const url = REST_API.SUBSCRIPTION_PAGE_CONFIGS.GET_ALL;
     export const TSQ_url = url;
 
@@ -12,6 +12,7 @@ export namespace GetSubscriptionPageConfigsCommand {
         SUBSCRIPTION_PAGE_CONFIGS_ROUTES.GET_ALL,
         'get',
         'Get all subscription page configs',
+        { scope: 'list', kind: 'read' },
     );
 
     export const ResponseSchema = z.object({

@@ -2,8 +2,8 @@ import { createQueryKeys } from '@lukemorales/query-key-factory'
 import { notifications } from '@mantine/notifications'
 import { z } from 'zod'
 
-import { createGetQueryHook, createMutationHook, errorHandler } from '../../tsq-helpers'
 import i18n from '../../../../app/i18n/i18n'
+import { createGetQueryHook, createMutationHook, errorHandler } from '../../tsq-helpers'
 
 const DateTimeSchema = z
     .string()
@@ -262,7 +262,7 @@ export const HostBalancerDecisionSchema = z.object({
     selectedTarget: DiagnosticsTargetSchema.nullable(),
     warnings: z.array(z.string()),
     finalHostOverrides: HostBalancerDecisionFinalOverridesSchema,
-    diagnostics: z.record(z.unknown()),
+    diagnostics: z.record(z.string(), z.unknown()),
     createdAt: DateTimeSchema
 })
 

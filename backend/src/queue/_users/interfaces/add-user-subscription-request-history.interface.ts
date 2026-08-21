@@ -1,6 +1,8 @@
 export interface IAddUserSubscriptionRequestHistoryPayload {
-    userUuid: string;
+    userId: string;
     requestAt: Date;
+    srrResponseType: string;
+    srrRuleName?: string;
     requestIp?: string;
     userAgent?: string;
 }

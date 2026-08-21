@@ -1,48 +1,38 @@
-import { useEffect } from 'react'
-
 import {
-    nodesQueryKeys,
-    QueryKeys,
     useGetConfigProfiles,
     useGetNodePlugins,
     useGetNodes,
-    useGetNodesTags
+    useGetNodesTags,
+    useGetNodeSecretKey,
+    useGetNodeIntegrations
 } from '@shared/api/hooks'
-import {
-    useNodesStoreActions,
-    useNodesStoreCreateModalIsOpen
-} from '@entities/dashboard/nodes/nodes-store'
-import { queryClient } from '@shared/api'
 
 import NodesPageComponent from '../components/nodes.page.component'
 
 export function NodesPageConnector() {
-    const actions = useNodesStoreActions()
-
-    const isCreateModalOpen = useNodesStoreCreateModalIsOpen()
-
     const { data: nodes, isLoading } = useGetNodes()
+    const { data: nodePlugins, isLoading: isNodePluginsLoading } = useGetNodePlugins()
+    const { data: nodeIntegrations, isLoading: isNodeIntegrationsLoading } =
+        useGetNodeIntegrations()
     const { isLoading: isConfigProfilesLoading } = useGetConfigProfiles()
+
+    useGetNodeSecretKey()
     useGetNodePlugins()
     useGetNodesTags()
 
-    useEffect(() => {
-        ;(async () => {
-            await queryClient.prefetchQuery({
-                queryKey: nodesQueryKeys.getPubKey.queryKey
-            })
-        })()
-        return () => {
-            actions.resetState()
-        }
-    }, [])
-
-    useEffect(() => {
-        if (isCreateModalOpen) return
-        ;(async () => {
-            await queryClient.refetchQueries({ queryKey: QueryKeys.nodes.getAllNodes.queryKey })
-        })()
-    }, [isCreateModalOpen])
-
-    return <NodesPageComponent isLoading={isLoading || isConfigProfilesLoading} nodes={nodes} />
+    return (
+        <NodesPageComponent
+            isLoading={
+                isLoading ||
+                isConfigProfilesLoading ||
+                isNodePluginsLoading ||
+                isNodeIntegrationsLoading ||
+                !nodePlugins ||
+                !nodeIntegrations
+            }
+            nodes={nodes}
+            nodePlugins={nodePlugins}
+            nodeIntegrations={nodeIntegrations}
+        />
+    )
 }

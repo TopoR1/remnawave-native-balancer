@@ -1,5 +1,5 @@
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 
 import { UsersService } from '@modules/users/users.service';
 
@@ -13,7 +13,7 @@ export class ResetUserTrafficHandler implements ICommandHandler<ResetUserTraffic
 
     async execute(command: ResetUserTrafficCommand) {
         try {
-            await this.usersService.resetUserTraffic(command.uuid);
+            await this.usersService.resetUserTraffic(command.userId);
 
             return;
         } catch (error: unknown) {

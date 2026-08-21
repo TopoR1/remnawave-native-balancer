@@ -1,17 +1,15 @@
-import { GetAllNodesCommand, GetNodePluginsCommand } from '@remnawave/backend-contract'
+import { NodePluginsHeaderActionButtonsFeature } from '@features/ui/dashboard/node-plugins/header-action-buttons'
+import { GetNodesCommand, GetNodePluginsCommand } from '@remnawave/backend-contract'
+import { NodePluginsGridWidget } from '@widgets/dashboard/node-plugins/node-plugins-grid/node-plugins-grid.widget'
+import { NodePluginsSpotlightWidget } from '@widgets/dashboard/node-plugins/node-plugins-spotlight'
+import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { TbPackage } from 'react-icons/tb'
-import { motion } from 'motion/react'
 
-import { NodePluginExecutorDrawer } from '@widgets/dashboard/node-plugins/node-plugin-executor/node-plugin-executor.drawer'
-import { NodePluginsGridWidget } from '@widgets/dashboard/node-plugins/node-plugins-grid/node-plugins-grid.widget'
-import { NodePluginsHeaderActionButtonsFeature } from '@features/ui/dashboard/node-plugins/header-action-buttons'
-import { NodePluginsSpotlightWidget } from '@widgets/dashboard/node-plugins/node-plugins-spotlight'
-import { RenameModalShared } from '@shared/ui/modals/rename-modal.shared'
 import { Page, PageHeaderShared } from '@shared/ui'
 
 interface Props {
-    nodes: GetAllNodesCommand.Response['response']
+    nodes: GetNodesCommand.Response['response']
     plugins: GetNodePluginsCommand.Response['response']['nodePlugins']
 }
 
@@ -36,9 +34,6 @@ export const NodePluginsBasePageComponent = (props: Props) => {
             </motion.div>
 
             <NodePluginsSpotlightWidget plugins={plugins} />
-
-            <RenameModalShared key="rename-node-plugin-modal" renameFrom="nodePlugin" />
-            <NodePluginExecutorDrawer />
         </Page>
     )
 }

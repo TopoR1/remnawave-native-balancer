@@ -51,6 +51,7 @@ export namespace GetHostBalancerCommand {
         HOST_BALANCERS_ROUTES.GET(':hostUuid'),
         'get',
         'Get host balancer settings',
+        { scope: 'get', kind: 'read' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -65,6 +66,7 @@ export namespace UpdateHostBalancerCommand {
         HOST_BALANCERS_ROUTES.UPDATE(':hostUuid'),
         'put',
         'Update host balancer settings',
+        { scope: 'update', kind: 'write' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -81,6 +83,7 @@ export namespace ToggleHostBalancerCommand {
         HOST_BALANCERS_ROUTES.TOGGLE(':hostUuid'),
         'patch',
         'Toggle host balancer',
+        { scope: 'toggle', kind: 'write' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -97,6 +100,7 @@ export namespace UpdateHostBalancerTargetsCommand {
         HOST_BALANCERS_ROUTES.TARGETS(':hostUuid'),
         'put',
         'Update host balancer targets',
+        { scope: 'targets', kind: 'write' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -113,6 +117,7 @@ export namespace ValidateHostBalancerTargetsCommand {
         HOST_BALANCERS_ROUTES.VALIDATE_TARGETS(':hostUuid'),
         'post',
         'Validate host balancer targets',
+        { scope: 'validate', kind: 'read' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -129,6 +134,7 @@ export namespace PreviewHostBalancerCommand {
         HOST_BALANCERS_ROUTES.PREVIEW(':hostUuid'),
         'get',
         'Preview host balancer target selection. Accepts userUuid or shortUuid; userUuid wins if both are present.',
+        { scope: 'preview', kind: 'read' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -158,6 +164,7 @@ export namespace GetHostBalancerStatsCommand {
         HOST_BALANCERS_ROUTES.STATS(':hostUuid'),
         'get',
         'Get host balancer stats',
+        { scope: 'stats', kind: 'read' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;
@@ -172,6 +179,7 @@ export namespace GetHostBalancerDecisionsCommand {
         HOST_BALANCERS_ROUTES.DECISIONS(':hostUuid'),
         'get',
         'Get host balancer decisions',
+        { scope: 'decisions', kind: 'read' },
     );
     export const RequestSchema = HostUuidSchema;
     export type Request = z.infer<typeof RequestSchema>;

@@ -12,9 +12,10 @@ export namespace CreateExternalSquadCommand {
         EXTERNAL_SQUADS_ROUTES.CREATE,
         'post',
         'Create external squad',
+        { scope: 'create', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
+    export const RequestBodySchema = z.object({
         name: z
             .string()
             .min(2, 'Name must be at least 2 characters')
@@ -25,11 +26,10 @@ export namespace CreateExternalSquadCommand {
             ),
     });
 
-    export type Request = z.infer<typeof RequestSchema>;
-
     export const ResponseSchema = z.object({
         response: ExternalSquadSchema,
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

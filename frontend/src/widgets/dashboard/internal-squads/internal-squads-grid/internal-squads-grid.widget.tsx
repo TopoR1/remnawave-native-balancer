@@ -1,7 +1,7 @@
 import { Card, Stack, Text, Title } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import { useTranslation } from 'react-i18next'
 import { PiEmpty } from 'react-icons/pi'
-import { modals } from '@mantine/modals'
 
 import {
     QueryKeys,
@@ -11,9 +11,9 @@ import {
     useGetInternalSquads,
     useReorderInternalSquads
 } from '@shared/api/hooks'
+import { queryClient } from '@shared/api/query-client'
 import { baseNotificationsMutations } from '@shared/ui/notifications/base-notification-mutations'
 import { VirtualizedDndGrid } from '@shared/ui/virtualized-dnd-grid'
-import { queryClient } from '@shared/api/query-client'
 import { sToMs } from '@shared/utils/time-utils'
 
 import { InternalSquadCardWidget } from '../internal-squad-card/internal-squad-card.widget'
@@ -61,14 +61,14 @@ export function InternalSquadsGridWidget(props: IProps) {
 
     const handleDeleteInternalSquad = (internalSquadUuid: string) => {
         modals.openConfirmModal({
-            title: t('common.delete'),
+            title: t('common.confirm-action'),
             children: t('common.confirm-action-description'),
             labels: {
                 confirm: t('common.delete'),
                 cancel: t('common.cancel')
             },
-            cancelProps: { variant: 'subtle', color: 'gray' },
-            confirmProps: { color: 'red' },
+            cancelProps: { variant: 'subtle' },
+            confirmProps: { color: 'red', variant: 'soft' },
             centered: true,
             onConfirm: () => {
                 deleteInternalSquad({
@@ -89,8 +89,8 @@ export function InternalSquadsGridWidget(props: IProps) {
                 confirm: t('common.delete'),
                 cancel: t('common.cancel')
             },
-            cancelProps: { variant: 'subtle', color: 'gray' },
-            confirmProps: { color: 'red' },
+            cancelProps: { variant: 'subtle' },
+            confirmProps: { color: 'red', variant: 'soft' },
             onConfirm: () => {
                 deleteUsersFromInternalSquad({
                     route: {
@@ -110,8 +110,8 @@ export function InternalSquadsGridWidget(props: IProps) {
                 confirm: t('common.add'),
                 cancel: t('common.cancel')
             },
-            cancelProps: { variant: 'subtle', color: 'gray' },
-            confirmProps: { color: 'teal' },
+            cancelProps: { variant: 'subtle' },
+            confirmProps: { color: 'teal', variant: 'soft' },
             onConfirm: () => {
                 addUsersToInternalSquad({
                     route: {

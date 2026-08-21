@@ -1,16 +1,18 @@
 import { Queue } from 'bullmq';
 import { chunk } from 'lodash';
 
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 
+import { TypedConfigService } from '@common/config/app-config';
 import { md5 } from '@common/utils';
 import { TUsersStatus } from '@libs/contracts/constants';
 
-import { BulkAllUpdateUsersRequestDto, BulkUpdateUsersRequestDto } from '@modules/users/dtos';
+import { BulkAllUpdateUsersBodyDto, BulkUpdateUsersBodyDto } from '@modules/users/dtos';
 
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
+import { USERS_JOB_NAMES } from './constants/users-job-name.constant';
 import {
     IAddUserSubscriptionRequestHistoryPayload,
     ICheckAndUpsertHwidDevicePayload,
@@ -18,13 +20,13 @@ import {
     IFireUserEventJobData,
     IFireUserEventPayload,
 } from './interfaces';
-import { USERS_JOB_NAMES } from './constants/users-job-name.constant';
 
 @Injectable()
 export class UsersQueuesService implements OnApplicationBootstrap {
     protected readonly logger: Logger = new Logger(UsersQueuesService.name);
 
     constructor(
+        private readonly configService: TypedConfigService,
         @InjectQueue(QUEUES_NAMES.USERS.MODIFY_MANY) private readonly modifyManyUsersQueue: Queue,
         @InjectQueue(QUEUES_NAMES.USERS.SERIAL_OPERATIONS)
         private readonly serialUsersOperationsQueue: Queue,
@@ -54,9 +56,11 @@ export class UsersQueuesService implements OnApplicationBootstrap {
 
     async onApplicationBootstrap(): Promise<void> {
         for (const queue of Object.values(this.queues)) {
-            const client = await queue.client;
-            if (client.status !== 'ready') {
-                throw new Error(`Queue "${queue.name}" not connected: ${client.status}.`);
+            try {
+                await queue.waitUntilReady();
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                throw new Error(`Queue "${queue.name}" not connected: ${reason}.`);
             }
         }
 
@@ -80,30 +84,30 @@ export class UsersQueuesService implements OnApplicationBootstrap {
         );
     }
 
-    public async resetUserTrafficBulk(uuids: string[]) {
+    public async resetUserTrafficBulk(userIds: number[]) {
         return this.modifyManyUsersQueue.addBulk(
-            uuids.map((uuid) => ({
+            userIds.map((userId) => ({
                 name: USERS_JOB_NAMES.RESET_MANY_USERS_TRAFFIC,
-                data: { uuid },
+                data: { userId },
             })),
         );
     }
 
-    public async revokeUsersSubscriptionBulk(uuids: string[]) {
+    public async revokeUsersSubscriptionBulk(userIds: number[]) {
         return this.modifyManyUsersQueue.addBulk(
-            uuids.map((uuid) => ({
+            userIds.map((userId) => ({
                 name: USERS_JOB_NAMES.REVOKE_MANY_USERS_SUBSCRIPTION,
-                data: { uuid },
+                data: { userId },
             })),
         );
     }
 
-    public async updateUsersBulk(dto: BulkUpdateUsersRequestDto) {
+    public async updateUsersBulk(dto: BulkUpdateUsersBodyDto) {
         return this.modifyManyUsersQueue.addBulk(
-            dto.uuids.map((uuid) => ({
+            dto.userIds.map((userId) => ({
                 name: USERS_JOB_NAMES.UPDATE_MANY_USERS,
                 data: {
-                    uuid,
+                    userId,
                     fields: {
                         ...dto.fields,
                         trafficLimitBytes:
@@ -148,7 +152,7 @@ export class UsersQueuesService implements OnApplicationBootstrap {
                     age: 24 * 3_600,
                 },
                 deduplication: {
-                    id: md5(`${payload.userUuid}_AR`),
+                    id: md5(`${payload.userId}_AR`),
                 },
             },
         );
@@ -164,7 +168,7 @@ export class UsersQueuesService implements OnApplicationBootstrap {
                 age: 24 * 3_600,
             },
             deduplication: {
-                id: md5(`${payload.userUuid}-${payload.hwid}_CAUHD`),
+                id: md5(`${payload.userId}-${payload.hwid}_CAUHD`),
             },
         });
     }
@@ -252,7 +256,7 @@ export class UsersQueuesService implements OnApplicationBootstrap {
                 batch.map((user) => ({
                     name: USERS_JOB_NAMES.FIRE_USER_EVENT,
                     data: {
-                        tId: user.tId.toString(),
+                        id: user.id.toString(),
                         meta: payload.meta,
                         userEvent: payload.userEvent,
                         skipTelegramNotification: payload.skipTelegramNotification,
@@ -266,7 +270,7 @@ export class UsersQueuesService implements OnApplicationBootstrap {
         return this.userEventsQueue.add(USERS_JOB_NAMES.FIRE_TORRENT_BLOCKER_EVENT, payload);
     }
 
-    public async bulkUpdateAllUsers(payload: BulkAllUpdateUsersRequestDto) {
+    public async bulkUpdateAllUsers(payload: BulkAllUpdateUsersBodyDto) {
         return this.serialUsersOperationsQueue.add(USERS_JOB_NAMES.BULK_UPDATE_ALL_USERS, {
             dto: payload,
         });

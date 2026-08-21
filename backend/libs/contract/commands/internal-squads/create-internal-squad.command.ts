@@ -12,25 +12,25 @@ export namespace CreateInternalSquadCommand {
         INTERNAL_SQUADS_ROUTES.CREATE,
         'post',
         'Create internal squad',
+        { scope: 'create', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
+    export const RequestBodySchema = z.object({
         name: z
             .string()
-            .min(2, 'Name must be at least 2 characters')
-            .max(30, 'Name must be less than 30 characters')
+            .min(2)
+            .max(30)
             .regex(
                 /^[A-Za-z0-9_\s-]+$/,
                 'Name can only contain letters, numbers, underscores, dashes and spaces',
             ),
-        inbounds: z.array(z.string().uuid()),
+        inbounds: z.array(z.uuid()),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: InternalSquadSchema,
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

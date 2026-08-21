@@ -1,29 +1,46 @@
-import { Affix, Badge, Button, Group, Paper, Stack, Transition } from '@mantine/core'
-import { GetAllNodesCommand } from '@remnawave/backend-contract'
-import { TbCategoryPlus, TbDots } from 'react-icons/tb'
-import { useDisclosure } from '@mantine/hooks'
-import { useTranslation } from 'react-i18next'
+import {
+    ActionIcon,
+    Affix,
+    Badge,
+    Button,
+    CloseButton,
+    Group,
+    Paper,
+    Stack,
+    Tooltip,
+    Transition
+} from '@mantine/core'
 import { modals } from '@mantine/modals'
+import { GetNodesCommand } from '@remnawave/backend-contract'
+import { useTranslation } from 'react-i18next'
+import {
+    TbArrowBarToDown,
+    TbArrowBarToUp,
+    TbArrowBigDown,
+    TbArrowBigUp,
+    TbCategoryPlus,
+    TbChartArcs,
+    TbDots
+} from 'react-icons/tb'
 
-import { ConfigProfilesDrawer } from '@widgets/dashboard/nodes/config-profiles-drawer'
-import { QueryKeys, useBulkNodesProfileModification } from '@shared/api/hooks'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { XrayLogo } from '@shared/ui/logos'
+import { showModal } from '@shared/_modals/show-modal'
 import { queryClient } from '@shared/api'
+import { QueryKeys, useBulkNodesProfileModification } from '@shared/api/hooks'
+import { XrayLogo } from '@shared/ui/logos'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 
 import { BulkUpdateNodesModalContent } from './bulk-update-nodes.modal.content'
 import { MultiSelectNodesModalContent } from './multi-select-modal.content'
 
 interface IProps {
-    selectedRecords: GetAllNodesCommand.Response['response'][number][]
-    setSelectedRecords: (records: GetAllNodesCommand.Response['response'][number][]) => void
+    moveSelected: (mode: 'bottom' | 'down' | 'top' | 'up') => void
+    selectedRecords: GetNodesCommand.Response['response'][number][]
+    setSelectedRecords: (records: GetNodesCommand.Response['response'][number][]) => void
 }
 
 export const MultiSelectNodesFeature = (props: IProps) => {
-    const { selectedRecords, setSelectedRecords } = props
+    const { moveSelected, selectedRecords, setSelectedRecords } = props
     const { t } = useTranslation()
-
-    const [opened, handlers] = useDisclosure(false)
 
     const hasSelection = selectedRecords.length > 0
 
@@ -75,25 +92,81 @@ export const MultiSelectNodesFeature = (props: IProps) => {
                             }}
                         >
                             <Stack gap="sm">
-                                <Group justify="center">
-                                    <Badge color="gray" size="lg" variant="filled">
-                                        {t('internal-squads.drawer.widget.selected')}:{' '}
-                                        {selectedRecords.length}
+                                <Group justify="space-between">
+                                    <Badge color="shaded-gray" size="lg" variant="soft">
+                                        {t('common.selected', { count: selectedRecords.length })}
                                     </Badge>
-                                    <Group
-                                        grow
-                                        justify="apart"
-                                        preventGrowOverflow={false}
-                                        wrap="wrap"
-                                    >
-                                        <Button
-                                            onClick={() => setSelectedRecords([])}
-                                            variant="subtle"
-                                        >
-                                            {t('multi-select-hosts.feature.clear-selection')}
-                                        </Button>
+                                    <Group gap={0} justify="flex-end">
+                                        <Tooltip label={t('common.clear-selection')} withArrow>
+                                            <CloseButton onClick={() => setSelectedRecords([])} />
+                                        </Tooltip>
                                     </Group>
                                 </Group>
+
+                                <ActionIcon.Group style={{ width: '100%' }}>
+                                    <Tooltip label="Move to top" withArrow>
+                                        <ActionIcon
+                                            color="gray"
+                                            onClick={() => moveSelected('top')}
+                                            size="lg"
+                                            style={{ flex: 1 }}
+                                            variant="soft"
+                                        >
+                                            <TbArrowBarToUp size={20} />
+                                        </ActionIcon>
+                                    </Tooltip>
+
+                                    <Tooltip label="Move up" withArrow>
+                                        <ActionIcon
+                                            color="gray"
+                                            onClick={() => moveSelected('up')}
+                                            size="lg"
+                                            style={{ flex: 1 }}
+                                            variant="soft"
+                                        >
+                                            <TbArrowBigUp size={20} />
+                                        </ActionIcon>
+                                    </Tooltip>
+
+                                    <Tooltip label="Move down" withArrow>
+                                        <ActionIcon
+                                            color="gray"
+                                            onClick={() => moveSelected('down')}
+                                            size="lg"
+                                            style={{ flex: 1 }}
+                                            variant="soft"
+                                        >
+                                            <TbArrowBigDown size={20} />
+                                        </ActionIcon>
+                                    </Tooltip>
+
+                                    <Tooltip label="Move to bottom" withArrow>
+                                        <ActionIcon
+                                            color="gray"
+                                            onClick={() => moveSelected('bottom')}
+                                            size="lg"
+                                            style={{ flex: 1 }}
+                                            variant="soft"
+                                        >
+                                            <TbArrowBarToDown size={20} />
+                                        </ActionIcon>
+                                    </Tooltip>
+                                </ActionIcon.Group>
+
+                                <Button
+                                    color="cyan"
+                                    fullWidth
+                                    leftSection={<TbChartArcs size={18} />}
+                                    onClick={() => {
+                                        showModal('nodes_nodesUsageStatsModal', {
+                                            nodeUuids: selectedRecords.map((record) => record.uuid)
+                                        })
+                                    }}
+                                    size="sm"
+                                    variant="soft"
+                                >
+                                    {t('common.usage-stats')}
+                                </Button>
 
                                 <Button
                                     color="cyan"
@@ -119,8 +192,8 @@ export const MultiSelectNodesFeature = (props: IProps) => {
                                             )
                                         })
                                     }
-                                    size="md"
-                                    variant="light"
+                                    size="sm"
+                                    variant="soft"
                                 >
                                     {t('common.update')}
                                 </Button>
@@ -129,9 +202,23 @@ export const MultiSelectNodesFeature = (props: IProps) => {
                                     color="cyan"
                                     fullWidth
                                     leftSection={<XrayLogo size={18} />}
-                                    onClick={handlers.open}
-                                    size="md"
-                                    variant="light"
+                                    onClick={() =>
+                                        showModal('nodes_nodesConfigProfilesDrawer', {
+                                            activeConfigProfileInbounds: [],
+                                            activeConfigProfileUuid: undefined,
+                                            onSaveInbounds: (
+                                                inbounds: string[],
+                                                configProfileUuid: string
+                                            ) => {
+                                                handleProfileModification(
+                                                    configProfileUuid,
+                                                    inbounds
+                                                )
+                                            }
+                                        })
+                                    }
+                                    size="sm"
+                                    variant="soft"
                                 >
                                     {t('multi-select-nodes.feature.profile-and-inbounds')}
                                 </Button>
@@ -160,8 +247,8 @@ export const MultiSelectNodesFeature = (props: IProps) => {
                                             )
                                         })
                                     }
-                                    size="md"
-                                    variant="light"
+                                    size="sm"
+                                    variant="soft"
                                 >
                                     {t('base-node-form.more-actions')}
                                 </Button>
@@ -170,16 +257,6 @@ export const MultiSelectNodesFeature = (props: IProps) => {
                     </Paper>
                 )}
             </Transition>
-
-            <ConfigProfilesDrawer
-                activeConfigProfileInbounds={[]}
-                activeConfigProfileUuid={undefined}
-                onClose={handlers.close}
-                onSaveInbounds={(inbounds, configProfileUuid) => {
-                    handleProfileModification(configProfileUuid, inbounds)
-                }}
-                opened={opened}
-            />
         </Affix>
     )
 }

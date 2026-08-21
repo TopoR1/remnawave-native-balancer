@@ -1,3 +1,7 @@
+import { Badge, Center, Group, Stack, Text, ThemeIcon } from '@mantine/core'
+import { modals } from '@mantine/modals'
+import { GetNodesCommand, GetNodePluginsCommand } from '@remnawave/backend-contract'
+import { useTranslation } from 'react-i18next'
 import {
     TbAlertTriangle,
     TbFlame,
@@ -6,10 +10,6 @@ import {
     TbPackage,
     TbPlugConnectedX
 } from 'react-icons/tb'
-import { GetAllNodesCommand, GetNodePluginsCommand } from '@remnawave/backend-contract'
-import { Badge, Center, Group, Stack, Text, ThemeIcon } from '@mantine/core'
-import { useTranslation } from 'react-i18next'
-import { modals } from '@mantine/modals'
 
 import {
     QueryKeys,
@@ -17,16 +17,16 @@ import {
     useDeleteNodePlugin,
     useReorderNodePlugins
 } from '@shared/api/hooks'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { VirtualizedDndGrid } from '@shared/ui/virtualized-dnd-grid'
 import { queryClient } from '@shared/api/query-client'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
+import { VirtualizedDndGrid } from '@shared/ui/virtualized-dnd-grid'
 
 import { ActivePluginsOnNodesModalShared } from '../active-on-nodes-modal/adtive-on-nodes.modal.shared'
 import { NodePluginCardWidget } from '../node-plugin-card/node-plugin-card.widget'
 
 interface IProps {
-    nodes: GetAllNodesCommand.Response['response']
+    nodes: GetNodesCommand.Response['response']
     plugins: GetNodePluginsCommand.Response['response']['nodePlugins']
 }
 
@@ -72,8 +72,8 @@ export function NodePluginsGridWidget(props: IProps) {
                 confirm: t('common.delete'),
                 cancel: t('common.cancel')
             },
-            cancelProps: { variant: 'subtle', color: 'gray' },
-            confirmProps: { color: 'red' },
+            cancelProps: { variant: 'subtle' },
+            confirmProps: { color: 'red', variant: 'soft' },
             centered: true,
             onConfirm: () => {
                 deleteNodePlugin({

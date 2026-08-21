@@ -11,9 +11,9 @@ import {
     UnstyledButton
 } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
-import { useTranslation } from 'react-i18next'
 import ColorHash from 'color-hash'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { IDownloadableSubscriptionTemplate } from '@shared/constants/templates'
 

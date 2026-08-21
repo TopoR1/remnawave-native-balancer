@@ -1,10 +1,14 @@
-import yaml from 'yaml';
+import { dump } from 'js-yaml';
 import _ from 'lodash';
 
 import { Injectable, Logger } from '@nestjs/common';
 
+import { isNonEmptyObject, parseIntRangeUtil } from '@common/utils';
+import { FINGERPRINTS } from '@libs/contracts/constants';
+
 import { SubscriptionTemplateService } from '@modules/subscription-template/subscription-template.service';
 
+import { applyHostMapper } from '../host-mapper';
 import { ResolvedProxyConfig } from '../resolve-proxy/interfaces';
 
 export interface MihomoData {
@@ -27,19 +31,50 @@ interface NetworkConfig {
     'short-id'?: string;
 }
 
+interface Hysteria2FinalMask {
+    quicParams?: {
+        brutalUp?: string | number;
+        brutalDown?: string | number;
+        udpHop?: {
+            ports?: string | number;
+            interval?: string | number;
+        };
+        bbrProfile?: string;
+        congestion?: string;
+    };
+}
+
+interface Hysteria2Mask {
+    type: 'salamander';
+    settings: {
+        packetSize?: string | number;
+        password: string;
+    };
+}
+
+interface Hysteria2PacketSizeFields {
+    'obfs-max-packet-size': number;
+    'obfs-min-packet-size': number;
+}
+
+type Hysteria2ObfsFields =
+    | ({ obfs: 'gecko'; 'obfs-password': string } & Partial<Hysteria2PacketSizeFields>)
+    | { obfs: 'salamander'; 'obfs-password': string };
+
 interface ProxyNode {
     [key: string]: unknown;
     alpn?: string[];
     alterId?: number;
     cipher?: string;
     name: string;
-    network: string;
+    network?: string;
     password?: string;
     port: number;
     server: string;
     servername?: string;
     'skip-cert-verify'?: boolean;
     'packet-encoding'?: string;
+    'ip-version'?: string;
     sni?: string;
     tls?: boolean;
     type: string;
@@ -48,8 +83,44 @@ interface ProxyNode {
     serverDescription?: string;
 }
 
-const UNSUPPORTED_TRANSPORTS = new Set(['hysteria', 'kcp', 'xhttp']);
-const UNSUPPORTED_PROTOCOLS = new Set(['hysteria']);
+const UNSUPPORTED_TRANSPORTS = new Set(['kcp']);
+const UNSUPPORTED_PROTOCOLS = new Set<string>();
+
+const XHTTP_FIELD_MAP: [string, string, boolean?][] = [
+    ['noGRPCHeader', 'no-grpc-header'],
+    ['xPaddingBytes', 'x-padding-bytes', true],
+    ['xPaddingObfsMode', 'x-padding-obfs-mode'],
+    ['xPaddingKey', 'x-padding-key'],
+    ['xPaddingHeader', 'x-padding-header'],
+    ['xPaddingPlacement', 'x-padding-placement'],
+    ['xPaddingMethod', 'x-padding-method'],
+    ['uplinkHTTPMethod', 'uplink-http-method'],
+    ['sessionIDPlacement', 'session-placement'],
+    ['sessionIDKey', 'session-key'],
+    ['sessionIDTable', 'session-table'],
+    ['sessionIDLength', 'session-length', true],
+    ['seqPlacement', 'seq-placement'],
+    ['seqKey', 'seq-key'],
+    ['uplinkDataPlacement', 'uplink-data-placement'],
+    ['uplinkDataKey', 'uplink-data-key'],
+    ['uplinkChunkSize', 'uplink-chunk-size'],
+    ['scMaxEachPostBytes', 'sc-max-each-post-bytes'],
+    ['scMinPostsIntervalMs', 'sc-min-posts-interval-ms'],
+    ['scStreamUpServerSecs', 'sc-stream-up-server-secs', true],
+];
+
+const XMUX_FIELD_MAP: [string, string, boolean?][] = [
+    ['maxConnections', 'max-connections', true],
+    ['maxConcurrency', 'max-concurrency', true],
+    ['cMaxReuseTimes', 'c-max-reuse-times', true],
+    ['hMaxRequestTimes', 'h-max-request-times', true],
+    ['hMaxReusableSecs', 'h-max-reusable-secs', true],
+    ['hKeepAlivePeriod', 'h-keep-alive-period'],
+];
+
+interface RemnawaveRootConfig {
+    includeHiddenHosts?: boolean;
+}
 
 @Injectable()
 export class MihomoGeneratorService {
@@ -64,28 +135,28 @@ export class MihomoGeneratorService {
         overrideTemplateName?: string,
     ): Promise<string> {
         try {
+            const templateType = isStash ? 'STASH' : 'MIHOMO';
+
             const yamlConfigDb = await this.subscriptionTemplateService.getCachedTemplateByType(
-                isStash ? 'STASH' : 'MIHOMO',
+                templateType,
                 overrideTemplateName,
             );
 
             const yamlConfig = yamlConfigDb as Record<string, unknown>;
-
-            const { remnawave, ...cleanConfig } = yamlConfig ?? {};
-            const remnawaveConfig = remnawave as Record<string, unknown> | undefined;
-            const includeHidden = remnawaveConfig?.includeHiddenHosts ?? false;
+            const includeHidden =
+                (yamlConfig.remnawave as RemnawaveRootConfig | undefined)?.includeHiddenHosts ??
+                false;
 
             const data: MihomoData = { proxies: [], rules: [] };
             const proxyRemarks: string[] = [];
 
             for (const host of hosts) {
                 if (!includeHidden && host.metadata.isHidden) continue;
-
-                const subType = isStash ? 'STASH' : 'MIHOMO';
-                if (host.metadata.excludeFromSubscriptionTypes.includes(subType)) continue;
+                if (host.metadata.excludeFromSubscriptionTypes.includes(templateType)) continue;
 
                 if (UNSUPPORTED_TRANSPORTS.has(host.transport)) continue;
                 if (UNSUPPORTED_PROTOCOLS.has(host.protocol)) continue;
+                if (isStash && host.transport === 'xhttp') continue;
 
                 const node = this.buildProxyNode(host, isExtendedClient);
                 if (!node) continue;
@@ -94,7 +165,7 @@ export class MihomoGeneratorService {
                 proxyRemarks.push(host.finalRemark);
             }
 
-            return await this.renderConfig(data, proxyRemarks, cleanConfig);
+            return await this.renderConfig(data, proxyRemarks, yamlConfig);
         } catch (error) {
             this.logger.error('Error generating clash config:', error);
             return '';
@@ -102,6 +173,21 @@ export class MihomoGeneratorService {
     }
 
     private buildProxyNode(host: ResolvedProxyConfig, isExtendedClient: boolean): ProxyNode | null {
+        const node = this.buildBaseProxyNode(host, isExtendedClient);
+
+        if (!node) return null;
+
+        return applyHostMapper(node, host.clientOverrides.mapper.mihomo, host);
+    }
+
+    private buildBaseProxyNode(
+        host: ResolvedProxyConfig,
+        isExtendedClient: boolean,
+    ): ProxyNode | null {
+        if (host.protocol === 'hysteria') {
+            return this.buildHysteria2Node(host, isExtendedClient);
+        }
+
         const node: ProxyNode = {
             name: host.finalRemark,
             type: this.resolveClashType(host.protocol),
@@ -109,6 +195,7 @@ export class MihomoGeneratorService {
             port: host.port,
             network: this.resolveClashNetwork(host),
             udp: true,
+            'ip-version': host.clientOverrides.mihomoIpVersion ?? undefined,
         };
 
         if (!this.applyProtocolFields(node, host)) {
@@ -119,6 +206,10 @@ export class MihomoGeneratorService {
         this.applyTransportOpts(node, host);
 
         node['client-fingerprint'] = this.resolveFingerprint(host);
+
+        if (isNonEmptyObject(host.mux) && 'smux' in host.mux) {
+            node['smux'] = host.mux['smux'];
+        }
 
         if (isExtendedClient && host.clientOverrides.serverDescription) {
             node.serverDescription = Buffer.from(
@@ -181,7 +272,8 @@ export class MihomoGeneratorService {
                     node.alpn = opts.alpn.split(',');
                 }
 
-                if (opts.allowInsecure && node.type !== 'ss') {
+                // allowInsecure
+                if (opts.pinnedPeerCertSha256 && node.type !== 'ss') {
                     node['skip-cert-verify'] = true;
                 }
                 break;
@@ -216,14 +308,12 @@ export class MihomoGeneratorService {
     }
 
     private resolveFingerprint(host: ResolvedProxyConfig): string {
-        switch (host.security) {
-            case 'tls':
-                return host.securityOptions.fingerprint ?? 'chrome';
-            case 'reality':
-                return host.securityOptions.fingerprint ?? 'chrome';
-            case 'none':
-                return 'chrome';
+        const raw = host.securityOptions?.fingerprint?.toLowerCase();
+        if (!raw) {
+            return 'chrome';
         }
+
+        return FINGERPRINTS.find((fp) => raw.includes(fp)) ?? 'chrome';
     }
 
     private resolveClashNetwork(host: ResolvedProxyConfig): string {
@@ -242,13 +332,18 @@ export class MihomoGeneratorService {
 
         switch (host.transport) {
             case 'ws':
-                netOpts = this.buildWsOpts(host.transportOptions.path, host.transportOptions.host);
+                netOpts = this.buildWsOpts(
+                    host.transportOptions.path,
+                    host.transportOptions.host,
+                    host.transportOptions.headers,
+                );
                 break;
 
             case 'httpupgrade':
                 netOpts = this.buildWsOpts(
                     host.transportOptions.path,
                     host.transportOptions.host,
+                    host.transportOptions.headers,
                     true,
                 );
                 break;
@@ -259,6 +354,13 @@ export class MihomoGeneratorService {
 
             case 'grpc':
                 netOpts = this.buildGrpcOpts(host.transportOptions.serviceName);
+                break;
+
+            case 'xhttp':
+                netOpts = this.buildXhttpOpts(
+                    host.transportOptions,
+                    host.clientOverrides.mihomoX25519,
+                );
                 break;
 
             default:
@@ -273,6 +375,7 @@ export class MihomoGeneratorService {
     private buildWsOpts(
         rawPath: string | null,
         host: string | null,
+        headers: Record<string, string> | null,
         isHttpUpgrade = false,
     ): NetworkConfig {
         const config: NetworkConfig = {};
@@ -294,6 +397,13 @@ export class MihomoGeneratorService {
         }
 
         config.headers = host ? { Host: host } : {};
+
+        if (headers !== null) {
+            config.headers = {
+                ...config.headers,
+                ...headers,
+            };
+        }
 
         if (maxEarlyData !== undefined) {
             config['max-early-data'] = maxEarlyData;
@@ -321,46 +431,192 @@ export class MihomoGeneratorService {
         };
     }
 
+    private buildXhttpOpts(
+        transportOptions: {
+            path: string | null;
+            host: string | null;
+            mode: string;
+            extra: Record<string, unknown> | null;
+        },
+        mihomoX25519?: boolean,
+    ): Record<string, unknown> {
+        const config: Record<string, unknown> = {};
+
+        if (transportOptions.path) {
+            config.path = transportOptions.path;
+        }
+
+        if (transportOptions.host) {
+            config.host = transportOptions.host;
+        }
+
+        if (transportOptions.mode) {
+            config.mode = transportOptions.mode;
+        }
+
+        const extra = transportOptions.extra;
+        if (!extra) return config;
+
+        if (extra.headers) {
+            config.headers = extra.headers;
+        }
+
+        this.applyFieldMap(extra, config, XHTTP_FIELD_MAP);
+
+        if (extra.xmux && typeof extra.xmux === 'object') {
+            config['reuse-settings'] = this.buildXhttpReuseSettings(
+                extra.xmux as Record<string, unknown>,
+            );
+        }
+
+        if (extra.downloadSettings && typeof extra.downloadSettings === 'object') {
+            config['download-settings'] = this.buildXhttpDownloadSettings(
+                extra.downloadSettings as Record<string, unknown>,
+                mihomoX25519,
+            );
+        }
+
+        return config;
+    }
+
+    private buildXhttpReuseSettings(xmux: Record<string, unknown>): Record<string, unknown> {
+        const settings: Record<string, unknown> = {};
+        this.applyFieldMap(xmux, settings, XMUX_FIELD_MAP);
+        return settings;
+    }
+
+    private buildXhttpDownloadSettings(
+        ds: Record<string, unknown>,
+        mihomoX25519?: boolean,
+    ): Record<string, unknown> {
+        const settings: Record<string, unknown> = {};
+
+        if (ds.address) {
+            settings.server = ds.address;
+        }
+        if (ds.port) {
+            settings.port = ds.port;
+        }
+
+        if (ds.security === 'tls' || ds.security === 'reality') {
+            settings.tls = true;
+
+            const tlsSettings = ds.tlsSettings as Record<string, unknown> | undefined;
+            if (tlsSettings) {
+                if (tlsSettings.serverName) {
+                    settings.servername = tlsSettings.serverName;
+                }
+                if (tlsSettings.fingerprint) {
+                    settings['client-fingerprint'] = tlsSettings.fingerprint;
+                }
+                if (tlsSettings.alpn) {
+                    settings.alpn = tlsSettings.alpn;
+                }
+                if (tlsSettings.allowInsecure) {
+                    settings['skip-cert-verify'] = true;
+                }
+            }
+
+            const realitySettings = ds.realitySettings as Record<string, unknown> | undefined;
+            if (ds.security === 'reality' && realitySettings) {
+                const realityOpts: Record<string, unknown> = {};
+                if (realitySettings.publicKey) {
+                    realityOpts['public-key'] = realitySettings.publicKey;
+                }
+                if (realitySettings.shortId) {
+                    realityOpts['short-id'] = realitySettings.shortId;
+                }
+                if (mihomoX25519) {
+                    realityOpts['support-x25519mlkem768'] = true;
+                }
+                if (Object.keys(realityOpts).length > 0) {
+                    settings['reality-opts'] = realityOpts;
+                }
+            }
+        }
+
+        const xhttpSettings = ds.xhttpSettings as Record<string, unknown> | undefined;
+        if (xhttpSettings) {
+            if (xhttpSettings.path) {
+                settings.path = xhttpSettings.path;
+            }
+            if (xhttpSettings.host) {
+                settings.host = xhttpSettings.host;
+            }
+            if (xhttpSettings.headers) {
+                settings.headers = xhttpSettings.headers;
+            }
+
+            const extra = xhttpSettings.extra;
+            if (extra && typeof extra === 'object') {
+                const xmux = (extra as Record<string, unknown>).xmux;
+                if (xmux && typeof xmux === 'object') {
+                    settings['reuse-settings'] = this.buildXhttpReuseSettings(
+                        xmux as Record<string, unknown>,
+                    );
+                }
+            }
+        }
+
+        return settings;
+    }
+
     private async renderConfig(
         data: MihomoData,
         proxyRemarks: string[],
         yamlConfig: Record<string, unknown>,
     ): Promise<string> {
         try {
-            if (!Array.isArray(yamlConfig.proxies)) {
-                yamlConfig.proxies = [];
+            const { remnawave: _remnawave, ...templateConfig } = yamlConfig;
+
+            const sourceGroups = Array.isArray(templateConfig['proxy-groups'])
+                ? (templateConfig['proxy-groups'] as Record<string, unknown>[])
+                : [];
+
+            const finalConfig: Record<string, unknown> = {
+                ...templateConfig,
+                proxies: [
+                    ...(Array.isArray(yamlConfig.proxies)
+                        ? (yamlConfig.proxies as ProxyNode[])
+                        : []),
+                    ...data.proxies,
+                ],
+                'proxy-groups': sourceGroups.map((group) => {
+                    const remnawaveCustom = group.remnawave as Record<string, unknown> | undefined;
+                    const { remnawave: _remnawave, ...restGroup } = group;
+                    const cleanGroup = remnawaveCustom ? restGroup : group;
+
+                    const remarks = this.resolveGroupRemarks(remnawaveCustom, proxyRemarks);
+
+                    return {
+                        ...cleanGroup,
+                        proxies: [
+                            ...(Array.isArray(cleanGroup.proxies)
+                                ? (cleanGroup.proxies as string[])
+                                : []),
+                            ...remarks,
+                        ],
+                    };
+                }),
+            };
+
+            const providers = this.buildProxyProviders(yamlConfig, data);
+            if (providers) {
+                finalConfig['proxy-providers'] = providers;
             }
 
-            if (!Array.isArray(yamlConfig['proxy-groups'])) {
-                yamlConfig['proxy-groups'] = [];
-            }
-
-            (yamlConfig.proxies as ProxyNode[]).push(...data.proxies);
-
-            for (const group of yamlConfig['proxy-groups'] as Record<string, unknown>[]) {
-                if (!Array.isArray(group.proxies)) {
-                    group.proxies = [];
-                }
-
-                const remarks = this.resolveGroupRemarks(group, proxyRemarks);
-                (group.proxies as string[]).push(...remarks);
-            }
-
-            this.applyProxyProviders(yamlConfig, data);
-
-            return yaml.stringify(yamlConfig);
+            return dump(finalConfig);
         } catch (error) {
             this.logger.error(`Error rendering yaml config: ${error}`);
             return '';
         }
     }
 
-    private resolveGroupRemarks(group: Record<string, unknown>, proxyRemarks: string[]): string[] {
-        const remnawaveCustom = group.remnawave as Record<string, unknown> | undefined;
-
-        if (remnawaveCustom) {
-            delete group.remnawave;
-        } else {
+    private resolveGroupRemarks(
+        remnawaveCustom: Record<string, unknown> | undefined,
+        proxyRemarks: string[],
+    ): string[] {
+        if (!remnawaveCustom) {
             return [...proxyRemarks];
         }
 
@@ -380,23 +636,161 @@ export class MihomoGeneratorService {
         return [...proxyRemarks];
     }
 
-    private applyProxyProviders(yamlConfig: Record<string, unknown>, data: MihomoData): void {
+    private buildProxyProviders(
+        yamlConfig: Record<string, unknown>,
+        data: MihomoData,
+    ): Record<string, Record<string, unknown>> | undefined {
         const providers = yamlConfig['proxy-providers'] as
             | Record<string, Record<string, unknown>>
             | undefined;
-        if (!providers) return;
+        if (!providers) return undefined;
 
-        for (const providerKey in providers) {
-            const provider = providers[providerKey];
+        return Object.fromEntries(
+            Object.entries(providers).map(([providerKey, provider]) => {
+                const remnawaveCustom = provider.remnawave as Record<string, unknown> | undefined;
+                if (!remnawaveCustom) {
+                    return [providerKey, provider];
+                }
 
-            const remnawaveCustom = provider.remnawave as Record<string, unknown> | undefined;
-            if (!remnawaveCustom) continue;
+                const { remnawave: _remnawave, ...cleanProvider } = provider;
 
-            delete provider.remnawave;
+                if (remnawaveCustom['include-proxies'] === true) {
+                    return [providerKey, { ...cleanProvider, payload: [...data.proxies] }];
+                }
 
-            if (remnawaveCustom['include-proxies'] === true) {
-                provider.payload = [...data.proxies];
+                return [providerKey, cleanProvider];
+            }),
+        );
+    }
+
+    private buildHysteria2Node(
+        host: ResolvedProxyConfig,
+        isExtendedClient: boolean,
+    ): ProxyNode | null {
+        if (host.protocol !== 'hysteria' || host.transport !== 'hysteria') {
+            return null;
+        }
+
+        const node: ProxyNode = {
+            name: host.finalRemark,
+            type: 'hysteria2',
+            server: host.address,
+            port: host.port,
+            udp: true,
+            password: host.transportOptions.auth,
+            ...this.buildHysteria2QuicFields(host.streamOverrides.finalMask),
+            ...this.buildHysteria2ObfsFields(host.streamOverrides.finalMask),
+            ...this.buildHysteria2TlsFields(host),
+        };
+
+        if (isExtendedClient && host.clientOverrides.serverDescription) {
+            node.serverDescription = Buffer.from(
+                host.clientOverrides.serverDescription,
+                'base64',
+            ).toString();
+        }
+
+        return node;
+    }
+
+    private buildHysteria2QuicFields(
+        finalMask: Record<string, unknown> | null,
+    ): Record<string, unknown> {
+        const { brutalUp, brutalDown, udpHop, bbrProfile } =
+            (finalMask as Hysteria2FinalMask | null)?.quicParams ?? {};
+
+        return {
+            ...(brutalUp && { up: String(brutalUp) }),
+            ...(brutalDown && { down: String(brutalDown) }),
+            ...(udpHop?.ports && { ports: String(udpHop.ports) }),
+            ...(udpHop?.interval && { 'hop-interval': String(udpHop.interval) }),
+            ...(bbrProfile && { 'bbr-profile': bbrProfile }),
+        };
+    }
+
+    private buildHysteria2ObfsFields(
+        finalMask: Record<string, unknown> | null,
+    ): Hysteria2ObfsFields | Record<string, never> {
+        const mask = this.findHysteria2Mask(finalMask);
+
+        if (!mask) return {};
+
+        const { password, packetSize } = mask.settings;
+
+        if (!packetSize) {
+            return { obfs: 'salamander', 'obfs-password': password };
+        }
+
+        const { from, to } = parseIntRangeUtil(packetSize);
+
+        return {
+            obfs: 'gecko',
+            'obfs-password': password,
+            ...(from && { 'obfs-min-packet-size': from }),
+            ...(to && { 'obfs-max-packet-size': to }),
+        };
+    }
+
+    private buildHysteria2TlsFields(host: ResolvedProxyConfig): Record<string, unknown> {
+        if (host.security !== 'tls') return {};
+        const { serverName, pinnedPeerCertSha256, fingerprint, alpn } = host.securityOptions;
+
+        return {
+            ...(serverName && { sni: serverName }),
+            ...(pinnedPeerCertSha256 && { 'skip-cert-verify': true }),
+            ...(fingerprint && { 'client-fingerprint': fingerprint }),
+            ...(alpn && { alpn: alpn.split(',') }),
+        };
+    }
+
+    private applyFieldMap(
+        source: Record<string, unknown>,
+        target: Record<string, unknown>,
+        fieldMap: [string, string, boolean?][],
+    ): void {
+        for (const [src, dst, asString] of fieldMap) {
+            if (source[src] !== undefined) {
+                target[dst] = asString ? String(source[src]) : source[src];
             }
         }
+    }
+
+    private findHysteria2Mask(finalMask: Record<string, unknown> | null): Hysteria2Mask | null {
+        const udp = finalMask?.udp;
+
+        if (!Array.isArray(udp)) return null;
+
+        return udp.find((mask): mask is Hysteria2Mask => this.isHysteria2Mask(mask)) ?? null;
+    }
+
+    private isHysteria2Mask(value: unknown): value is Hysteria2Mask {
+        if (
+            typeof value !== 'object' ||
+            value === null ||
+            !('type' in value) ||
+            !('settings' in value)
+        ) {
+            return false;
+        }
+
+        if (value.type !== 'salamander') {
+            return false;
+        }
+
+        const settings: unknown = value.settings;
+        if (typeof settings !== 'object' || settings === null || !('password' in settings)) {
+            return false;
+        }
+
+        if (typeof settings.password !== 'string' || settings.password.length === 0) {
+            return false;
+        }
+
+        const packetSize: unknown = 'packetSize' in settings ? settings.packetSize : undefined;
+        return (
+            packetSize === undefined ||
+            typeof packetSize === 'string' ||
+            typeof packetSize === 'number'
+        );
     }
 }

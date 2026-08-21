@@ -1,5 +1,5 @@
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 
 import { UsersService } from '@modules/users/users.service';
 
@@ -13,7 +13,7 @@ export class RevokeUserSubscriptionHandler implements ICommandHandler<RevokeUser
 
     async execute(command: RevokeUserSubscriptionCommand) {
         try {
-            await this.usersService.revokeUserSubscription(command.uuid);
+            await this.usersService.revokeUserSubscription(command.userId);
 
             return;
         } catch (error: unknown) {

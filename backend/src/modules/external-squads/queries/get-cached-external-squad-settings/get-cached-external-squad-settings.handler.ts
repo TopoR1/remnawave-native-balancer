@@ -1,11 +1,11 @@
-import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 
 import { RawCacheService } from '@common/raw-cache';
 import { CACHE_KEYS, CACHE_KEYS_TTL } from '@libs/contracts/constants';
 
-import { ExternalSquadRepository } from '@modules/external-squads/repositories/external-squad.repository';
 import { ExternalSquadEntity } from '@modules/external-squads/entities';
+import { ExternalSquadRepository } from '@modules/external-squads/repositories/external-squad.repository';
 
 import { GetCachedExternalSquadSettingsQuery } from './get-cached-external-squad-settings.query';
 
@@ -24,11 +24,12 @@ export class GetCachedExternalSquadSettingsHandler implements IQueryHandler<GetC
                     ExternalSquadEntity,
                     | 'subscriptionSettings'
                     | 'hostOverrides'
-                    | 'responseHeaders'
+                    | 'responseHeadersAdd'
+                    | 'responseHeadersRemove'
                     | 'hwidSettings'
                     | 'customRemarks'
                 >
-            >(CACHE_KEYS.EXTERNAL_SQUAD_SETTINGS(query.externalSquadUuid));
+            >(CACHE_KEYS.EXTERNAL_SQUAD_SETTINGS(query.externalSquadUuid), true);
 
             if (cached) {
                 return cached;

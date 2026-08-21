@@ -1,19 +1,18 @@
-/* eslint-disable camelcase */
-import { GetAllNodesCommand, GetTorrentBlockerReportsCommand } from '@remnawave/backend-contract'
-import { MRT_ColumnDef } from 'mantine-react-table'
-import { useTranslation } from 'react-i18next'
-import { Group, Text } from '@mantine/core'
-import { useMemo } from 'react'
-import dayjs from 'dayjs'
-
 import {
     NodeSelectItem,
     NodeSelectItemProps
 } from '@features/dashboard/users/users-table/model/node-select-item'
-import { CountryFlag } from '@shared/ui/get-country-flag'
+import { MRT_ColumnDef } from '@kastov/mantine-react-table-open'
+import { Group, Text } from '@mantine/core'
+import { GetNodesCommand, GetTorrentBlockerReportsCommand } from '@remnawave/backend-contract'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
-export const useTbReportsTableColumns = (nodes?: GetAllNodesCommand.Response['response']) => {
-    const { t } = useTranslation()
+import { CountryFlag } from '@shared/ui/get-country-flag'
+import { formatTimeUtil } from '@shared/utils/time-utils'
+
+export const useTbReportsTableColumns = (nodes?: GetNodesCommand.Response['response']) => {
+    const { t, i18n } = useTranslation()
 
     return useMemo<
         MRT_ColumnDef<GetTorrentBlockerReportsCommand.Response['response']['records'][number]>[]
@@ -25,6 +24,19 @@ export const useTbReportsTableColumns = (nodes?: GetAllNodesCommand.Response['re
                 accessorFn: (originalRow) => {
                     if (originalRow.user && originalRow.user.username) {
                         return originalRow.user.username
+                    }
+                    return '–'
+                },
+                mantineTableBodyCellProps: {
+                    align: 'center'
+                }
+            },
+            {
+                accessorKey: 'userId',
+                header: 'User ID',
+                accessorFn: (originalRow) => {
+                    if (originalRow.userId) {
+                        return originalRow.userId
                     }
                     return '–'
                 },
@@ -120,13 +132,18 @@ export const useTbReportsTableColumns = (nodes?: GetAllNodesCommand.Response['re
                 accessorKey: 'createdAt',
                 header: t('use-hwid-inspector-table-columns.created-at'),
                 accessorFn: (originalRow) =>
-                    dayjs(originalRow.createdAt).format('DD/MM/YYYY, HH:mm'),
+                    formatTimeUtil({
+                        time: originalRow.createdAt,
+                        template: 'TIME_FIRST_DATETIME',
+                        language: i18n.language
+                    }),
                 minSize: 250,
                 enableColumnFilterModes: false,
                 enableColumnFilter: false,
 
                 mantineTableBodyCellProps: {
-                    align: 'center'
+                    align: 'center',
+                    ff: 'monospace'
                 }
             },
 
@@ -175,6 +192,6 @@ export const useTbReportsTableColumns = (nodes?: GetAllNodesCommand.Response['re
                 }
             }
         ],
-        [nodes, t]
+        [nodes, t, i18n.language]
     )
 }

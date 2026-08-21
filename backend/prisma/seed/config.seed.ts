@@ -1,10 +1,11 @@
-import relativeTime from 'dayjs/plugin/relativeTime';
+import 'reflect-metadata';
 import { PrismaClient } from '@prisma/client';
+import consola from 'consola';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import { Redis } from 'ioredis';
-import consola from 'consola';
-import dayjs from 'dayjs';
 
 import { getRedisConnectionOptions } from '@common/utils';
 
@@ -21,6 +22,8 @@ import {
     syncInbounds,
     verifyAdminUser,
     seedRemnawaveSettings,
+    migrateScopes,
+    migrateSharedLists,
 } from './seeders';
 
 dayjs.extend(utc);
@@ -50,6 +53,8 @@ const SEED_STEPS = [
     { name: 'Response Rules', fn: seedResponseRules },
     { name: 'Subscription Page Config', fn: seedSubscriptionPageConfig },
     { name: 'Verify Admin User', fn: verifyAdminUser },
+    { name: 'Migrate API Token Scopes', fn: migrateScopes },
+    { name: 'Migrate Shared Lists', fn: migrateSharedLists },
 ] as const;
 
 async function checkDatabaseConnection() {
@@ -77,6 +82,7 @@ async function clearRedis() {
             port: parseInt(process.env.REDIS_PORT || '6379', 10),
             db: parseInt(process.env.REDIS_DB || '1', 10),
             password: process.env.REDIS_PASSWORD || undefined,
+            username: process.env.REDIS_USERNAME || undefined,
         });
 
         await redis.flushdb();

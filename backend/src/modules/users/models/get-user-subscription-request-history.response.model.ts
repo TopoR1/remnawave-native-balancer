@@ -1,9 +1,11 @@
 interface IUserSubscriptionRequestHistoryRecord {
     id: number;
-    userUuid: string;
+    userId: number;
     requestAt: Date;
     requestIp: string | null;
     userAgent: string | null;
+    srrRuleName: string | null;
+    srrResponseType: string;
 }
 export class GetUserSubscriptionRequestHistoryResponseModel {
     public readonly total: number;

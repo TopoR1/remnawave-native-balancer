@@ -1,5 +1,5 @@
-import { GetAllHostsCommand, GetAllHostTagsCommand } from '@remnawave/backend-contract'
 import { createQueryKeys } from '@lukemorales/query-key-factory'
+import { GetHostsCommand, GetHostsTagsCommand } from '@remnawave/backend-contract'
 
 import { sToMs } from '@shared/utils/time-utils'
 
@@ -15,8 +15,8 @@ export const hostsQueryKeys = createQueryKeys('hosts', {
 })
 
 export const useGetHosts = createGetQueryHook({
-    endpoint: GetAllHostsCommand.TSQ_url,
-    responseSchema: GetAllHostsCommand.ResponseSchema,
+    endpoint: GetHostsCommand.TSQ_url,
+    responseSchema: GetHostsCommand.ResponseSchema,
     getQueryKey: () => hostsQueryKeys.getAllHosts.queryKey,
     rQueryParams: {
         refetchOnMount: true
@@ -25,8 +25,8 @@ export const useGetHosts = createGetQueryHook({
 })
 
 export const useGetHostTags = createGetQueryHook({
-    endpoint: GetAllHostTagsCommand.TSQ_url,
-    responseSchema: GetAllHostTagsCommand.ResponseSchema,
+    endpoint: GetHostsTagsCommand.TSQ_url,
+    responseSchema: GetHostsTagsCommand.ResponseSchema,
     getQueryKey: () => hostsQueryKeys.getAllTags.queryKey,
     rQueryParams: {
         refetchOnMount: true,

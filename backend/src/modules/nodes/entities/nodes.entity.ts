@@ -1,5 +1,7 @@
 import { Nodes } from '@prisma/client';
 
+import { TNodeIps } from '@libs/contracts/models';
+
 import { ConfigProfileInboundEntity } from '@modules/config-profiles/entities';
 import { InfraProviderEntity } from '@modules/infra-billing/entities';
 
@@ -11,6 +13,7 @@ export class NodesEntity implements Nodes {
     public name: string;
     public address: string;
     public port: null | number;
+    public proxyUrl: string | null;
     public isConnected: boolean;
     public isConnecting: boolean;
     public isDisabled: boolean;
@@ -26,8 +29,10 @@ export class NodesEntity implements Nodes {
     public viewPosition: number;
     public countryCode: string;
     public tags: string[];
+    public integrationUuids: string[];
+    public ips: TNodeIps;
     public consumptionMultiplier: bigint;
-
+    public nodeConsumptionMultiplier: bigint;
     public createdAt: Date;
     public updatedAt: Date;
 
@@ -37,6 +42,7 @@ export class NodesEntity implements Nodes {
     public providerUuid: string | null;
     public provider: InfraProviderEntity | null;
     public activePluginUuid: string | null;
+    public note: string | null;
 
     constructor(node: Partial<INodesWithResolvedInbounds & Nodes>) {
         Object.assign(this, node);

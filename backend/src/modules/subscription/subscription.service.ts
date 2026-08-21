@@ -1,49 +1,56 @@
 import dayjs from 'dayjs';
-import pMap from 'p-map';
 import _ from 'lodash';
+import pMap from 'p-map';
 
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Injectable, Logger } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
-import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { TemplateEngine } from '@common/utils/templates/replace-templates-values';
-import { prettyBytesUtil } from '@common/utils/bytes/pretty-bytes.util';
-import { HwidHeaders } from '@common/utils/extract-hwid-headers';
-import { hasContent } from '@common/utils/convert-type';
+import { TypedConfigService } from '@common/config/app-config';
 import { fail, ok, TResult } from '@common/types';
+import { prettyBytesUtil } from '@common/utils/bytes/pretty-bytes.util';
+import { hasContent } from '@common/utils/convert-type';
+import { HwidHeaders } from '@common/utils/extract-hwid-headers';
+import { TemplateEngine } from '@common/utils/templates/replace-templates-values';
 import { ERRORS, EVENTS, TSubscriptionTemplateType, USERS_STATUS } from '@libs/contracts/constants';
 import { THwidSettings } from '@libs/contracts/models';
 
 import { UserHwidDeviceEvent } from '@integration-modules/notifications/interfaces';
 
-import { GetCachedSubscriptionSettingsQuery } from '@modules/subscription-settings/queries/get-cached-subscrtipion-settings';
-import { GetCachedRemnawaveSettingsQuery } from '@modules/remnawave-settings/queries/get-cached-remnawave-settings';
-import { ResponseRulesMatcherService } from '@modules/subscription-response-rules/services/response-rules-matcher.service';
-import { GetCachedExternalSquadSettingsQuery } from '@modules/external-squads/queries/get-cached-external-squad-settings';
-import { ResolveProxyConfigService } from '@modules/subscription-template/resolve-proxy/resolve-proxy-config.service';
-import { SubscriptionSettingsEntity } from '@modules/subscription-settings/entities/subscription-settings.entity';
-import { UpsertHwidUserDeviceCommand } from '@modules/hwid-user-devices/commands/upsert-hwid-user-device';
-import { XrayGeneratorService } from '@modules/subscription-template/generators/xray.generator.service';
-import { HwidUserDeviceEntity } from '@modules/hwid-user-devices/entities/hwid-user-device.entity';
-import { RenderTemplatesService } from '@modules/subscription-template/render-templates.service';
-import { CountUsersDevicesQuery } from '@modules/hwid-user-devices/queries/count-users-devices';
-import { GetUsersWithPaginationQuery } from '@modules/users/queries/get-users-with-pagination';
-import { isJsonSubscriptionFallbackSupported } from '@modules/subscription-template/constants';
 import { ExternalSquadEntity } from '@modules/external-squads/entities/external-squad.entity';
-import { ResolvedProxyConfig } from '@modules/subscription-template/resolve-proxy/interfaces';
-import { CheckHwidExistsQuery } from '@modules/hwid-user-devices/queries/check-hwid-exists';
-import { GetUserByUniqueFieldQuery } from '@modules/users/queries/get-user-by-unique-field';
-import { GetUserSubpageConfigQuery } from '@modules/users/queries/get-user-subpage-config';
-import { GetTemplateNameQuery } from '@modules/external-squads/queries/get-template-name';
-import { ISRRContext } from '@modules/subscription-response-rules/interfaces';
+import { GetCachedExternalSquadSettingsQuery } from '@modules/external-squads/queries/get-cached-external-squad-settings';
+import { GetCachedTemplateNameQuery } from '@modules/external-squads/queries/get-template-name';
 import { HostBalancerService } from '@modules/host-balancers';
+import { HostWithRawInbound } from '@modules/hosts/entities/host-with-inbound-tag.entity';
+import { CreateWithAdvisoryLockCommand } from '@modules/hwid-user-devices/commands/create-with-advisory-lock';
+import { HwidUserDeviceEntity } from '@modules/hwid-user-devices/entities/hwid-user-device.entity';
+import { CheckHwidExistsQuery } from '@modules/hwid-user-devices/queries/check-hwid-exists';
+import { GetCachedRemnawaveSettingsQuery } from '@modules/remnawave-settings/queries/get-cached-remnawave-settings';
+import type { ISRRContext } from '@modules/subscription-response-rules/interfaces';
+import { ResponseRulesMatcherService } from '@modules/subscription-response-rules/services/response-rules-matcher.service';
+import { SubscriptionSettingsEntity } from '@modules/subscription-settings/entities/subscription-settings.entity';
+import { GetCachedSubscriptionSettingsQuery } from '@modules/subscription-settings/queries/get-cached-subscrtipion-settings';
+import { isJsonSubscriptionFallbackSupported } from '@modules/subscription-template/constants';
+import { XrayGeneratorService } from '@modules/subscription-template/generators/xray.generator.service';
+import { RenderTemplatesService } from '@modules/subscription-template/render-templates.service';
+import { ResolvedProxyConfig } from '@modules/subscription-template/resolve-proxy/interfaces';
+import { ResolveProxyConfigService } from '@modules/subscription-template/resolve-proxy/resolve-proxy-config.service';
 import { UserEntity } from '@modules/users/entities/user.entity';
 import { GetFullUserResponseModel } from '@modules/users/models';
-import { HostWithRawInbound } from '@modules/hosts/entities/host-with-inbound-tag.entity';
+import { GetUserByUniqueFieldQuery } from '@modules/users/queries/get-user-by-unique-field';
+import { GetUserSubpageConfigQuery } from '@modules/users/queries/get-user-subpage-config';
+import { GetUsersWithPaginationQuery } from '@modules/users/queries/get-users-with-pagination';
 
 import { UsersQueuesService } from '@queue/_users/users-queues.service';
 
+import { GetHostsForUserQuery } from '../hosts/queries/get-hosts-for-user';
+import { GetSubscriptionsQueryDto } from './dto';
+import {
+    ISubscriptionHeaders,
+    IGetSubscriptionInfo,
+    IHwidCheckupResult,
+    ISubscriptionRequest,
+} from './interfaces';
 import {
     ConnectionKeysResponseModel,
     RawSubscriptionWithHostsResponse,
@@ -51,11 +58,8 @@ import {
     SubscriptionRawResponse,
     SubscriptionWithConfigResponse,
 } from './models';
-import { getSubscriptionRefillDate, getSubscriptionUserInfo } from './utils/get-user-info.headers';
 import { GetSubpageConfigResponseModel } from './models/get-subpage-config.response.model';
-import { GetHostsForUserQuery } from '../hosts/queries/get-hosts-for-user';
-import { ISubscriptionHeaders, IGetSubscriptionInfo } from './interfaces';
-import { GetAllSubscriptionsQueryDto } from './dto';
+import { getSubscriptionRefillDate, getSubscriptionUserInfo } from './utils/get-user-info.headers';
 
 @Injectable()
 export class SubscriptionService {
@@ -64,7 +68,7 @@ export class SubscriptionService {
 
     constructor(
         private readonly queryBus: QueryBus,
-        private readonly configService: ConfigService,
+        private readonly configService: TypedConfigService,
         private readonly commandBus: CommandBus,
         private readonly eventEmitter: EventEmitter2,
         private readonly renderTemplatesService: RenderTemplatesService,
@@ -74,7 +78,7 @@ export class SubscriptionService {
         private readonly srrMatcher: ResponseRulesMatcherService,
         private readonly hostBalancerService: HostBalancerService,
     ) {
-        this.subPublicDomain = this.configService.getOrThrow<string>('SUB_PUBLIC_DOMAIN');
+        this.subPublicDomain = this.configService.getOrThrow('SUB_PUBLIC_DOMAIN');
     }
 
     public async getSubscriptionByShortUuid(
@@ -84,7 +88,7 @@ export class SubscriptionService {
         SubscriptionNotFoundResponse | SubscriptionRawResponse | SubscriptionWithConfigResponse
     > {
         try {
-            const { userAgent, hwidHeaders, matchedResponseType } = srrContext;
+            const { userAgent, hwidHeaders, matchedResponseType, matchedRuleName } = srrContext;
 
             if (matchedResponseType === 'BROWSER') {
                 const subscriptionInfo = await this.getSubscriptionInfo({
@@ -127,7 +131,7 @@ export class SubscriptionService {
                     }
 
                     const templateName = await this.queryBus.execute(
-                        new GetTemplateNameQuery(
+                        new GetCachedTemplateNameQuery(
                             user.response.externalSquadUuid,
                             templateTypeMatcher,
                         ),
@@ -149,41 +153,69 @@ export class SubscriptionService {
 
             const subscriptionSettings = srrContext.subscriptionSettings;
 
-            if (subscriptionSettings.hwidSettings.enabled) {
-                const isAllowed = await this.checkHwidDeviceLimit(
+            if (srrContext.respondWithRemarks) {
+                const { subscription, contentType } =
+                    await this.renderTemplatesService.generateSubscription({
+                        srrContext,
+                        user: user.response,
+                        hosts: [],
+                        fallbackOptions: {
+                            respondWithRemarks: srrContext.respondWithRemarks,
+                        },
+                    });
+
+                return new SubscriptionWithConfigResponse({
+                    headers: this.getUserProfileHeadersInfo(user.response, subscriptionSettings),
+                    body: subscription,
+                    contentType: contentType,
+                });
+            }
+
+            let hwidCheckup: null | IHwidCheckupResult = null;
+
+            if (subscriptionSettings.hwidSettings.enabled && !srrContext.disableHwidCheck) {
+                const hwidCheckupResult = await this.checkHwidDeviceLimit(
                     user.response,
                     hwidHeaders,
                     subscriptionSettings.hwidSettings,
+                    srrContext.ip,
                 );
 
-                if (isAllowed.isOk && !isAllowed.response.isSubscriptionAllowed) {
+                if (!hwidCheckupResult.isOk) {
+                    this.logger.error(`Error checking hwid device limit: ${hwidCheckupResult}`);
+                    return new SubscriptionNotFoundResponse();
+                }
+
+                hwidCheckup = hwidCheckupResult.response;
+
+                if (!hwidCheckup.subscriptionAllowed) {
                     const response = new SubscriptionWithConfigResponse({
-                        headers: await this.getUserProfileHeadersInfo(
+                        headers: this.getUserProfileHeadersInfo(
                             user.response,
-                            /^Happ\//.test(userAgent),
                             subscriptionSettings,
                         ),
                         body: '',
                         contentType: 'text/plain',
                     });
 
-                    if (
-                        isAllowed.response.maxDeviceReached &&
-                        subscriptionSettings.hwidSettings.maxDevicesAnnounce
-                    ) {
-                        response.headers.announce = `base64:${Buffer.from(
-                            TemplateEngine.formatWithUser(
-                                subscriptionSettings.hwidSettings.maxDevicesAnnounce,
-                                user.response,
-                                subscriptionSettings,
-                                this.subPublicDomain,
-                            ),
-                        ).toString('base64')}`;
+                    if (!hwidCheckup.limitBypassed) {
+                        response.headers['x-hwid-active'] = 'true';
                     }
 
                     if (
-                        (isAllowed.response.maxDeviceReached ||
-                            isAllowed.response.hwidNotSupported) &&
+                        hwidCheckup.maxDeviceReached &&
+                        subscriptionSettings.hwidSettings.maxDevicesAnnounce
+                    ) {
+                        response.headers.announce = TemplateEngine.formatWithUser(
+                            `rwEncodeBase64:${subscriptionSettings.hwidSettings.maxDevicesAnnounce}`,
+                            user.response,
+                            subscriptionSettings,
+                            this.subPublicDomain,
+                        );
+                    }
+
+                    if (
+                        (hwidCheckup.maxDeviceReached || hwidCheckup.hwidNotSupported) &&
                         subscriptionSettings.isShowCustomRemarks
                     ) {
                         const { subscription, contentType } =
@@ -192,9 +224,8 @@ export class SubscriptionService {
                                 user: user.response,
                                 hosts: [],
                                 fallbackOptions: {
-                                    showHwidMaxDeviceRemarks: isAllowed.response.maxDeviceReached,
-                                    showHwidNotSupportedRemarks:
-                                        isAllowed.response.hwidNotSupported,
+                                    showHwidMaxDeviceRemarks: hwidCheckup.maxDeviceReached,
+                                    showHwidNotSupportedRemarks: hwidCheckup.hwidNotSupported,
                                 },
                             });
 
@@ -202,16 +233,12 @@ export class SubscriptionService {
                         response.contentType = contentType;
                     }
 
-                    if (isAllowed.response.hwidNotSupported) {
+                    if (hwidCheckup.hwidNotSupported) {
                         response.headers['x-hwid-not-supported'] = 'true';
                     }
 
-                    if (isAllowed.response.maxDeviceReached) {
+                    if (hwidCheckup.maxDeviceReached) {
                         response.headers['x-hwid-max-devices-reached'] = 'true';
-                    }
-
-                    if (!isAllowed.response.limitBypassed) {
-                        response.headers['x-hwid-active'] = 'true';
                     }
 
                     response.headers['x-hwid-limit'] = 'true'; // v2rayTUN
@@ -219,7 +246,7 @@ export class SubscriptionService {
                     return response;
                 }
             } else {
-                await this.checkAndUpsertHwidUserDevice(user.response, hwidHeaders);
+                void this.checkAndUpsertHwidUserDevice(user.response, hwidHeaders, srrContext.ip);
             }
 
             if (
@@ -234,7 +261,7 @@ export class SubscriptionService {
 
             const hosts = await this.queryBus.execute(
                 new GetHostsForUserQuery(
-                    user.response.tId,
+                    user.response.id,
                     false,
                     srrContext.matchedResponseType === 'XRAY_JSON' ||
                         srrContext.matchedResponseType === 'MIHOMO',
@@ -245,30 +272,33 @@ export class SubscriptionService {
                 return new SubscriptionNotFoundResponse();
             }
 
-            if (subscriptionSettings.randomizeHosts) {
-                hosts.response = _.shuffle(hosts.response);
-            }
+            void this.updateAndReportSubscriptionRequest({
+                userId: user.response.id,
+                userAgent: userAgent,
+                requestIp: srrContext.ip,
+                matchedRuleName: matchedRuleName,
+                matchedResponseType: matchedResponseType,
+            });
 
-            hosts.response = await this.applyHostBalancersIfEnabled(user.response, hosts.response);
-
-            await this.updateAndReportSubscriptionRequest(
-                user.response.uuid,
-                userAgent,
-                srrContext.ip,
+            const balancedHosts = await this.applyHostBalancersIfEnabled(
+                user.response,
+                hosts.response,
             );
 
             const subscription = await this.renderTemplatesService.generateSubscription({
                 srrContext,
                 user: user.response,
-                hosts: hosts.response,
+                hosts: subscriptionSettings.randomizeHosts
+                    ? _.shuffle(balancedHosts)
+                    : balancedHosts,
                 hostsOverrides,
             });
 
             return new SubscriptionWithConfigResponse({
-                headers: await this.getUserProfileHeadersInfo(
+                headers: this.getUserProfileHeadersInfo(
                     user.response,
-                    /^Happ\//.test(userAgent),
                     subscriptionSettings,
+                    hwidCheckup !== null && !hwidCheckup.limitBypassed,
                 ),
                 body: subscription.subscription,
                 contentType: subscription.contentType,
@@ -281,7 +311,6 @@ export class SubscriptionService {
 
     public async getRawSubscriptionByShortUuid(
         shortUuid: string,
-        userAgent: string,
         withDisabledHosts: boolean,
         hwidHeaders: HwidHeaders | null,
         requestIp?: string,
@@ -315,74 +344,84 @@ export class SubscriptionService {
                 hostsOverrides: patchedHostsOverrides,
             } = await this.applyMaybeExternalSquadOverrides(settingEntity, user.externalSquadUuid);
 
-            let isHwidLimited: boolean | undefined;
+            let hwidCheckup: null | IHwidCheckupResult = null;
 
-            const headers = await this.getUserProfileHeadersInfo(
-                user,
-                /^Happ\//.test(userAgent),
-                patchedSettingEntity,
-            );
+            const headers = this.getUserProfileHeadersInfo(user, patchedSettingEntity);
 
             if (patchedSettingEntity.hwidSettings.enabled) {
-                const isAllowed = await this.checkHwidDeviceLimit(
+                const hwidCheckupResult = await this.checkHwidDeviceLimit(
                     user,
                     hwidHeaders,
                     patchedSettingEntity.hwidSettings,
+                    requestIp,
                 );
 
-                if (isAllowed.isOk && !isAllowed.response.isSubscriptionAllowed) {
+                if (!hwidCheckupResult.isOk) {
+                    this.logger.error(`Error checking hwid device limit: ${hwidCheckupResult}`);
+                    return fail(ERRORS.INTERNAL_SERVER_ERROR);
+                }
+
+                hwidCheckup = hwidCheckupResult.response;
+
+                if (!hwidCheckup.limitBypassed) {
+                    headers['x-hwid-active'] = 'true';
+                }
+
+                if (!hwidCheckup.subscriptionAllowed) {
                     if (patchedSettingEntity.hwidSettings.maxDevicesAnnounce) {
                         headers.announce = `base64:${Buffer.from(
                             patchedSettingEntity.hwidSettings.maxDevicesAnnounce,
                         ).toString('base64')}`;
                     }
 
-                    if (isAllowed.response.hwidNotSupported) {
+                    if (hwidCheckup.hwidNotSupported) {
                         headers['x-hwid-not-supported'] = 'true';
                     }
 
-                    if (isAllowed.response.maxDeviceReached) {
+                    if (hwidCheckup.maxDeviceReached) {
                         headers['x-hwid-max-devices-reached'] = 'true';
                     }
 
-                    if (!isAllowed.response.limitBypassed) {
-                        headers['x-hwid-active'] = 'true';
-                    }
-
-                    isHwidLimited = true;
+                    headers['x-hwid-limit'] = 'true'; // v2rayTUN
                 }
-
-                headers['x-hwid-limit'] = 'true'; // v2rayTUN
             } else {
-                await this.checkAndUpsertHwidUserDevice(user, hwidHeaders);
-
-                isHwidLimited = false;
+                void this.checkAndUpsertHwidUserDevice(user, hwidHeaders, requestIp);
             }
-
-            const hosts = await this.queryBus.execute(
-                new GetHostsForUserQuery(user.tId, withDisabledHosts, true),
-            );
-
-            if (!hosts.isOk) {
-                return fail(ERRORS.GET_ALL_HOSTS_ERROR);
-            }
-
-            if (patchedSettingEntity.randomizeHosts) {
-                hosts.response = _.shuffle(hosts.response);
-            }
-
-            hosts.response = await this.applyHostBalancersIfEnabled(user, hosts.response);
-
-            await this.updateAndReportSubscriptionRequest(user.uuid, userAgent, requestIp);
 
             let subscription: ResolvedProxyConfig[] | undefined;
 
-            if (!isHwidLimited) {
+            if (!hwidCheckup || hwidCheckup.subscriptionAllowed) {
+                const hosts = await this.queryBus.execute(
+                    new GetHostsForUserQuery(user.id, withDisabledHosts, true),
+                );
+
+                if (!hosts.isOk) {
+                    return fail(ERRORS.GET_ALL_HOSTS_ERROR);
+                }
+
+                const balancedHosts = await this.applyHostBalancersIfEnabled(user, hosts.response);
+
                 subscription = await this.renderTemplatesService.generateRawSubscription({
                     subscriptionSettings: patchedSettingEntity,
-                    user: user,
-                    hosts: hosts.response,
+                    user,
+                    hosts: patchedSettingEntity.randomizeHosts
+                        ? _.shuffle(balancedHosts)
+                        : balancedHosts,
                     hostsOverrides: patchedHostsOverrides,
+                });
+            } else if (
+                patchedSettingEntity.isShowCustomRemarks &&
+                (hwidCheckup.maxDeviceReached || hwidCheckup.hwidNotSupported)
+            ) {
+                subscription = await this.renderTemplatesService.generateRawSubscription({
+                    subscriptionSettings: patchedSettingEntity,
+                    user,
+                    hosts: [],
+                    hostsOverrides: patchedHostsOverrides,
+                    fallbackOptions: {
+                        showHwidMaxDeviceRemarks: hwidCheckup.maxDeviceReached,
+                        showHwidNotSupportedRemarks: hwidCheckup.hwidNotSupported,
+                    },
                 });
             }
 
@@ -396,7 +435,7 @@ export class SubscriptionService {
                         lifetimeTrafficUsed: prettyBytesUtil(
                             user.userTraffic.lifetimeUsedTrafficBytes,
                         ),
-                        isHwidLimited: isHwidLimited ?? false,
+                        hwidCheckup,
                     },
                     headers,
                     resolvedProxyConfigs: subscription ?? [],
@@ -474,7 +513,7 @@ export class SubscriptionService {
 
             if (!settings.hwidSettings.enabled || authenticated) {
                 const hostsResponse = await this.queryBus.execute(
-                    new GetHostsForUserQuery(userEntity.tId, false, false),
+                    new GetHostsForUserQuery(userEntity.id, false, false),
                 );
 
                 formattedHosts = await this.resolveProxyConfigService.resolveProxyConfig({
@@ -522,7 +561,7 @@ export class SubscriptionService {
         });
     }
 
-    public async getAllSubscriptions(query: GetAllSubscriptionsQueryDto): Promise<
+    public async getAllSubscriptions(query: GetSubscriptionsQueryDto): Promise<
         TResult<{
             total: number;
             subscriptions: SubscriptionRawResponse[];
@@ -573,61 +612,36 @@ export class SubscriptionService {
         }
     }
 
-    private async getUserProfileHeadersInfo(
+    private getUserProfileHeadersInfo(
         user: UserEntity,
-        isHapp: boolean,
         settings: SubscriptionSettingsEntity,
-    ): Promise<ISubscriptionHeaders> {
+        hwidLimit: boolean = false,
+    ): ISubscriptionHeaders {
         const headers: ISubscriptionHeaders = {
             'content-disposition': `attachment; filename=${user.username}`,
-            'support-url': settings.supportLink,
-            'profile-title': `base64:${Buffer.from(
-                TemplateEngine.formatWithUser(
-                    settings.profileTitle,
-                    user,
-                    settings,
-                    this.subPublicDomain,
-                ),
-            ).toString('base64')}`,
-            'profile-update-interval': settings.profileUpdateInterval.toString(),
             'subscription-userinfo': Object.entries(getSubscriptionUserInfo(user))
                 .map(([key, val]) => `${key}=${val}`)
                 .join('; '),
         };
-
-        if (settings.happAnnounce) {
-            headers.announce = `base64:${Buffer.from(
-                TemplateEngine.formatWithUser(
-                    settings.happAnnounce,
-                    user,
-                    settings,
-                    this.subPublicDomain,
-                ),
-            ).toString('base64')}`;
-        }
-
-        if (isHapp && settings.happRouting) {
-            headers.routing = settings.happRouting;
-        }
-
-        if (settings.isProfileWebpageUrlEnabled) {
-            headers['profile-web-page-url'] = this.resolveSubscriptionUrl(user.shortUuid);
-        }
 
         const refillDate = getSubscriptionRefillDate(user.trafficLimitStrategy);
         if (refillDate) {
             headers['subscription-refill-date'] = refillDate;
         }
 
+        if (hwidLimit) {
+            headers['x-hwid-active'] = 'true';
+        }
+
         if (settings.customResponseHeaders) {
+            const userValueMap = TemplateEngine.createUserValueMap(
+                user,
+                settings,
+                this.subPublicDomain,
+            );
+
             for (const [key, value] of Object.entries(settings.customResponseHeaders)) {
-                headers[key] = TemplateEngine.formatWithUser(
-                    value,
-                    user,
-                    settings,
-                    this.subPublicDomain,
-                    true,
-                );
+                headers[key] = TemplateEngine.replace(value, userValueMap);
             }
         }
 
@@ -641,7 +655,7 @@ export class SubscriptionService {
         subscriptionSettings: SubscriptionSettingsEntity;
         hostsOverrides: ExternalSquadEntity['hostOverrides'] | undefined;
     }> {
-        let patchedSubscriptionSettings: SubscriptionSettingsEntity = subscriptionSettings;
+        let patchedSubscriptionSettings = subscriptionSettings;
 
         try {
             let hostsOverrides: ExternalSquadEntity['hostOverrides'] | undefined = undefined;
@@ -652,6 +666,8 @@ export class SubscriptionService {
                 );
 
                 if (externalSquadSubscriptionSettings !== null) {
+                    patchedSubscriptionSettings = structuredClone(subscriptionSettings);
+
                     // Host overrides
                     if (hasContent(externalSquadSubscriptionSettings.hostOverrides)) {
                         hostsOverrides = externalSquadSubscriptionSettings.hostOverrides;
@@ -665,10 +681,23 @@ export class SubscriptionService {
                         };
                     }
 
+                    if (externalSquadSubscriptionSettings.responseHeadersRemove.length > 0) {
+                        const headersToRemove = new Set(
+                            externalSquadSubscriptionSettings.responseHeadersRemove,
+                        );
+                        patchedSubscriptionSettings.customResponseHeaders = Object.fromEntries(
+                            Object.entries(
+                                patchedSubscriptionSettings.customResponseHeaders ?? {},
+                            ).filter(([key]) => !headersToRemove.has(key)),
+                        );
+                    }
+
                     // Response headers override
-                    if (hasContent(externalSquadSubscriptionSettings.responseHeaders)) {
-                        patchedSubscriptionSettings.customResponseHeaders =
-                            externalSquadSubscriptionSettings.responseHeaders;
+                    if (hasContent(externalSquadSubscriptionSettings.responseHeadersAdd)) {
+                        patchedSubscriptionSettings.customResponseHeaders = {
+                            ...patchedSubscriptionSettings.customResponseHeaders,
+                            ...externalSquadSubscriptionSettings.responseHeadersAdd,
+                        };
                     }
 
                     // HWID settings override
@@ -707,17 +736,11 @@ export class SubscriptionService {
         >(new GetUsersWithPaginationQuery(dto.start, dto.size));
     }
 
-    private async countHwidUserDevices(dto: CountUsersDevicesQuery): Promise<TResult<number>> {
-        return this.queryBus.execute<CountUsersDevicesQuery, TResult<number>>(
-            new CountUsersDevicesQuery(dto.userUuid),
-        );
-    }
-
     private async checkHwidDeviceExists(
         dto: CheckHwidExistsQuery,
     ): Promise<TResult<{ exists: boolean }>> {
         return this.queryBus.execute<CheckHwidExistsQuery, TResult<{ exists: boolean }>>(
-            new CheckHwidExistsQuery(dto.hwid, dto.userUuid),
+            new CheckHwidExistsQuery(dto.hwid, dto.userId),
         );
     }
 
@@ -725,28 +748,23 @@ export class SubscriptionService {
         user: UserEntity,
         hwidHeaders: HwidHeaders | null,
         hwidSettings: THwidSettings,
-    ): Promise<
-        TResult<{
-            isSubscriptionAllowed: boolean;
-            maxDeviceReached: boolean;
-            hwidNotSupported: boolean;
-            limitBypassed?: boolean;
-        }>
-    > {
+        requestIp?: string,
+    ): Promise<TResult<IHwidCheckupResult>> {
         try {
             if (user.hwidDeviceLimit === 0) {
                 if (hwidHeaders !== null) {
                     await this.usersQueuesService.checkAndUpsertHwidDevice({
                         hwid: hwidHeaders.hwid,
-                        userUuid: user.uuid,
+                        userId: user.id.toString(),
                         platform: hwidHeaders.platform,
                         osVersion: hwidHeaders.osVersion,
                         deviceModel: hwidHeaders.deviceModel,
                         userAgent: hwidHeaders.userAgent,
+                        requestIp,
                     });
                 }
                 return ok({
-                    isSubscriptionAllowed: true,
+                    subscriptionAllowed: true,
                     maxDeviceReached: false,
                     hwidNotSupported: false,
                     limitBypassed: true,
@@ -755,66 +773,51 @@ export class SubscriptionService {
 
             if (hwidHeaders === null) {
                 return ok({
-                    isSubscriptionAllowed: false,
+                    subscriptionAllowed: false,
                     maxDeviceReached: false,
                     hwidNotSupported: true,
+                    limitBypassed: false,
                 });
             }
 
             const isDeviceExists = await this.checkHwidDeviceExists({
                 hwid: hwidHeaders.hwid,
-                userUuid: user.uuid,
+                userId: user.id,
             });
 
-            if (isDeviceExists.isOk) {
-                if (isDeviceExists.response.exists) {
-                    await this.usersQueuesService.checkAndUpsertHwidDevice({
-                        hwid: hwidHeaders.hwid,
-                        userUuid: user.uuid,
-                        platform: hwidHeaders.platform,
-                        osVersion: hwidHeaders.osVersion,
-                        deviceModel: hwidHeaders.deviceModel,
-                        userAgent: hwidHeaders.userAgent,
-                    });
+            if (isDeviceExists.isOk && isDeviceExists.response.exists) {
+                await this.usersQueuesService.checkAndUpsertHwidDevice({
+                    hwid: hwidHeaders.hwid,
+                    userId: user.id.toString(),
+                    platform: hwidHeaders.platform,
+                    osVersion: hwidHeaders.osVersion,
+                    deviceModel: hwidHeaders.deviceModel,
+                    userAgent: hwidHeaders.userAgent,
+                    requestIp,
+                });
 
-                    return ok({
-                        isSubscriptionAllowed: true,
-                        maxDeviceReached: false,
-                        hwidNotSupported: false,
-                    });
-                }
+                return ok({
+                    subscriptionAllowed: true,
+                    maxDeviceReached: false,
+                    hwidNotSupported: false,
+                    limitBypassed: false,
+                });
             }
-
-            const count = await this.countHwidUserDevices({ userUuid: user.uuid });
 
             const deviceLimit = user.hwidDeviceLimit ?? hwidSettings.fallbackDeviceLimit;
 
-            if (!count.isOk) {
-                return ok({
-                    isSubscriptionAllowed: false,
-                    maxDeviceReached: true,
-                    hwidNotSupported: false,
-                });
-            }
-
-            if (count.response >= deviceLimit) {
-                return ok({
-                    isSubscriptionAllowed: false,
-                    maxDeviceReached: true,
-                    hwidNotSupported: false,
-                });
-            }
-
             const result = await this.commandBus.execute(
-                new UpsertHwidUserDeviceCommand(
+                new CreateWithAdvisoryLockCommand(
                     new HwidUserDeviceEntity({
                         hwid: hwidHeaders.hwid,
-                        userUuid: user.uuid,
+                        userId: user.id,
                         platform: hwidHeaders.platform,
                         osVersion: hwidHeaders.osVersion,
                         deviceModel: hwidHeaders.deviceModel,
                         userAgent: hwidHeaders.userAgent,
+                        requestIp,
                     }),
+                    deviceLimit,
                 ),
             );
 
@@ -822,28 +825,44 @@ export class SubscriptionService {
                 this.logger.error(`Error creating Hwid user device, access forbidden.`);
 
                 return ok({
-                    isSubscriptionAllowed: false,
+                    subscriptionAllowed: false,
                     maxDeviceReached: true,
                     hwidNotSupported: false,
+                    limitBypassed: false,
+                });
+            }
+
+            if (!result.response.hwidDevice) {
+                return ok({
+                    subscriptionAllowed: false,
+                    maxDeviceReached: true,
+                    hwidNotSupported: false,
+                    limitBypassed: false,
                 });
             }
 
             this.eventEmitter.emit(
                 EVENTS.USER_HWID_DEVICES.ADDED,
-                new UserHwidDeviceEvent(user, result.response, EVENTS.USER_HWID_DEVICES.ADDED),
+                new UserHwidDeviceEvent(
+                    user,
+                    result.response.hwidDevice,
+                    EVENTS.USER_HWID_DEVICES.ADDED,
+                ),
             );
 
             return ok({
-                isSubscriptionAllowed: true,
+                subscriptionAllowed: true,
                 maxDeviceReached: false,
                 hwidNotSupported: false,
+                limitBypassed: false,
             });
         } catch (error) {
             this.logger.error(`Error checking hwid device limit: ${error}`);
             return ok({
-                isSubscriptionAllowed: false,
+                subscriptionAllowed: false,
                 maxDeviceReached: true,
                 hwidNotSupported: false,
+                limitBypassed: false,
             });
         }
     }
@@ -851,6 +870,7 @@ export class SubscriptionService {
     private async checkAndUpsertHwidUserDevice(
         user: UserEntity,
         hwidHeaders: HwidHeaders | null,
+        requestIp?: string,
     ): Promise<void> {
         try {
             if (hwidHeaders === null) {
@@ -859,11 +879,12 @@ export class SubscriptionService {
 
             await this.usersQueuesService.checkAndUpsertHwidDevice({
                 hwid: hwidHeaders.hwid,
-                userUuid: user.uuid,
+                userId: user.id.toString(),
                 platform: hwidHeaders.platform,
                 osVersion: hwidHeaders.osVersion,
                 deviceModel: hwidHeaders.deviceModel,
                 userAgent: hwidHeaders.userAgent,
+                requestIp,
             });
         } catch (error) {
             this.logger.error(`Error upserting hwid user device: ${error}`);
@@ -876,32 +897,11 @@ export class SubscriptionService {
         return `https://${this.subPublicDomain}/${shortUuid}`;
     }
 
-    private async updateAndReportSubscriptionRequest(
-        userUuid: string,
-        userAgent: string,
-        requestIp?: string,
-    ): Promise<void> {
-        try {
-            await this.usersQueuesService.addSubscriptionRequestRecord({
-                userUuid,
-                requestAt: new Date(),
-                requestIp,
-                userAgent,
-            });
-
-            return;
-        } catch (error) {
-            this.logger.error(`Error updating and reporting subscription request: ${error}`);
-
-            return;
-        }
-    }
-
     private async applyHostBalancersIfEnabled(
         user: UserEntity,
         hosts: HostWithRawInbound[],
     ): Promise<HostWithRawInbound[]> {
-        if (this.configService.get<string>('HOST_BALANCER_ENABLED', 'true') !== 'true') {
+        if (!this.configService.get('HOST_BALANCER_ENABLED')) {
             return hosts;
         }
 
@@ -910,12 +910,31 @@ export class SubscriptionService {
             if (!settings?.hostBalancerGlobalEnabled) {
                 return hosts;
             }
+
+            return await this.hostBalancerService.applyToHostsForUser(user, hosts);
         } catch (error) {
-            this.logger.error(`Error getting Host Balancer global settings: ${error}`);
+            this.logger.error(`Host Balancer failed open: ${error}`);
             return hosts;
         }
+    }
 
-        return this.hostBalancerService.applyToHostsForUser(user, hosts);
+    private async updateAndReportSubscriptionRequest(args: ISubscriptionRequest): Promise<void> {
+        try {
+            await this.usersQueuesService.addSubscriptionRequestRecord({
+                userId: args.userId.toString(),
+                requestAt: new Date(),
+                requestIp: args.requestIp,
+                userAgent: args.userAgent,
+                srrRuleName: args.matchedRuleName,
+                srrResponseType: args.matchedResponseType,
+            });
+
+            return;
+        } catch (error) {
+            this.logger.error(`Error updating and reporting subscription request: ${error}`);
+
+            return;
+        }
     }
 
     public async getSubpageConfigByShortUuid(
@@ -962,14 +981,14 @@ export class SubscriptionService {
         }
     }
 
-    public async getConnectionKeysByUuid(
-        uuid: string,
+    public async getConnectionKeysByUserId(
+        userId: number,
     ): Promise<TResult<ConnectionKeysResponseModel>> {
         try {
             const userResult = await this.queryBus.execute(
                 new GetUserByUniqueFieldQuery(
                     {
-                        uuid,
+                        id: BigInt(userId),
                     },
                     {
                         activeInternalSquads: false,
@@ -1008,7 +1027,7 @@ export class SubscriptionService {
             }
 
             const allHostsResult = await this.queryBus.execute(
-                new GetHostsForUserQuery(userEntity.tId, true, true),
+                new GetHostsForUserQuery(userEntity.id, true, true),
             );
 
             const allHosts = allHostsResult.isOk ? allHostsResult.response : [];

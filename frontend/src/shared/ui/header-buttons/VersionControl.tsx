@@ -1,18 +1,19 @@
 import { Group, Text } from '@mantine/core'
 import { modals } from '@mantine/modals'
+import clsx from 'clsx'
 import { useMemo } from 'react'
 import semver from 'semver'
-import clsx from 'clsx'
 
-import { useRemnawaveInfo } from '@entities/dashboard/updates-store'
 import { useGetRemnawaveMetadata } from '@shared/api/hooks'
 
-import { BaseOverlayHeader } from '../overlays/base-overlay-header'
-import { SkeletonHeaderControl } from './SkeletonHeaderControl'
-import { BuildInfoModal } from '../sidebar/build-info-modal'
-import classes from './VersionControl.module.css'
-import { HeaderControl } from './HeaderControl'
+import { useRemnawaveInfo } from '@entities/dashboard/updates-store'
+
 import { Logo } from '../logo'
+import { BaseOverlayHeader } from '../overlays/base-overlay-header'
+import { BuildInfoModal } from '../sidebar/build-info-modal'
+import { HeaderControl } from './HeaderControl'
+import { SkeletonHeaderControl } from './SkeletonHeaderControl'
+import classes from './VersionControl.module.css'
 
 export function VersionControl() {
     const remnawaveInfo = useRemnawaveInfo()
@@ -23,7 +24,7 @@ export function VersionControl() {
 
         const currentVersion = remnawaveMetadata.version
         const latest = remnawaveInfo.latestVersion || '0.0.0'
-        return [semver.gt(latest, currentVersion), remnawaveMetadata.git.backend.branch === 'dev']
+        return [semver.gt(latest, currentVersion), remnawaveMetadata.git.backend.branch !== 'main']
     }, [remnawaveInfo.latestVersion, remnawaveMetadata])
 
     if (isLoading || !remnawaveMetadata) {

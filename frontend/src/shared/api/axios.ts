@@ -2,8 +2,8 @@ import {
     REMNAWAVE_CLIENT_TYPE_BROWSER,
     REMNAWAVE_CLIENT_TYPE_HEADER
 } from '@remnawave/backend-contract'
-import consola from 'consola/browser'
 import axios from 'axios'
+import consola from 'consola/browser'
 
 import { logoutEvents } from '../emitters/emit-logout'
 
@@ -23,6 +23,8 @@ if (isDomainOverride) {
     BASE_DOMAIN = __DOMAIN_BACKEND__
 }
 
+export const getBackendDomain = () => BASE_DOMAIN
+
 export const instance = axios.create({
     baseURL: BASE_DOMAIN,
     headers: {
@@ -40,6 +42,8 @@ instance.interceptors.request.use((config) => {
 export const setAuthorizationToken = (token: string) => {
     authorizationToken = token
 }
+
+export const hasAuthorizationToken = () => authorizationToken !== ''
 
 instance.interceptors.response.use(
     (response) => {

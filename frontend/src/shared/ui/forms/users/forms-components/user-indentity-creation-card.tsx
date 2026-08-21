@@ -1,17 +1,17 @@
-import { ForwardRefComponent, HTMLMotionProps, Variants } from 'motion/react'
-import { CreateUserCommand } from '@remnawave/backend-contract'
-import { HiIdentification } from 'react-icons/hi'
-import { UseFormReturnType } from '@mantine/form'
-import { PiUserDuotone } from 'react-icons/pi'
-import { useTranslation } from 'react-i18next'
 import { TextInput } from '@mantine/core'
+import { UseFormReturnType } from '@mantine/form'
+import { CreateUserCommand } from '@remnawave/backend-contract'
+import { ForwardRefComponent, HTMLMotionProps, Variants } from 'motion/react'
+import { useTranslation } from 'react-i18next'
+import { HiIdentification } from 'react-icons/hi'
+import { PiUserDuotone } from 'react-icons/pi'
 
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
 
 interface IProps {
     cardVariants: Variants
-    form: UseFormReturnType<CreateUserCommand.Request>
+    form: UseFormReturnType<CreateUserCommand.RequestBody>
     motionWrapper: ForwardRefComponent<HTMLDivElement, HTMLMotionProps<'div'>>
 }
 

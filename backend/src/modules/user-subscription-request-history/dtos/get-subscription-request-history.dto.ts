@@ -1,8 +1,7 @@
+import { GetSubscriptionRequestHistoryCommand } from '@contract/commands';
 import { createZodDto } from 'nestjs-zod';
 
-import { GetSubscriptionRequestHistoryCommand } from '@contract/commands';
-
-export class GetSubscriptionRequestHistoryRequestQueryDto extends createZodDto(
+export class GetSubscriptionRequestHistoryQueryDto extends createZodDto(
     GetSubscriptionRequestHistoryCommand.RequestQuerySchema,
 ) {}
 

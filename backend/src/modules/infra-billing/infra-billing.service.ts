@@ -4,26 +4,25 @@ import { fail, ok, TResult } from '@common/types';
 import { ERRORS } from '@libs/contracts/constants';
 
 import {
-    CreateInfraBillingHistoryRecordRequestDto,
-    CreateInfraBillingNodeRequestDto,
-    CreateInfraProviderRequestDto,
-    GetInfraBillingHistoryRecordsRequestDto,
-    UpdateInfraBillingNodeRequestDto,
-    UpdateInfraProviderRequestDto,
+    CreateInfraBillingNodeBodyDto,
+    CreateInfraBillingRecordBodyDto,
+    CreateInfraProviderBodyDto,
+    GetInfraBillingRecordsQueryDto,
+    UpdateInfraBillingNodeBodyDto,
+    UpdateInfraProviderBodyDto,
 } from './dtos';
+import { InfraBillingHistoryEntity, InfraBillingNodeEntity, InfraProviderEntity } from './entities';
 import {
-    DeleteByUuidResponseModel,
     GetBillingNodesResponseModel,
     GetInfraBillingHistoryRecordsResponseModel,
     GetInfraProvidersResponseModel,
 } from './models';
+import { GetInfraProviderByUuidResponseModel } from './models/get-infra-provider-by-uuid.response.model';
 import {
     InfraBillingHistoryRepository,
     InfraBillingNodeRepository,
     InfraProviderRepository,
 } from './repositories';
-import { GetInfraProviderByUuidResponseModel } from './models/get-infra-provider-by-uuid.response.model';
-import { InfraBillingHistoryEntity, InfraBillingNodeEntity, InfraProviderEntity } from './entities';
 
 @Injectable()
 export class InfraBillingService {
@@ -63,13 +62,11 @@ export class InfraBillingService {
         }
     }
 
-    public async deleteInfraProviderByUuid(
-        uuid: string,
-    ): Promise<TResult<DeleteByUuidResponseModel>> {
+    public async deleteInfraProviderByUuid(uuid: string): Promise<TResult<boolean>> {
         try {
             await this.infraProviderRepository.deleteByUUID(uuid);
 
-            return ok(new DeleteByUuidResponseModel(true));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.DELETE_INFRA_PROVIDER_BY_UUID_ERROR);
@@ -77,7 +74,7 @@ export class InfraBillingService {
     }
 
     public async createInfraProvider(
-        dto: CreateInfraProviderRequestDto,
+        dto: CreateInfraProviderBodyDto,
     ): Promise<TResult<GetInfraProviderByUuidResponseModel>> {
         try {
             const provider = await this.infraProviderRepository.create(
@@ -92,7 +89,7 @@ export class InfraBillingService {
     }
 
     public async updateInfraProvider(
-        dto: UpdateInfraProviderRequestDto,
+        dto: UpdateInfraProviderBodyDto,
     ): Promise<TResult<GetInfraProviderByUuidResponseModel>> {
         try {
             const provider = await this.infraProviderRepository.update(
@@ -107,7 +104,7 @@ export class InfraBillingService {
     }
 
     public async getInfraBillingHistoryRecords(
-        dto: GetInfraBillingHistoryRecordsRequestDto,
+        dto: GetInfraBillingRecordsQueryDto,
     ): Promise<TResult<GetInfraBillingHistoryRecordsResponseModel>> {
         try {
             const records = await this.infraBillingHistoryRepository.getInfraBillingHistoryRecords(
@@ -126,7 +123,7 @@ export class InfraBillingService {
     }
 
     public async createInfraBillingHistoryRecord(
-        dto: CreateInfraBillingHistoryRecordRequestDto,
+        dto: CreateInfraBillingRecordBodyDto,
     ): Promise<TResult<GetInfraBillingHistoryRecordsResponseModel>> {
         try {
             await this.infraBillingHistoryRepository.create(new InfraBillingHistoryEntity(dto));
@@ -141,16 +138,11 @@ export class InfraBillingService {
         }
     }
 
-    public async deleteInfraBillingHistoryRecordByUuid(
-        uuid: string,
-    ): Promise<TResult<GetInfraBillingHistoryRecordsResponseModel>> {
+    public async deleteInfraBillingHistoryRecordByUuid(uuid: string): Promise<TResult<boolean>> {
         try {
             await this.infraBillingHistoryRepository.deleteByUUID(uuid);
 
-            return await this.getInfraBillingHistoryRecords({
-                start: 0,
-                size: 50,
-            });
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.DELETE_INFRA_BILLING_HISTORY_RECORD_BY_UUID_ERROR);
@@ -181,7 +173,7 @@ export class InfraBillingService {
     }
 
     public async updateInfraBillingNode(
-        dto: UpdateInfraBillingNodeRequestDto,
+        dto: UpdateInfraBillingNodeBodyDto,
     ): Promise<TResult<GetBillingNodesResponseModel>> {
         try {
             await this.infraBillingNodeRepository.updateManyBillingAt({
@@ -197,9 +189,13 @@ export class InfraBillingService {
     }
 
     public async createInfraBillingNode(
-        dto: CreateInfraBillingNodeRequestDto,
+        dto: CreateInfraBillingNodeBodyDto,
     ): Promise<TResult<GetBillingNodesResponseModel>> {
         try {
+            if (!dto.nodeUuid && !dto.name) {
+                return fail(ERRORS.CREATE_INFRA_BILLING_NODE_MISSING_TARGET);
+            }
+
             await this.infraBillingNodeRepository.create(new InfraBillingNodeEntity(dto));
 
             return await this.getBillingNodes();

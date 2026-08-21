@@ -1,67 +1,57 @@
-import {
-    ApiBearerAuth,
-    ApiCreatedResponse,
-    ApiNotFoundResponse,
-    ApiOkResponse,
-    ApiParam,
-    ApiTags,
-} from '@nestjs/swagger';
 import { Body, Controller, HttpStatus, Param, UseFilters, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
-import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
-import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
-import { errorHandler } from '@common/helpers/error-handler.helper';
-import { RolesGuard } from '@common/guards/roles/roles.guard';
 import { Endpoint } from '@common/decorators/base-endpoint';
 import { Roles } from '@common/decorators/roles/roles';
+import { ApiScopeResource } from '@common/decorators/scopes';
+import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
+import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
+import { RolesGuard } from '@common/guards/roles/roles.guard';
+import { ScopesGuard } from '@common/guards/scopes';
+import { errorHandler } from '@common/helpers/error-handler.helper';
+import { CONTROLLERS_INFO, HOSTS_CONTROLLER } from '@libs/contracts/api';
 import {
     CreateHostCommand,
     DeleteHostCommand,
-    GetAllHostsCommand,
-    GetAllHostTagsCommand,
-    GetOneHostCommand,
-    ReorderHostCommand,
+    GetHostsCommand,
+    GetHostsTagsCommand,
+    GetHostCommand,
+    ReorderHostsCommand,
     UpdateHostCommand,
 } from '@libs/contracts/commands';
-import { CONTROLLERS_INFO, HOSTS_CONTROLLER } from '@libs/contracts/api';
 import { ROLE } from '@libs/contracts/constants';
 
 import {
-    ReorderHostRequestDto,
-    ReorderHostResponseDto,
-    GetAllHostTagsResponseDto,
-    CreateHostResponseDto,
-    CreateHostRequestDto,
-    DeleteHostRequestDto,
-    DeleteHostResponseDto,
-    GetAllHostsResponseDto,
-    UpdateHostResponseDto,
-    UpdateHostRequestDto,
-    GetOneHostResponseDto,
-    GetOneHostRequestDto,
+    ReorderHostsBodyDto,
+    ReorderHostsResponseDto,
+    GetHostsTagsResponseDto,
+    HostResponseDto,
+    CreateHostBodyDto,
+    DeleteHostParamDto,
+    GetHostsResponseDto,
+    UpdateHostBodyDto,
+    GetHostParamDto,
 } from '../dtos';
-import { GetAllHostTagsResponseModel, HostResponseModel } from '../models';
 import { HostsService } from '../hosts.service';
+import { GetAllHostTagsResponseModel, HostResponseModel } from '../models';
 
 @ApiBearerAuth('Authorization')
+@ApiScopeResource(CONTROLLERS_INFO.HOSTS.resource)
 @ApiTags(CONTROLLERS_INFO.HOSTS.tag)
 @Roles(ROLE.ADMIN, ROLE.API)
-@UseGuards(JwtDefaultGuard, RolesGuard)
+@UseGuards(JwtDefaultGuard, RolesGuard, ScopesGuard)
 @UseFilters(HttpExceptionFilter)
 @Controller(HOSTS_CONTROLLER)
 export class HostsController {
     constructor(private readonly hostsService: HostsService) {}
 
-    @ApiOkResponse({
-        type: GetAllHostTagsResponseDto,
-        description: 'Host tags fetched successfully',
-    })
     @Endpoint({
-        command: GetAllHostTagsCommand,
+        command: GetHostsTagsCommand,
         httpCode: HttpStatus.OK,
+        type: GetHostsTagsResponseDto,
     })
-    async getAllHostTags(): Promise<GetAllHostTagsResponseDto> {
-        const result = await this.hostsService.getAllHostTags();
+    async getHostsTags(): Promise<GetHostsTagsResponseDto> {
+        const result = await this.hostsService.getHostsTags();
 
         const data = errorHandler(result);
         return {
@@ -69,16 +59,12 @@ export class HostsController {
         };
     }
 
-    @ApiCreatedResponse({
-        type: CreateHostResponseDto,
-        description: 'Host created successfully',
-    })
     @Endpoint({
         command: CreateHostCommand,
         httpCode: HttpStatus.CREATED,
-        apiBody: CreateHostRequestDto,
+        type: HostResponseDto,
     })
-    async createHost(@Body() body: CreateHostRequestDto): Promise<CreateHostResponseDto> {
+    async createHost(@Body() body: CreateHostBodyDto): Promise<HostResponseDto> {
         const result = await this.hostsService.createHost(body);
 
         const data = errorHandler(result);
@@ -87,16 +73,12 @@ export class HostsController {
         };
     }
 
-    @ApiOkResponse({
-        type: UpdateHostResponseDto,
-        description: 'Host updated successfully',
-    })
     @Endpoint({
         command: UpdateHostCommand,
         httpCode: HttpStatus.OK,
-        apiBody: UpdateHostRequestDto,
+        type: HostResponseDto,
     })
-    async updateHost(@Body() body: UpdateHostRequestDto): Promise<UpdateHostResponseDto> {
+    async updateHost(@Body() body: UpdateHostBodyDto): Promise<HostResponseDto> {
         const result = await this.hostsService.updateHost(body);
 
         const data = errorHandler(result);
@@ -105,16 +87,13 @@ export class HostsController {
         };
     }
 
-    @ApiOkResponse({
-        type: GetAllHostsResponseDto,
-        description: 'Hosts fetched successfully',
-    })
     @Endpoint({
-        command: GetAllHostsCommand,
+        command: GetHostsCommand,
         httpCode: HttpStatus.OK,
+        type: GetHostsResponseDto,
     })
-    async getAllHosts(): Promise<GetAllHostsResponseDto> {
-        const result = await this.hostsService.getAllHosts();
+    async getHosts(): Promise<GetHostsResponseDto> {
+        const result = await this.hostsService.getHosts();
 
         const data = errorHandler(result);
         return {
@@ -122,17 +101,13 @@ export class HostsController {
         };
     }
 
-    @ApiOkResponse({
-        type: GetOneHostResponseDto,
-        description: 'Host fetched successfully',
-    })
-    @ApiParam({ name: 'uuid', type: String, description: 'UUID of the host', required: true })
     @Endpoint({
-        command: GetOneHostCommand,
+        command: GetHostCommand,
         httpCode: HttpStatus.OK,
+        type: HostResponseDto,
     })
-    async getOneHost(@Param() paramData: GetOneHostRequestDto): Promise<GetOneHostResponseDto> {
-        const result = await this.hostsService.getOneHost(paramData.uuid);
+    async getOneHost(@Param() params: GetHostParamDto): Promise<HostResponseDto> {
+        const result = await this.hostsService.getHost(params.uuid);
 
         const data = errorHandler(result);
         return {
@@ -140,16 +115,12 @@ export class HostsController {
         };
     }
 
-    @ApiOkResponse({
-        type: ReorderHostResponseDto,
-        description: 'Hosts reordered successfully',
-    })
     @Endpoint({
-        command: ReorderHostCommand,
+        command: ReorderHostsCommand,
         httpCode: HttpStatus.OK,
-        apiBody: ReorderHostRequestDto,
+        type: ReorderHostsResponseDto,
     })
-    async reorderHosts(@Body() body: ReorderHostRequestDto): Promise<ReorderHostResponseDto> {
+    async reorderHosts(@Body() body: ReorderHostsBodyDto): Promise<ReorderHostsResponseDto> {
         const result = await this.hostsService.reorderHosts(body);
 
         const data = errorHandler(result);
@@ -160,24 +131,14 @@ export class HostsController {
         };
     }
 
-    @ApiNotFoundResponse({
-        description: 'Host not found',
-    })
-    @ApiOkResponse({
-        type: DeleteHostResponseDto,
-        description: 'Host deleted successfully',
-    })
-    @ApiParam({ name: 'uuid', type: String, description: 'UUID of the host', required: true })
     @Endpoint({
         command: DeleteHostCommand,
-        httpCode: HttpStatus.OK,
+        httpCode: HttpStatus.NO_CONTENT,
     })
-    async deleteHost(@Param() paramData: DeleteHostRequestDto): Promise<DeleteHostResponseDto> {
-        const result = await this.hostsService.deleteHost(paramData.uuid);
+    async deleteHost(@Param() params: DeleteHostParamDto) {
+        const result = await this.hostsService.deleteHost(params.uuid);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 }

@@ -11,31 +11,31 @@ import {
     TextInput,
     ThemeIcon
 } from '@mantine/core'
+import { useForm, schemaResolver } from '@mantine/form'
+import { modals } from '@mantine/modals'
 import {
     GetRemnawaveSettingsCommand,
     UpdateRemnawaveSettingsCommand
 } from '@remnawave/backend-contract'
-import { TbAlertCircle, TbFingerprint, TbKey, TbPassword, TbServer } from 'react-icons/tb'
-import { BiLogoGithub, BiLogoTelegram } from 'react-icons/bi'
-import { zodResolver } from 'mantine-form-zod-resolver'
-import { PiGlobe, PiKey } from 'react-icons/pi'
-import { useDisclosure } from '@mantine/hooks'
-import { useTranslation } from 'react-i18next'
-import { SiKeycloak } from 'react-icons/si'
-import { modals } from '@mantine/modals'
-import { useForm } from '@mantine/form'
 import { TFunction } from 'i18next'
+import { useTranslation } from 'react-i18next'
+import { BiLogoGithub, BiLogoTelegram } from 'react-icons/bi'
+import { PiGlobe, PiKey } from 'react-icons/pi'
+import { SiKeycloak } from 'react-icons/si'
+import { TbAlertCircle, TbFingerprint, TbKey, TbPassword, TbServer } from 'react-icons/tb'
 
-import { PasskeysDrawerComponent } from '@widgets/remnawave-settings/passkeys-settings-drawer/passkeys-drawer.component'
+import { showModal } from '@shared/_modals/show-modal'
+import { HelpActionIconShared } from '@shared/_modals/universal'
+import { THelpDrawerAvailableScreen } from '@shared/_modals/universal/help-drawer/help-drawer.types'
+import { queryClient } from '@shared/api'
+import { QueryKeys } from '@shared/api/hooks/keys-factory'
 import { useUpdateRemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.mutation.hooks'
-import { HelpActionIconShared, THelpDrawerAvailableScreen } from '@shared/ui/help-drawer'
 import { CheckboxCardShared } from '@shared/ui/checkbox-card/checkbox-card.shared'
+import { PocketidLogo, YandexLogo } from '@shared/ui/logos'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SettingsCardShared } from '@shared/ui/settings-card'
-import { PocketidLogo, YandexLogo } from '@shared/ui/logos'
-import { QueryKeys } from '@shared/api/hooks/keys-factory'
+import { TagInputPill } from '@shared/ui/tag-input-pill'
 import { handleFormErrors } from '@shared/utils/misc'
-import { queryClient } from '@shared/api'
 
 interface IProps {
     oauth2Settings: NonNullable<GetRemnawaveSettingsCommand.Response['response']['oauth2Settings']>
@@ -68,7 +68,13 @@ const getOAuth2ProvidersConfig = () =>
             title: 'PocketID',
             icon: <PocketidLogo size={24} />,
             iconColor: '#000',
-            fields: ['clientId', 'clientSecret', 'plainDomain', 'allowedEmails'] as const
+            fields: [
+                'clientId',
+                'clientSecret',
+                'plainDomain',
+                'frontendDomain',
+                'allowedEmails'
+            ] as const
         },
         {
             key: 'yandex' as const,
@@ -181,13 +187,12 @@ const getFieldConfig = (t: TFunction) =>
 export const AuthentificationSettingsCardWidget = (props: IProps) => {
     const { passkeySettings, passwordSettings, oauth2Settings } = props
     const { t } = useTranslation()
-    const [drawerOpened, { open: openDrawer, close: closeDrawer }] = useDisclosure(false)
 
-    const form = useForm<NonNullable<UpdateRemnawaveSettingsCommand.Request>>({
+    const form = useForm<NonNullable<UpdateRemnawaveSettingsCommand.RequestBody>>({
         name: 'auth-settings',
         mode: 'uncontrolled',
-        validate: zodResolver(
-            UpdateRemnawaveSettingsCommand.RequestSchema.pick({
+        validate: schemaResolver(
+            UpdateRemnawaveSettingsCommand.RequestBodySchema.pick({
                 passkeySettings: true,
                 passwordSettings: true,
                 oauth2Settings: true
@@ -337,6 +342,9 @@ export const AuthentificationSettingsCardWidget = (props: IProps) => {
                                         placeholder={fieldConfig.placeholder}
                                         splitChars={[',', ' ', ';']}
                                         {...form.getInputProps(formPath)}
+                                        renderPill={({ value, onRemove }) => (
+                                            <TagInputPill onRemove={onRemove} value={value} />
+                                        )}
                                     />
                                 )
                             }
@@ -371,147 +379,144 @@ export const AuthentificationSettingsCardWidget = (props: IProps) => {
     }
 
     return (
-        <>
-            <form onSubmit={handleSubmit} style={{ display: 'contents' }}>
-                <SettingsCardShared.Container>
-                    <SettingsCardShared.Header
-                        description={t('auth-settings.header.description')}
-                        icon={<PiKey size={24} />}
-                        iconColor="cyan"
-                        iconVariant="soft"
-                        title={t('auth-settings.header.title')}
-                    />
+        <form onSubmit={handleSubmit} style={{ display: 'contents' }}>
+            <SettingsCardShared.Container>
+                <SettingsCardShared.Header
+                    description={t('auth-settings.header.description')}
+                    icon={<PiKey size={24} />}
+                    iconColor="cyan"
+                    iconVariant="soft"
+                    title={t('auth-settings.header.title')}
+                />
 
-                    <SettingsCardShared.Content>
-                        <Accordion multiple variant="separated">
-                            {/* Password */}
-                            <Accordion.Item key="password" value="password">
-                                <Center>
-                                    <Accordion.Control
-                                        disabled
-                                        icon={
-                                            <ThemeIcon color="orange" size="lg" variant="light">
-                                                <TbPassword size={24} />
-                                            </ThemeIcon>
+                <SettingsCardShared.Content>
+                    <Accordion multiple variant="separated">
+                        {/* Password */}
+                        <Accordion.Item key="password" value="password">
+                            <Center>
+                                <Accordion.Control
+                                    disabled
+                                    icon={
+                                        <ThemeIcon color="orange" size="lg" variant="light">
+                                            <TbPassword size={24} />
+                                        </ThemeIcon>
+                                    }
+                                    style={{ opacity: 1.0 }}
+                                    styles={{
+                                        chevron: {
+                                            display: 'none'
                                         }
-                                        style={{ opacity: 1.0 }}
-                                        styles={{
-                                            chevron: {
-                                                display: 'none'
-                                            }
+                                    }}
+                                >
+                                    <Group justify="space-between">
+                                        <Text fw={500}>{t('auth-settings.password.title')}</Text>
+                                    </Group>
+                                </Accordion.Control>
+                                <Group gap="xs" justify="flex-end" pr="xs" wrap="nowrap">
+                                    <HelpActionIconShared
+                                        actionIconProps={{
+                                            size: 'input-xs'
                                         }}
+                                        iconProps={{
+                                            size: 20
+                                        }}
+                                        screen="AUTH_METHODS_PASSWORD"
+                                    />
+                                    <Switch
+                                        color="teal.8"
+                                        key={form.key('passwordSettings.enabled')}
+                                        onClick={(e) => e.stopPropagation()}
+                                        size="md"
+                                        {...form.getInputProps('passwordSettings.enabled', {
+                                            type: 'checkbox'
+                                        })}
+                                    />
+                                </Group>
+                            </Center>
+                        </Accordion.Item>
+
+                        {/* Passkey */}
+                        <Accordion.Item key="passkey" value="passkey">
+                            <Center>
+                                <Accordion.Control
+                                    icon={
+                                        <ThemeIcon color="cyan" size="lg" variant="light">
+                                            <TbFingerprint size={24} />
+                                        </ThemeIcon>
+                                    }
+                                >
+                                    <Group justify="space-between" pr="md">
+                                        <Text fw={500}>{t('auth-settings.passkey.title')}</Text>
+                                    </Group>
+                                </Accordion.Control>
+                                <Group justify="flex-end" pr="xs" wrap="nowrap">
+                                    <Switch
+                                        color="teal.8"
+                                        key={form.key('passkeySettings.enabled')}
+                                        onClick={(e) => e.stopPropagation()}
+                                        size="md"
+                                        {...form.getInputProps('passkeySettings.enabled', {
+                                            type: 'checkbox'
+                                        })}
+                                    />
+                                </Group>
+                            </Center>
+
+                            <Accordion.Panel>
+                                <Group justify="right">
+                                    <Button
+                                        color="gray"
+                                        disabled={!form.getValues().passkeySettings!.enabled}
+                                        leftSection={<TbFingerprint size={20} />}
+                                        onClick={() => showModal('rwSettings_passkeysDrawer')}
+                                        size="md"
+                                        variant="light"
                                     >
-                                        <Group justify="space-between">
-                                            <Text fw={500}>
-                                                {t('auth-settings.password.title')}
-                                            </Text>
-                                        </Group>
-                                    </Accordion.Control>
-                                    <Group gap="xs" justify="flex-end" pr="xs" wrap="nowrap">
-                                        <HelpActionIconShared
-                                            actionIconProps={{
-                                                size: 'input-xs'
-                                            }}
-                                            iconProps={{
-                                                size: 20
-                                            }}
-                                            screen="AUTH_METHODS_PASSWORD"
-                                        />
-                                        <Switch
-                                            color="teal.8"
-                                            key={form.key('passwordSettings.enabled')}
-                                            onClick={(e) => e.stopPropagation()}
-                                            size="md"
-                                            {...form.getInputProps('passwordSettings.enabled', {
-                                                type: 'checkbox'
-                                            })}
-                                        />
-                                    </Group>
-                                </Center>
-                            </Accordion.Item>
+                                        {t('auth-settings.passkey.manage-button')}
+                                    </Button>
+                                </Group>
 
-                            {/* Passkey */}
-                            <Accordion.Item key="passkey" value="passkey">
-                                <Center>
-                                    <Accordion.Control
-                                        icon={
-                                            <ThemeIcon color="cyan" size="lg" variant="light">
-                                                <TbFingerprint size={24} />
-                                            </ThemeIcon>
-                                        }
-                                    >
-                                        <Group justify="space-between" pr="md">
-                                            <Text fw={500}>{t('auth-settings.passkey.title')}</Text>
-                                        </Group>
-                                    </Accordion.Control>
-                                    <Group justify="flex-end" pr="xs" wrap="nowrap">
-                                        <Switch
-                                            color="teal.8"
-                                            key={form.key('passkeySettings.enabled')}
-                                            onClick={(e) => e.stopPropagation()}
-                                            size="md"
-                                            {...form.getInputProps('passkeySettings.enabled', {
-                                                type: 'checkbox'
-                                            })}
-                                        />
-                                    </Group>
-                                </Center>
+                                <Stack gap="md">
+                                    <TextInput
+                                        description={t('auth-settings.passkey.rpId.description')}
+                                        key={form.key('passkeySettings.rpId')}
+                                        label={t('auth-settings.passkey.rpId.label')}
+                                        leftSection={<PiGlobe size={16} />}
+                                        placeholder="example.com"
+                                        {...form.getInputProps('passkeySettings.rpId')}
+                                    />
 
-                                <Accordion.Panel>
-                                    <Group justify="right">
-                                        <Button
-                                            color="gray"
-                                            disabled={!form.getValues().passkeySettings!.enabled}
-                                            leftSection={<TbFingerprint size={20} />}
-                                            onClick={openDrawer}
-                                            size="md"
-                                            variant="light"
-                                        >
-                                            {t('auth-settings.passkey.manage-button')}
-                                        </Button>
-                                    </Group>
+                                    <TextInput
+                                        description={t('auth-settings.passkey.origin.description')}
+                                        key={form.key('passkeySettings.origin')}
+                                        label={t('auth-settings.passkey.origin.label')}
+                                        leftSection={<TbServer size={16} />}
+                                        placeholder="https://api.example.com"
+                                        {...form.getInputProps('passkeySettings.origin')}
+                                    />
+                                </Stack>
+                            </Accordion.Panel>
+                        </Accordion.Item>
 
-                                    <Stack gap="md">
-                                        <TextInput
-                                            description={t(
-                                                'auth-settings.passkey.rpId.description'
-                                            )}
-                                            key={form.key('passkeySettings.rpId')}
-                                            label={t('auth-settings.passkey.rpId.label')}
-                                            leftSection={<PiGlobe size={16} />}
-                                            placeholder="example.com"
-                                            {...form.getInputProps('passkeySettings.rpId')}
-                                        />
+                        {/* OAuth2 */}
+                        {OAUTH2_PROVIDERS.map(renderOAuth2Provider)}
+                    </Accordion>
+                </SettingsCardShared.Content>
 
-                                        <TextInput
-                                            description={t(
-                                                'auth-settings.passkey.origin.description'
-                                            )}
-                                            key={form.key('passkeySettings.origin')}
-                                            label={t('auth-settings.passkey.origin.label')}
-                                            leftSection={<TbServer size={16} />}
-                                            placeholder="https://api.example.com"
-                                            {...form.getInputProps('passkeySettings.origin')}
-                                        />
-                                    </Stack>
-                                </Accordion.Panel>
-                            </Accordion.Item>
-
-                            {/* OAuth2 */}
-                            {OAUTH2_PROVIDERS.map(renderOAuth2Provider)}
-                        </Accordion>
-                    </SettingsCardShared.Content>
-
-                    <SettingsCardShared.Bottom>
-                        <Group justify="flex-end">
-                            <Button color="teal" loading={isUpdatePending} size="md" type="submit">
-                                {t('common.save')}
-                            </Button>
-                        </Group>
-                    </SettingsCardShared.Bottom>
-                </SettingsCardShared.Container>
-            </form>
-            <PasskeysDrawerComponent onClose={closeDrawer} opened={drawerOpened} />
-        </>
+                <SettingsCardShared.Bottom>
+                    <Group justify="flex-end">
+                        <Button
+                            color="teal"
+                            loading={isUpdatePending}
+                            size="md"
+                            type="submit"
+                            variant="soft"
+                        >
+                            {t('common.save')}
+                        </Button>
+                    </Group>
+                </SettingsCardShared.Bottom>
+            </SettingsCardShared.Container>
+        </form>
     )
 }

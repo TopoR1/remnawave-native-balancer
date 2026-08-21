@@ -1,5 +1,5 @@
-import { GetRemnawaveSettingsCommand } from '@remnawave/backend-contract'
 import { createQueryKeys } from '@lukemorales/query-key-factory'
+import { GetRemnawaveSettingsCommand } from '@remnawave/backend-contract'
 import { z } from 'zod'
 
 import { sToMs } from '@shared/utils/time-utils'
@@ -17,12 +17,7 @@ const RemnawaveSettingsResponseSchema = z.object({
                 warnings: z.number().int().nonnegative().default(0),
                 errors: z.number().int().nonnegative().default(0)
             })
-            .default({
-                enabledHosts: 0,
-                activeTargets: 0,
-                warnings: 0,
-                errors: 0
-            })
+            .default({ enabledHosts: 0, activeTargets: 0, warnings: 0, errors: 0 })
     })
 })
 

@@ -1,22 +1,20 @@
 import { Badge, Center, Group, Stack, Text } from '@mantine/core'
-import { GetAllNodesCommand } from '@remnawave/backend-contract'
+import { Spotlight } from '@mantine/spotlight'
+import { GetNodesCommand } from '@remnawave/backend-contract'
+import ReactCountryFlag from 'react-country-flag'
+import { useTranslation } from 'react-i18next'
 import { PiEmptyDuotone, PiUsersDuotone } from 'react-icons/pi'
 import { TbServer, TbServer2 } from 'react-icons/tb'
-import ReactCountryFlag from 'react-country-flag'
-import { Spotlight } from '@mantine/spotlight'
-import { useTranslation } from 'react-i18next'
 
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
+import { showModal } from '@shared/_modals/show-modal'
 
 import { NodeStatusBadgeWidget } from '../node-status-badge'
 
 interface IProps {
-    nodes: GetAllNodesCommand.Response['response']
+    nodes: GetNodesCommand.Response['response']
 }
 
 export const NodesSpotlightSearchWidget = ({ nodes }: IProps) => {
-    const openModalWithData = useModalsStoreOpenWithData()
-
     const { t } = useTranslation()
 
     const handleViewNode = (value: null | string) => {
@@ -26,7 +24,7 @@ export const NodesSpotlightSearchWidget = ({ nodes }: IProps) => {
 
         const node = nodes.find((node) => node.uuid === value)
         if (node) {
-            openModalWithData(MODALS.EDIT_NODE_BY_UUID_MODAL, { nodeUuid: node.uuid })
+            showModal('nodes_editNodeModal', { nodeUuid: node.uuid })
         }
     }
 

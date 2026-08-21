@@ -7,13 +7,13 @@ import {
     Center,
     Group
 } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import { GetConfigProfilesCommand } from '@remnawave/backend-contract'
 import { githubDarkTheme, JsonEditor } from 'json-edit-react'
 import { PiCheckBold, PiXBold } from 'react-icons/pi'
-import { modals } from '@mantine/modals'
 
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { XrayLogo } from '@shared/ui/logos'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 
 interface IProps extends AccordionControlProps {
     hideSelectActions?: boolean

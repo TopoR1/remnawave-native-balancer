@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 import { REST_API, SUBSCRIPTION_TEMPLATE_ROUTES } from '../../../api';
-import { SubscriptionTemplateSchema } from '../../../models';
 import { getEndpointDetails } from '../../../constants';
+import { SubscriptionTemplateSchema } from '../../../models';
 
 export namespace ReorderSubscriptionTemplateCommand {
     export const url = REST_API.SUBSCRIPTION_TEMPLATE.ACTIONS.REORDER;
@@ -12,9 +12,10 @@ export namespace ReorderSubscriptionTemplateCommand {
         SUBSCRIPTION_TEMPLATE_ROUTES.ACTIONS.REORDER,
         'post',
         'Reorder subscription templates',
+        { scope: 'reorder', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
+    export const RequestBodySchema = z.object({
         items: z.array(
             SubscriptionTemplateSchema.pick({
                 viewPosition: true,
@@ -22,7 +23,6 @@ export namespace ReorderSubscriptionTemplateCommand {
             }),
         ),
     });
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: z.object({
@@ -31,5 +31,6 @@ export namespace ReorderSubscriptionTemplateCommand {
         }),
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

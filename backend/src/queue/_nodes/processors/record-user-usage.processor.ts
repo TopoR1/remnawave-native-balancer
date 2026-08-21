@@ -1,17 +1,16 @@
-import ems from 'enhanced-ms';
 import { Job } from 'bullmq';
-import { t } from 'try';
+import ems from 'enhanced-ms';
 
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
-import { CommandBus } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { CommandBus } from '@nestjs/cqrs';
 
 import { GetUsersStatsCommand } from '@remnawave/node-contract';
 
-import { fromNanoToNumber } from '@common/utils/nano';
-import { RawCacheService } from '@common/raw-cache';
 import { AxiosService } from '@common/axios';
+import { TypedConfigService } from '@common/config/app-config';
+import { RawCacheService } from '@common/raw-cache';
+import { multiplyConsumption } from '@common/utils/nano';
 import {
     CACHE_KEYS,
     CACHE_KEYS_TTL,
@@ -19,8 +18,8 @@ import {
     INTERNAL_CACHE_KEYS_TTL,
 } from '@libs/contracts/constants';
 
-import { PushFromRedisQueueService } from '@queue/push-from-redis/push-from-redis.service';
 import { UsersQueuesService } from '@queue/_users';
+import { PushFromRedisQueueService } from '@queue/push-from-redis/push-from-redis.service';
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
 import { NODES_JOB_NAMES } from '../constants/nodes-job-name.constant';
@@ -36,36 +35,37 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
     constructor(
         private readonly commandBus: CommandBus,
         private readonly axios: AxiosService,
-        private readonly configService: ConfigService,
+        private readonly configService: TypedConfigService,
         private readonly usersQueuesService: UsersQueuesService,
         private readonly pushFromRedisQueueService: PushFromRedisQueueService,
         private readonly rawCacheService: RawCacheService,
     ) {
         super();
 
-        this.ignoreBelowBytes = this.configService.getOrThrow<bigint>(
-            'USER_USAGE_IGNORE_BELOW_BYTES',
-        );
+        this.ignoreBelowBytes = this.configService.getOrThrow('USER_USAGE_IGNORE_BELOW_BYTES');
     }
 
     async process(job: Job<IRecordUserUsagePayload>) {
         try {
-            const { nodeUuid, nodeAddress, nodePort, consumptionMultiplier, nodeId } = job.data;
+            const { nodeUuid, connectionOpts, consumptionMultiplier, nodeId } = job.data;
 
-            const response = await this.axios.getUsersStats(
+            const queryResult = await this.axios.getUsersStats(
                 {
                     reset: true,
                 },
-                nodeAddress,
-                nodePort,
+                {
+                    address: connectionOpts.address,
+                    port: connectionOpts.port,
+                    proxyUrl: connectionOpts.proxyUrl,
+                },
             );
 
-            switch (response.isOk) {
+            switch (queryResult.isOk) {
                 case true:
                     return await this.handleOk(
                         nodeUuid,
                         BigInt(nodeId),
-                        response.response!,
+                        queryResult.response,
                         consumptionMultiplier,
                     );
                 case false:
@@ -76,8 +76,8 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
                     );
 
                     this.logger.error(
-                        `Failed to get users stats, node: ${nodeUuid} – ${nodeAddress}:${nodePort}, error: ${JSON.stringify(
-                            response,
+                        `Failed to get users stats, node: ${nodeUuid} – ${connectionOpts.address}:${connectionOpts.port}, error: ${JSON.stringify(
+                            queryResult,
                         )}`,
                     );
 
@@ -94,13 +94,13 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
     private async handleOk(
         nodeUuid: string,
         nodeId: bigint,
-        response: GetUsersStatsCommand.Response,
+        response: GetUsersStatsCommand.Response['response'],
         consumptionMultiplier: string,
     ) {
         const start = performance.now();
 
         try {
-            if (response.response.users.length === 0) {
+            if (response.users.length === 0) {
                 await this.rawCacheService.set(
                     CACHE_KEYS.NODE_USERS_ONLINE(nodeUuid),
                     0,
@@ -110,19 +110,20 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
                 return;
             }
 
-            const userUsageList: { u: string; b: string; n: string }[] = new Array(
-                response.response.users.length,
-            );
+            const userUsageList: { u: string; b: string; n: string }[] = Array.from({
+                length: response.users.length,
+            });
+
             let userUsageIndex = 0;
 
             const nodeRedisKey = INTERNAL_CACHE_KEYS.NODE_USER_USAGE(nodeId);
 
             const pipeline = this.rawCacheService.createPipeline();
 
-            response.response.users.forEach((user) => {
-                const { ok } = t(() => BigInt(user.username));
-
-                if (!ok) {
+            response.users.forEach((user) => {
+                try {
+                    BigInt(user.username);
+                } catch {
                     return;
                 }
 
@@ -136,7 +137,7 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
 
                 userUsageList[userUsageIndex++] = {
                     u: user.username,
-                    b: this.multiplyConsumption(consumptionMultiplier, totalBytes).toString(),
+                    b: multiplyConsumption(consumptionMultiplier, totalBytes).toString(),
                     n: nodeUuid,
                 };
             });
@@ -174,19 +175,5 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
                 );
             }
         }
-    }
-
-    private multiplyConsumption(consumptionMultiplier: string, totalBytes: number): bigint {
-        const multiplier = BigInt(consumptionMultiplier);
-        if (multiplier === 0n) {
-            return 0n;
-        }
-
-        if (multiplier === BigInt(1000000000)) {
-            // skip if 1:1 ratio
-            return BigInt(totalBytes);
-        }
-
-        return BigInt(Math.floor(fromNanoToNumber(multiplier) * totalBytes));
     }
 }

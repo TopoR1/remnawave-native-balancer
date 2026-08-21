@@ -1,7 +1,7 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
-
 import type { TFunction } from 'i18next'
+
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
 
 import { hostBalancerToDraft } from './host-balancing-draft.ts'
 import { formatTargetAssignments, formatTargetTraffic } from './host-balancing-target-display.ts'
@@ -57,10 +57,7 @@ describe('host balancing target display', () => {
     })
 
     it('formats traffic when bytes are present', () => {
-        assert.equal(
-            formatTargetTraffic({ trafficBytes: '1073741824' }, t),
-            '1.00 GiB'
-        )
+        assert.equal(formatTargetTraffic({ trafficBytes: '1073741824' }, t), '1.00 GiB')
     })
 
     it('shows no data when traffic bytes are absent', () => {

@@ -12,10 +12,11 @@ export namespace UpdateInternalSquadCommand {
         INTERNAL_SQUADS_ROUTES.UPDATE,
         'patch',
         'Update internal squad',
+        { scope: 'update', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuid: z.string().uuid(),
+    export const RequestBodySchema = z.object({
+        uuid: z.uuid(),
         name: z
             .string()
             .min(2, 'Name must be at least 2 characters')
@@ -25,14 +26,13 @@ export namespace UpdateInternalSquadCommand {
                 'Name can only contain letters, numbers, underscores, dashes and spaces',
             )
             .optional(),
-        inbounds: z.array(z.string().uuid()).optional(),
+        inbounds: z.array(z.uuid()).optional(),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: InternalSquadSchema,
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

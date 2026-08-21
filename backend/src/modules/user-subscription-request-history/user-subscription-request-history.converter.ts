@@ -17,10 +17,12 @@ const entityToModel = (
 ): UserSubscriptionRequestHistory => {
     return {
         id: entity.id,
-        userUuid: entity.userUuid,
+        userId: entity.userId,
         requestIp: entity.requestIp,
         userAgent: entity.userAgent,
         requestAt: entity.requestAt,
+        srrRuleName: entity.srrRuleName,
+        srrResponseType: entity.srrResponseType,
     };
 };
 

@@ -1,33 +1,30 @@
+import { ActionIcon, ActionIconGroup, Group, Tooltip } from '@mantine/core'
 import { GetConfigProfileByUuidCommand, GetSnippetsCommand } from '@remnawave/backend-contract'
-import { ActionIcon, Box, Drawer, Flex, Group, Transition } from '@mantine/core'
-import { TbArrowBackUp, TbCode, TbFile } from 'react-icons/tb'
-import { useMediaQuery } from '@mantine/hooks'
-import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
-
 import { ConfigEditorWidget } from '@widgets/dashboard/config-profiles/config-editor/config-editor.widget'
-import { SnippetsDrawerWidget } from '@widgets/dashboard/config-profiles/snippets-drawer'
-import { MODALS, useModalClose, useModalIsOpen } from '@entities/dashboard/modal-store'
-import { PageHeaderShared } from '@shared/ui/page-header/page-header.shared'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { HelpActionIconShared } from '@shared/ui/help-drawer'
-import { ROUTES } from '@shared/constants'
+import { useTranslation } from 'react-i18next'
+import { TbArrowBackUp, TbCode, TbFile } from 'react-icons/tb'
+import { useNavigate } from 'react-router'
+
+import { showModal } from '@shared/_modals/show-modal'
+import { HelpActionIconShared } from '@shared/_modals/universal'
+import { OPEN_ENTITY, ROUTES } from '@shared/constants'
+import { CopyEntityLinkButton } from '@shared/ui'
 import { Page } from '@shared/ui/page'
+import { PageHeaderShared } from '@shared/ui/page-header/page-header.shared'
 
 interface Props {
     configProfile: GetConfigProfileByUuidCommand.Response['response']
+    isWasmCrashed: boolean
+    isWasmRestarting: boolean
+    onRestartWasm: () => void
     snippets: GetSnippetsCommand.Response['response']
 }
 
 export const ConfigProfileByUuidPageComponent = (props: Props) => {
-    const { configProfile, snippets } = props
+    const { configProfile, isWasmCrashed, isWasmRestarting, onRestartWasm, snippets } = props
 
     const { t } = useTranslation()
-    const isMobile = useMediaQuery('(max-width: 1200px)')
     const navigate = useNavigate()
-
-    const isOpen = useModalIsOpen(MODALS.CONFIG_PROFILE_SHOW_SNIPPETS_DRAWER)
-    const close = useModalClose(MODALS.CONFIG_PROFILE_SHOW_SNIPPETS_DRAWER)
 
     return (
         <>
@@ -35,7 +32,28 @@ export const ConfigProfileByUuidPageComponent = (props: Props) => {
                 <PageHeaderShared
                     actions={
                         <Group>
+                            <CopyEntityLinkButton
+                                entity={OPEN_ENTITY.CONFIG_PROFILE}
+                                iconSize={24}
+                                id={configProfile.uuid}
+                                size="input-md"
+                                variant="soft"
+                            />
+
                             <HelpActionIconShared hidden={false} screen="PAGE_CONFIG_PROFILES" />
+
+                            <ActionIconGroup>
+                                <Tooltip label={t('snippets.drawer.widget.snippets')} withArrow>
+                                    <ActionIcon
+                                        color="teal"
+                                        onClick={() => showModal('snippets_snippetsModal')}
+                                        size="input-md"
+                                        variant="soft"
+                                    >
+                                        <TbCode size="24px" />
+                                    </ActionIcon>
+                                </Tooltip>
+                            </ActionIconGroup>
 
                             <ActionIcon
                                 color="gray"
@@ -54,68 +72,13 @@ export const ConfigProfileByUuidPageComponent = (props: Props) => {
                     title={configProfile.name}
                 />
 
-                {isMobile ? (
-                    <>
-                        <ConfigEditorWidget configProfile={configProfile} snippets={snippets} />
-
-                        <Drawer
-                            keepMounted={false}
-                            onClose={close}
-                            opened={isOpen}
-                            position="right"
-                            size="450px"
-                            title={
-                                <BaseOverlayHeader
-                                    iconColor="violet"
-                                    IconComponent={TbCode}
-                                    iconVariant="soft"
-                                    title={t('snippets.drawer.widget.snippets')}
-                                />
-                            }
-                            withCloseButton={true}
-                        >
-                            <SnippetsDrawerWidget />
-                        </Drawer>
-                    </>
-                ) : (
-                    <Flex gap="md">
-                        <Box style={{ flex: 1, minWidth: 0 }}>
-                            <ConfigEditorWidget configProfile={configProfile} snippets={snippets} />
-                        </Box>
-
-                        <Box
-                            style={{
-                                width: isOpen ? '400px' : '0px',
-                                overflow: 'hidden',
-                                transition: 'width 0.3s ease'
-                            }}
-                        >
-                            <Transition
-                                duration={300}
-                                keepMounted
-                                mounted={isOpen}
-                                timingFunction="ease"
-                                transition={{
-                                    in: { opacity: 1, transform: 'translateX(0)' },
-                                    out: { opacity: 0, transform: 'translateX(20px)' },
-                                    transitionProperty: 'transform, opacity'
-                                }}
-                            >
-                                {(transitionStyles) => (
-                                    <Box
-                                        style={{
-                                            ...transitionStyles,
-                                            width: '400px',
-                                            pointerEvents: isOpen ? 'auto' : 'none'
-                                        }}
-                                    >
-                                        <SnippetsDrawerWidget />
-                                    </Box>
-                                )}
-                            </Transition>
-                        </Box>
-                    </Flex>
-                )}
+                <ConfigEditorWidget
+                    configProfile={configProfile}
+                    isWasmCrashed={isWasmCrashed}
+                    isWasmRestarting={isWasmRestarting}
+                    onRestartWasm={onRestartWasm}
+                    snippets={snippets}
+                />
             </Page>
         </>
     )

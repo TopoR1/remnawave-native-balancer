@@ -8,18 +8,17 @@ import {
     TextInput,
     Title
 } from '@mantine/core'
-import { PiShuffleDuotone, PiSignpostDuotone } from 'react-icons/pi'
-import { RegisterCommand } from '@remnawave/backend-contract'
-import { zodResolver } from 'mantine-form-zod-resolver'
-import { notifications } from '@mantine/notifications'
-import { useTranslation } from 'react-i18next'
+import { useForm, schemaResolver } from '@mantine/form'
 import { useClipboard } from '@mantine/hooks'
-import { useForm } from '@mantine/form'
+import { notifications } from '@mantine/notifications'
+import { RegisterCommand } from '@remnawave/backend-contract'
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { PiShuffleDuotone, PiSignpostDuotone } from 'react-icons/pi'
 
-import { handleFormErrors } from '@shared/utils/misc'
-import { useAuth } from '@shared/hooks/use-auth'
 import { useRegister } from '@shared/api/hooks'
+import { useAuth } from '@shared/hooks/use-auth'
+import { handleFormErrors } from '@shared/utils/misc'
 
 export const RegisterFormFeature = () => {
     const { t } = useTranslation()
@@ -30,7 +29,7 @@ export const RegisterFormFeature = () => {
 
     const form = useForm({
         validate: {
-            ...zodResolver(RegisterCommand.RequestSchema),
+            ...schemaResolver(RegisterCommand.RequestBodySchema),
             confirmPassword: (value, values) =>
                 value !== values.password
                     ? t('register-form.feature.passwords-do-not-match')

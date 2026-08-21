@@ -1,21 +1,23 @@
 import { Controller, HttpStatus, Query, UseFilters, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
-import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
-import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
-import { errorHandler } from '@common/helpers/error-handler.helper';
 import { Endpoint } from '@common/decorators/base-endpoint';
 import { Roles } from '@common/decorators/roles/roles';
+import { ApiScopeResource } from '@common/decorators/scopes';
+import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
+import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
 import { RolesGuard } from '@common/guards/roles';
+import { ScopesGuard } from '@common/guards/scopes';
+import { errorHandler } from '@common/helpers/error-handler.helper';
+import { CONTROLLERS_INFO, SUBSCRIPTION_REQUEST_HISTORY_CONTROLLER } from '@libs/contracts/api';
 import {
     GetSubscriptionRequestHistoryCommand,
     GetSubscriptionRequestHistoryStatsCommand,
 } from '@libs/contracts/commands';
-import { CONTROLLERS_INFO, SUBSCRIPTION_REQUEST_HISTORY_CONTROLLER } from '@libs/contracts/api';
 import { ROLE } from '@libs/contracts/constants';
 
 import {
-    GetSubscriptionRequestHistoryRequestQueryDto,
+    GetSubscriptionRequestHistoryQueryDto,
     GetSubscriptionRequestHistoryResponseDto,
     GetSubscriptionRequestHistoryStatsResponseDto,
 } from './dtos';
@@ -26,9 +28,10 @@ import {
 import { UserSubscriptionRequestHistoryService } from './user-subscription-request-history.service';
 
 @ApiBearerAuth('Authorization')
+@ApiScopeResource(CONTROLLERS_INFO.SUBSCRIPTION_REQUEST_HISTORY.resource)
 @ApiTags(CONTROLLERS_INFO.SUBSCRIPTION_REQUEST_HISTORY.tag)
 @Roles(ROLE.ADMIN, ROLE.API)
-@UseGuards(JwtDefaultGuard, RolesGuard)
+@UseGuards(JwtDefaultGuard, RolesGuard, ScopesGuard)
 @UseFilters(HttpExceptionFilter)
 @Controller(SUBSCRIPTION_REQUEST_HISTORY_CONTROLLER)
 export class UserSubscriptionRequestHistoryController {
@@ -36,28 +39,13 @@ export class UserSubscriptionRequestHistoryController {
         private readonly userSubscriptionRequestHistoryService: UserSubscriptionRequestHistoryService,
     ) {}
 
-    @ApiOkResponse({
-        type: GetSubscriptionRequestHistoryResponseDto,
-        description: 'Subscription request history fetched successfully',
-    })
-    @ApiQuery({
-        name: 'start',
-        type: 'number',
-        required: false,
-        description: 'Offset for pagination',
-    })
-    @ApiQuery({
-        name: 'size',
-        type: 'number',
-        required: false,
-        description: 'Page size for pagination',
-    })
     @Endpoint({
         command: GetSubscriptionRequestHistoryCommand,
         httpCode: HttpStatus.OK,
+        type: GetSubscriptionRequestHistoryResponseDto,
     })
     async getSubscriptionRequestHistory(
-        @Query() query: GetSubscriptionRequestHistoryRequestQueryDto,
+        @Query() query: GetSubscriptionRequestHistoryQueryDto,
     ): Promise<GetSubscriptionRequestHistoryResponseDto> {
         const { start, size, filters, filterModes, globalFilterMode, sorting } = query;
         const result =
@@ -81,13 +69,10 @@ export class UserSubscriptionRequestHistoryController {
         };
     }
 
-    @ApiOkResponse({
-        type: GetSubscriptionRequestHistoryStatsResponseDto,
-        description: 'User subscription request history stats fetched successfully',
-    })
     @Endpoint({
         command: GetSubscriptionRequestHistoryStatsCommand,
         httpCode: HttpStatus.OK,
+        type: GetSubscriptionRequestHistoryStatsResponseDto,
     })
     async getSubscriptionRequestHistoryStats(): Promise<GetSubscriptionRequestHistoryStatsResponseDto> {
         const result =

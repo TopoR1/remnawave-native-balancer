@@ -12,10 +12,11 @@ export namespace UpdateConfigProfileCommand {
         CONFIG_PROFILES_ROUTES.UPDATE,
         'patch',
         'Update Core Config in specific config profile',
+        { scope: 'update', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuid: z.string().uuid('UUID must be a valid UUID'),
+    export const RequestBodySchema = z.object({
+        uuid: z.uuid('UUID must be a valid UUID'),
         name: z
             .string()
             .min(2, 'Name must be at least 2 characters')
@@ -25,14 +26,13 @@ export namespace UpdateConfigProfileCommand {
                 'Name can only contain letters, numbers, underscores, dashes and spaces',
             )
             .optional(),
-        config: z.object({}).passthrough().optional(),
+        config: z.looseObject({}).optional(),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: ConfigProfileSchema,
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

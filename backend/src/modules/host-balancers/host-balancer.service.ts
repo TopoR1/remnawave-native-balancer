@@ -5,17 +5,17 @@ import {
 } from '@prisma/client';
 
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { TypedConfigService } from '@common/config/app-config';
 import { fail, ok, TResult } from '@common/types';
 import { prettyBytesUtil } from '@common/utils/bytes/pretty-bytes.util';
-import { ERRORS } from '@libs/contracts/constants';
 import {
     PreviewHostBalancerCommand,
     UpdateHostBalancerCommand,
     UpdateHostBalancerTargetsCommand,
     ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
+import { ERRORS } from '@libs/contracts/constants';
 
 import { HostWithRawInbound } from '@modules/hosts/entities/host-with-inbound-tag.entity';
 import { UserEntity } from '@modules/users/entities';
@@ -72,7 +72,12 @@ type TargetDiagnostics = {
     address?: string | null;
     port?: number | null;
     status?: HostBalancerTarget['status'];
-    compatibilityStatus?: 'compatible' | 'missing_inbound' | 'node_disconnected' | 'node_disabled' | 'unknown';
+    compatibilityStatus?:
+        | 'compatible'
+        | 'missing_inbound'
+        | 'node_disconnected'
+        | 'node_disabled'
+        | 'unknown';
     trafficBytes?: string | null;
     trafficSource?: 'snapshot' | 'node_current' | 'not_loaded' | 'unavailable';
     weight?: number;
@@ -116,7 +121,7 @@ export class HostBalancerService {
 
     constructor(
         private readonly hostBalancersRepository: HostBalancersRepository,
-        @Optional() private readonly configService?: ConfigService,
+        @Optional() private readonly configService?: TypedConfigService,
     ) {}
 
     public async getSettings(
@@ -132,7 +137,12 @@ export class HostBalancerService {
                 return ok(null);
             }
 
-            return ok(await this.enrichSettings(settings, host ? this.hostRecordToRawInbound(host) : null));
+            return ok(
+                await this.enrichSettings(
+                    settings,
+                    host ? this.hostRecordToRawInbound(host) : null,
+                ),
+            );
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_HOST_BALANCER_ERROR);
@@ -273,7 +283,7 @@ export class HostBalancerService {
             }
 
             const assignments = await this.hostBalancersRepository.findAssignmentsForUser(
-                user.uuid,
+                user.id,
                 enabledBalancers.map((balancer) => balancer.hostUuid),
             );
             const targetUuids = enabledBalancers.flatMap((balancer) =>
@@ -293,7 +303,7 @@ export class HostBalancerService {
                 }
 
                 const decision = await this.resolveHostTarget({
-                    userUuid: user.uuid,
+                    userId: user.id,
                     host: inputHost,
                     balancer,
                     assignment: assignments.get(inputHost.uuid) ?? null,
@@ -302,7 +312,7 @@ export class HostBalancerService {
                     persistAssignment: true,
                 });
 
-                await this.writeDecisionIfEnabled(user.uuid, inputHost, balancer, decision);
+                await this.writeDecisionIfEnabled(user.id, inputHost, balancer, decision);
 
                 if (decision.host) {
                     result.push(decision.host);
@@ -312,7 +322,7 @@ export class HostBalancerService {
             return result;
         } catch (error) {
             this.logger.error(
-                `Host balancer apply failed for user=${this.maskUuid(user.uuid)} hosts=${hosts
+                `Host balancer apply failed for user=${user.id.toString()} hosts=${hosts
                     .map((host) => this.maskUuid(host.uuid))
                     .join(',')}`,
                 error instanceof Error ? error.stack : undefined,
@@ -368,16 +378,15 @@ export class HostBalancerService {
             const assignmentCounts = await this.hostBalancersRepository.countAssignmentsByTarget(
                 settings.targets.map((target) => target.uuid),
             );
-            const assignments = await this.hostBalancersRepository.findAssignmentsForUser(
-                user.uuid,
-                [hostUuid],
-            );
+            const assignments = await this.hostBalancersRepository.findAssignmentsForUser(user.id, [
+                hostUuid,
+            ]);
             const existingAssignment = assignments.get(hostUuid) ?? null;
             const nodeStates = await this.loadNodeStates([settings]);
             const hostForPreview = this.hostRecordToRawInbound(host);
 
             const decision = await this.resolveHostTarget({
-                userUuid: user.uuid,
+                userId: user.id,
                 host: hostForPreview,
                 balancer: settings,
                 assignment: existingAssignment,
@@ -478,7 +487,7 @@ export class HostBalancerService {
     }
 
     private async resolveHostTarget(ctx: {
-        userUuid: string;
+        userId: bigint;
         host: HostWithRawInbound;
         balancer: HostBalancerWithTargets;
         assignment: HostBalancerAssignment | null;
@@ -541,7 +550,7 @@ export class HostBalancerService {
             );
             if (validation.isValid) {
                 if (ctx.persistAssignment) {
-                    await this.hostBalancersRepository.touchAssignment(ctx.host.uuid, ctx.userUuid);
+                    await this.hostBalancersRepository.touchAssignment(ctx.host.uuid, ctx.userId);
                 }
                 return this.resolved(
                     ctx.host,
@@ -595,7 +604,7 @@ export class HostBalancerService {
         if (ctx.persistAssignment) {
             await this.hostBalancersRepository.upsertAssignment({
                 hostUuid: ctx.host.uuid,
-                userUuid: ctx.userUuid,
+                userId: ctx.userId,
                 targetUuid: selected.uuid,
                 reason: `${assignment}:${ctx.balancer.strategy}`,
             });
@@ -902,14 +911,16 @@ export class HostBalancerService {
             alpn: null,
             fingerprint: null,
             securityLayer: 'DEFAULT',
-            xHttpExtraParams: null,
+            xhttpExtraParams: null,
             muxParams: null,
             sockoptParams: null,
             finalMask: null,
             isDisabled: false,
             serverDescription: null,
-            allowInsecure: false,
-            tag: null,
+            pinnedPeerCertSha256: null,
+            verifyPeerCertByName: null,
+            mihomoIpVersion: null,
+            tags: [],
             isHidden: false,
             overrideSniFromAddress: false,
             keepSniBlank: false,
@@ -1115,7 +1126,7 @@ export class HostBalancerService {
     }
 
     private async writeDecisionIfEnabled(
-        userUuid: string,
+        userId: bigint,
         host: HostWithRawInbound,
         balancer: HostBalancerWithTargets,
         decision: {
@@ -1134,7 +1145,7 @@ export class HostBalancerService {
         try {
             await this.hostBalancersRepository.createDecision({
                 hostUuid: host.uuid,
-                userUuid,
+                userId,
                 targetUuid: decision.selectedTarget?.uuid ?? null,
                 strategy: balancer.strategy,
                 reason,
@@ -1150,7 +1161,7 @@ export class HostBalancerService {
             });
         } catch (error) {
             this.logger.error(
-                `Host balancer decision audit failed for user=${this.maskUuid(userUuid)} host=${this.maskUuid(
+                `Host balancer decision audit failed for user=${userId.toString()} host=${this.maskUuid(
                     host.uuid,
                 )}`,
                 error instanceof Error ? error.stack : undefined,
@@ -1160,9 +1171,8 @@ export class HostBalancerService {
 
     private isDecisionAuditEnabled(): boolean {
         return (
-            (this.configService?.get<string>('HOST_BALANCER_DECISIONS_ENABLED', 'false') ??
-                process.env.HOST_BALANCER_DECISIONS_ENABLED ??
-                'false') === 'true'
+            this.configService?.get('HOST_BALANCER_DECISIONS_ENABLED') ??
+            process.env.HOST_BALANCER_DECISIONS_ENABLED === 'true'
         );
     }
 
@@ -1334,7 +1344,13 @@ export class HostBalancerService {
         ) as PreviewHostBalancerCommand.Response['response']['diagnostics'];
     }
 
-    private enrichTargetDiagnostics<T extends { candidates?: TargetDiagnostics[]; excludedTargets?: TargetDiagnostics[]; selectedTarget?: TargetDiagnostics | null }>(
+    private enrichTargetDiagnostics<
+        T extends {
+            candidates?: TargetDiagnostics[];
+            excludedTargets?: TargetDiagnostics[];
+            selectedTarget?: TargetDiagnostics | null;
+        },
+    >(
         diagnostics: T,
         targets: HostBalancerTarget[],
         nodeStates: Map<string, HostBalancerNodeState>,
@@ -1542,7 +1558,8 @@ export class HostBalancerService {
             ),
             assignmentsCount: assignmentCounts.get(target.uuid) ?? 0,
             trafficBytes,
-            formattedTraffic: trafficBytes === null ? null : prettyBytesUtil(trafficBytes, true, 3, true),
+            formattedTraffic:
+                trafficBytes === null ? null : prettyBytesUtil(trafficBytes, true, 3, true),
         });
     }
 

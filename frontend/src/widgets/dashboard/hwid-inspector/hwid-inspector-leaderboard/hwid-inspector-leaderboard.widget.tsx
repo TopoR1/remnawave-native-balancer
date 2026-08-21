@@ -1,12 +1,12 @@
-import { notifications } from '@mantine/notifications'
+import { DataTable } from '@kastov/mantine-datatable'
 import { ActionIcon, Tooltip } from '@mantine/core'
-import { useTranslation } from 'react-i18next'
-import { DataTable } from 'mantine-datatable'
 import { useClipboard } from '@mantine/hooks'
-import { TbRefresh } from 'react-icons/tb'
+import { notifications } from '@mantine/notifications'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { TbRefresh } from 'react-icons/tb'
 
-import { useUserModalStoreActions } from '@entities/dashboard/user-modal-store'
+import { showModal } from '@shared/_modals/show-modal'
 import { useGetTopUsersByHwidDevices } from '@shared/api/hooks'
 import { sToMs } from '@shared/utils/time-utils'
 
@@ -21,8 +21,6 @@ export function HwidInspectorLeaderboardWidget() {
     const [pageSize, setPageSize] = useState(PAGE_SIZE)
     const [page, setPage] = useState(1)
     const { copy } = useClipboard()
-
-    const userModalActions = useUserModalStoreActions()
 
     const {
         data: usersResponse,
@@ -47,9 +45,8 @@ export function HwidInspectorLeaderboardWidget() {
     return (
         <DataTable
             borderRadius="sm"
-            columns={getHwidInspectorLeaderboardColumns(t, async (userUuid) => {
-                await userModalActions.setUserUuid(userUuid)
-                userModalActions.changeModalState(true)
+            columns={getHwidInspectorLeaderboardColumns(t, async (userId) => {
+                showModal('users_viewUserModal', { userId })
             })}
             defaultColumnProps={{
                 noWrap: true,
@@ -59,7 +56,7 @@ export function HwidInspectorLeaderboardWidget() {
             }}
             fetching={isLoading}
             height={350}
-            idAccessor="userUuid"
+            idAccessor="id"
             onCellClick={({ record, column }) => {
                 if (column.accessor === 'actions') {
                     return
@@ -97,9 +94,10 @@ export function HwidInspectorLeaderboardWidget() {
                 </>
             )}
             totalRecords={usersResponse?.total ?? 0}
-            withColumnBorders={false}
-            withRowBorders={true}
-            withTableBorder={true}
+            striped
+            withColumnBorders
+            withRowBorders
+            withTableBorder
         />
     )
 }

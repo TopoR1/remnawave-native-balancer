@@ -1,7 +1,7 @@
-import { TbAlertTriangle, TbBrandDocker, TbClock, TbRadar, TbRadar2 } from 'react-icons/tb'
-import { Button, Group, Stack, Text, ThemeIcon } from '@mantine/core'
 import { CodeHighlight } from '@mantine/code-highlight'
+import { Button, Group, Stack, Text, ThemeIcon } from '@mantine/core'
 import { Trans, useTranslation } from 'react-i18next'
+import { TbAlertTriangle, TbBrandDocker, TbClock, TbRadar, TbRadar2 } from 'react-icons/tb'
 
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'

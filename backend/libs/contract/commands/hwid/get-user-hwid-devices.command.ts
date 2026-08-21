@@ -1,24 +1,23 @@
 import { z } from 'zod';
 
+import { HWID_ROUTES, REST_API } from '../../api';
 import { getEndpointDetails } from '../../constants';
 import { HwidUserDeviceSchema } from '../../models';
-import { HWID_ROUTES, REST_API } from '../../api';
 
 export namespace GetUserHwidDevicesCommand {
     export const url = REST_API.HWID.GET_USER_HWID_DEVICES;
-    export const TSQ_url = url(':userUuid');
+    export const TSQ_url = url(':userId');
 
     export const endpointDetails = getEndpointDetails(
-        HWID_ROUTES.GET_USER_HWID_DEVICES(':userUuid'),
+        HWID_ROUTES.GET_USER_HWID_DEVICES(':userId'),
         'get',
         'Get user HWID devices',
+        { scope: 'list-by-user', kind: 'read' },
     );
 
-    export const RequestSchema = z.object({
-        userUuid: z.string().uuid(),
+    export const RequestParamSchema = z.object({
+        userId: z.coerce.number(),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: z.object({
@@ -27,5 +26,6 @@ export namespace GetUserHwidDevicesCommand {
         }),
     });
 
+    export type RequestParam = z.infer<typeof RequestParamSchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

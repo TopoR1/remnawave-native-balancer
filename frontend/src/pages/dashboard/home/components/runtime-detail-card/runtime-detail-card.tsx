@@ -1,8 +1,8 @@
-import { PiClockDuotone, PiCloudDuotone, PiGearSixDuotone, PiQueueDuotone } from 'react-icons/pi'
 import { Badge, Card, Grid, Group, Progress, Stack, Text, ThemeIcon } from '@mantine/core'
 import { GetRemnawaveHealthCommand } from '@remnawave/backend-contract'
+import { PiClockDuotone, PiCloudDuotone, PiGearSixDuotone, PiQueueDuotone } from 'react-icons/pi'
 
-import { prettyBytesToAnyUtil } from '@shared/utils/bytes'
+import { prettifyBytesUtil } from '@shared/utils/bytes'
 
 import classes from './runtime-detail-card.module.css'
 
@@ -88,7 +88,7 @@ export function RuntimeDetailCard({ metric }: RuntimeDetailCardProps) {
                     </Group>
                 </Group>
 
-                <Grid gutter="sm">
+                <Grid gap="sm">
                     <Grid.Col span={{ base: 12, sm: 7 }}>
                         <div className={classes.memorySection}>
                             <Stack gap={6}>
@@ -100,8 +100,8 @@ export function RuntimeDetailCard({ metric }: RuntimeDetailCardProps) {
                                     <Group justify="space-between" mb={4}>
                                         <Text className={classes.statLabel}>Heap</Text>
                                         <Text className={classes.heapValues}>
-                                            {prettyBytesToAnyUtil(metric.heapUsed, true)} /{' '}
-                                            {prettyBytesToAnyUtil(metric.heapTotal, true)}{' '}
+                                            {prettifyBytesUtil(metric.heapUsed, true)} /{' '}
+                                            {prettifyBytesUtil(metric.heapTotal, true)}{' '}
                                             <span className={classes.heapPercent}>
                                                 ({heapPercent.toFixed(0)}%)
                                             </span>
@@ -119,19 +119,19 @@ export function RuntimeDetailCard({ metric }: RuntimeDetailCardProps) {
                                     <Stack gap={0}>
                                         <Text className={classes.statLabel}>RSS</Text>
                                         <Text className={classes.statValue}>
-                                            {prettyBytesToAnyUtil(metric.rss, true)}
+                                            {prettifyBytesUtil(metric.rss, true)}
                                         </Text>
                                     </Stack>
                                     <Stack gap={0}>
                                         <Text className={classes.statLabel}>External</Text>
                                         <Text className={classes.statValue}>
-                                            {prettyBytesToAnyUtil(metric.external, true)}
+                                            {prettifyBytesUtil(metric.external, true)}
                                         </Text>
                                     </Stack>
                                     <Stack gap={0}>
                                         <Text className={classes.statLabel}>Array Buffers</Text>
                                         <Text className={classes.statValue}>
-                                            {prettyBytesToAnyUtil(metric.arrayBuffers, true)}
+                                            {prettifyBytesUtil(metric.arrayBuffers, true)}
                                         </Text>
                                     </Stack>
                                 </Group>

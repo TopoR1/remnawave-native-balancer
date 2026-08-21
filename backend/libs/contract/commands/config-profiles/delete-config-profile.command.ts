@@ -11,19 +11,12 @@ export namespace DeleteConfigProfileCommand {
         CONFIG_PROFILES_ROUTES.DELETE(':uuid'),
         'delete',
         'Delete config profile',
+        { scope: 'delete', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuid: z.string().uuid(),
+    export const RequestParamSchema = z.object({
+        uuid: z.uuid().describe('UUID of the config profile'),
     });
 
-    export type Request = z.infer<typeof RequestSchema>;
-
-    export const ResponseSchema = z.object({
-        response: z.object({
-            isDeleted: z.boolean(),
-        }),
-    });
-
-    export type Response = z.infer<typeof ResponseSchema>;
+    export type RequestParam = z.infer<typeof RequestParamSchema>;
 }

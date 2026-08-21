@@ -1,5 +1,7 @@
-import { describe, it } from 'node:test'
+import type { HostBalancingDraft } from './host-balancing-draft.ts'
+
 import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
 
 import {
     DEFAULT_HOST_BALANCING_DRAFT,
@@ -7,8 +9,6 @@ import {
     updateHostBalancingTarget,
     shouldEnableHostSave
 } from './host-balancing-draft.ts'
-import type { HostBalancingDraft } from './host-balancing-draft.ts'
-
 import { saveHostBalancingDraft } from './host-balancing-save-flow.ts'
 
 const HOST_UUID = '11111111-1111-4111-8111-111111111111'

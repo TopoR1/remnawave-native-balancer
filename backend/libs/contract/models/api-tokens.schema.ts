@@ -1,16 +1,13 @@
 import { z } from 'zod';
 
 export const ApiTokensSchema = z.object({
-    uuid: z.string().uuid(),
-    token: z.string(),
-    tokenName: z.string(),
-
-    createdAt: z
-        .string()
-        .datetime()
+    uuid: z.uuid(),
+    name: z.string(),
+    expireAt: z.iso.datetime()
         .transform((str) => new Date(str)),
-    updatedAt: z
-        .string()
-        .datetime()
+    scopes: z.array(z.string()),
+    createdAt: z.iso.datetime()
+        .transform((str) => new Date(str)),
+    updatedAt: z.iso.datetime()
         .transform((str) => new Date(str)),
 });

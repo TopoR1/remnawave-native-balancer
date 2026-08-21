@@ -1,3 +1,8 @@
+import { ActionIcon, Badge, Group, Progress, Stack, Text, Tooltip } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
+import { GetNodeCommand } from '@remnawave/backend-contract'
+import { memo, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
     PiArrowDownDuotone,
     PiArrowUpDuotone,
@@ -7,27 +12,22 @@ import {
     PiNetworkDuotone,
     PiTimerDuotone
 } from 'react-icons/pi'
-import { ActionIcon, Badge, Group, Progress, Stack, Text, Tooltip } from '@mantine/core'
-import { GetOneNodeCommand } from '@remnawave/backend-contract'
-import { memo, useMemo, useRef, useState } from 'react'
-import { notifications } from '@mantine/notifications'
-import { useTranslation } from 'react-i18next'
 import { TbCamera } from 'react-icons/tb'
 
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import { SectionCard } from '@shared/ui/section-card'
 import {
-    prettyBytesToAnyUtil,
+    prettifyBytesUtil,
     prettySiBytesUtil,
     prettySiRealtimeBytesUtil
 } from '@shared/utils/bytes'
 import { copyScreenshotToClipboard } from '@shared/utils/copy-screenshot.util'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { formatDurationUtil } from '@shared/utils/time-utils'
-import { SectionCard } from '@shared/ui/section-card'
 
 import classes from './node-system-card.module.css'
 
 interface IProps {
-    node: GetOneNodeCommand.Response['response']
+    node: GetNodeCommand.Response['response']
 }
 
 export const NodeSystemCardWidget = memo((props: IProps) => {
@@ -41,7 +41,7 @@ export const NodeSystemCardWidget = memo((props: IProps) => {
         setCopying(true)
         try {
             if (!cardRef.current) throw new Error('cardRef')
-            await copyScreenshotToClipboard(cardRef.current)
+            await copyScreenshotToClipboard(cardRef.current, `node-${node.name}.png`)
         } catch (error) {
             notifications.show({
                 color: 'red',
@@ -66,9 +66,9 @@ export const NodeSystemCardWidget = memo((props: IProps) => {
         else if (percentage > 70) color = 'yellow'
 
         return {
-            total: prettyBytesToAnyUtil(total) || '0 B',
-            free: prettyBytesToAnyUtil(free) || '0 B',
-            used: prettyBytesToAnyUtil(used) || '0 B',
+            total: prettifyBytesUtil(total) || '0 B',
+            free: prettifyBytesUtil(free) || '0 B',
+            used: prettifyBytesUtil(used) || '0 B',
             percentage,
             color
         }
@@ -186,7 +186,7 @@ export const NodeSystemCardWidget = memo((props: IProps) => {
                                         size="10px"
                                         tt="uppercase"
                                     >
-                                        {t('node-system-card.widget.interface')}
+                                        {t('common.interface')}
                                     </Text>
                                     <Badge color="cyan" ff="monospace" size="xs" variant="soft">
                                         {interfaceData.name}

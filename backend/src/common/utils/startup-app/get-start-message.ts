@@ -1,17 +1,14 @@
-import { getBorderCharacters, table } from 'table';
-import { readPackageJSON } from 'pkg-types';
-import gradient from 'gradient-string';
 import chalk from 'chalk';
+import { readPackageJSON } from 'pkg-types';
+import { getBorderCharacters, table } from 'table';
 
 export async function getStartMessage() {
     const pkg = await readPackageJSON();
 
-    const gradientRange = gradient(['#f093fb', '#f5576c']);
-
     return table(
         [
-            [gradientRange('▰▱'.repeat(30))],
-            [gradientRange(`🌊 Remnawave Backend v${pkg.version}`)],
+            [chalk.blue('▰▱'.repeat(30))],
+            [chalk.blue(`🌊 Remnawave Backend v${pkg.version}`)],
             [chalk.gray('─'.repeat(60))],
             [
                 chalk.cyan('📚 Documentation') +
@@ -27,9 +24,9 @@ export async function getStartMessage() {
             [
                 chalk.yellow('🛠️  Rescue CLI') +
                     chalk.gray(' ······ ') +
-                    chalk.dim('docker exec -it remnawave remnawave'),
+                    chalk.dim('docker exec -it remnawave cli'),
             ],
-            [gradientRange('▰▱'.repeat(30))],
+            [chalk.blue('▰▱'.repeat(30))],
         ],
         {
             columnDefault: {

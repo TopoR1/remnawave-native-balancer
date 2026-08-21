@@ -1,9 +1,9 @@
 import { QueryKey, useQuery, UseQueryResult } from '@tanstack/react-query'
 import { z } from 'zod'
 
+import { instance } from '../axios'
 import { createUrl, handleRequestError } from '../helpers'
 import { CreateGetQueryHookArgs } from '../interfaces'
-import { instance } from '../axios'
 
 type QueryParams<R, Q> = {
     query?: Q
@@ -75,9 +75,9 @@ type QueryParams<R, Q> = {
  */
 
 export function createGetQueryHook<
-    ResponseSchema extends z.ZodType,
-    RequestQuerySchema extends z.ZodType,
-    RouteParamsSchema extends z.ZodType,
+    ResponseSchema extends z.ZodType<{ response: unknown }>,
+    RequestQuerySchema extends z.ZodType<Record<string, unknown>>,
+    RouteParamsSchema extends z.ZodType<Record<string, unknown>>,
     ErrorHandler extends (error: unknown) => void = (error: unknown) => void
 >({
     endpoint,

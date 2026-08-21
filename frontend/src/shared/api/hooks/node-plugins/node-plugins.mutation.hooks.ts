@@ -1,19 +1,24 @@
+import { notifications } from '@mantine/notifications'
 import {
     CloneNodePluginCommand,
     CreateNodePluginCommand,
+    CreateSharedListCommand,
     DeleteNodePluginCommand,
+    DeleteSharedListCommand,
     PluginExecutorCommand,
     ReorderNodePluginCommand,
+    SyncNodePluginCommand,
+    SyncSharedListCommand,
     TruncateTorrentBlockerReportsCommand,
-    UpdateNodePluginCommand
+    UpdateNodePluginCommand,
+    UpdateSharedListCommand
 } from '@remnawave/backend-contract'
-import { notifications } from '@mantine/notifications'
 
 import { createMutationHook } from '../../tsq-helpers'
 
 export const useUpdateNodePlugin = createMutationHook({
     endpoint: UpdateNodePluginCommand.TSQ_url,
-    bodySchema: UpdateNodePluginCommand.RequestSchema,
+    bodySchema: UpdateNodePluginCommand.RequestBodySchema,
     responseSchema: UpdateNodePluginCommand.ResponseSchema,
     requestMethod: UpdateNodePluginCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
@@ -37,7 +42,7 @@ export const useUpdateNodePlugin = createMutationHook({
 
 export const useCreateNodePlugin = createMutationHook({
     endpoint: CreateNodePluginCommand.TSQ_url,
-    bodySchema: CreateNodePluginCommand.RequestSchema,
+    bodySchema: CreateNodePluginCommand.RequestBodySchema,
     responseSchema: CreateNodePluginCommand.ResponseSchema,
     requestMethod: CreateNodePluginCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
@@ -61,8 +66,7 @@ export const useCreateNodePlugin = createMutationHook({
 
 export const useDeleteNodePlugin = createMutationHook({
     endpoint: DeleteNodePluginCommand.TSQ_url,
-    routeParamsSchema: DeleteNodePluginCommand.RequestSchema,
-    responseSchema: DeleteNodePluginCommand.ResponseSchema,
+    routeParamsSchema: DeleteNodePluginCommand.RequestParamSchema,
     requestMethod: DeleteNodePluginCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
         onSuccess: () => {
@@ -85,7 +89,7 @@ export const useDeleteNodePlugin = createMutationHook({
 
 export const useReorderNodePlugins = createMutationHook({
     endpoint: ReorderNodePluginCommand.TSQ_url,
-    bodySchema: ReorderNodePluginCommand.RequestSchema,
+    bodySchema: ReorderNodePluginCommand.RequestBodySchema,
     responseSchema: ReorderNodePluginCommand.ResponseSchema,
     requestMethod: ReorderNodePluginCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
@@ -102,7 +106,7 @@ export const useReorderNodePlugins = createMutationHook({
 
 export const useCloneNodePlugin = createMutationHook({
     endpoint: CloneNodePluginCommand.TSQ_url,
-    bodySchema: CloneNodePluginCommand.RequestSchema,
+    bodySchema: CloneNodePluginCommand.RequestBodySchema,
     responseSchema: CloneNodePluginCommand.ResponseSchema,
     requestMethod: CloneNodePluginCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
@@ -126,8 +130,7 @@ export const useCloneNodePlugin = createMutationHook({
 
 export const useNodePluginExecutor = createMutationHook({
     endpoint: PluginExecutorCommand.TSQ_url,
-    bodySchema: PluginExecutorCommand.RequestSchema,
-    responseSchema: PluginExecutorCommand.ResponseSchema,
+    bodySchema: PluginExecutorCommand.RequestBodySchema,
     requestMethod: PluginExecutorCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
         onSuccess: () => {
@@ -150,7 +153,6 @@ export const useNodePluginExecutor = createMutationHook({
 
 export const useTruncateTorrentBlockerReports = createMutationHook({
     endpoint: TruncateTorrentBlockerReportsCommand.TSQ_url,
-    responseSchema: TruncateTorrentBlockerReportsCommand.ResponseSchema,
     requestMethod: TruncateTorrentBlockerReportsCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {
         onSuccess: () => {
@@ -163,6 +165,123 @@ export const useTruncateTorrentBlockerReports = createMutationHook({
         onError: (error) => {
             notifications.show({
                 title: `Truncate Torrent Blocker Reports`,
+                message:
+                    error instanceof Error ? error.message : `Request failed with unknown error.`,
+                color: 'red'
+            })
+        }
+    }
+})
+
+export const useSyncNodePlugin = createMutationHook({
+    endpoint: SyncNodePluginCommand.TSQ_url,
+    bodySchema: SyncNodePluginCommand.RequestBodySchema,
+    requestMethod: SyncNodePluginCommand.endpointDetails.REQUEST_METHOD,
+    rMutationParams: {
+        onSuccess: () => {
+            notifications.show({
+                title: 'Success',
+                message: 'Sync queued for nodes with this plugin',
+                color: 'teal'
+            })
+        },
+        onError: (error) => {
+            notifications.show({
+                title: `Sync Node Plugin`,
+                message:
+                    error instanceof Error ? error.message : `Request failed with unknown error.`,
+                color: 'red'
+            })
+        }
+    }
+})
+
+export const useCreateSharedList = createMutationHook({
+    endpoint: CreateSharedListCommand.TSQ_url,
+    bodySchema: CreateSharedListCommand.RequestBodySchema,
+    responseSchema: CreateSharedListCommand.ResponseSchema,
+    requestMethod: CreateSharedListCommand.endpointDetails.REQUEST_METHOD,
+    rMutationParams: {
+        onSuccess: () => {
+            notifications.show({
+                title: 'Success',
+                message: 'Shared list created successfully',
+                color: 'teal'
+            })
+        },
+        onError: (error) => {
+            notifications.show({
+                title: `Create Shared List`,
+                message:
+                    error instanceof Error ? error.message : `Request failed with unknown error.`,
+                color: 'red'
+            })
+        }
+    }
+})
+
+export const useUpdateSharedList = createMutationHook({
+    endpoint: UpdateSharedListCommand.TSQ_url,
+    bodySchema: UpdateSharedListCommand.RequestBodySchema,
+    responseSchema: UpdateSharedListCommand.ResponseSchema,
+    requestMethod: UpdateSharedListCommand.endpointDetails.REQUEST_METHOD,
+    rMutationParams: {
+        onSuccess: () => {
+            notifications.show({
+                title: 'Success',
+                message: 'Shared list updated successfully',
+                color: 'teal'
+            })
+        },
+        onError: (error) => {
+            notifications.show({
+                title: `Update Shared List`,
+                message:
+                    error instanceof Error ? error.message : `Request failed with unknown error.`,
+                color: 'red'
+            })
+        }
+    }
+})
+
+export const useDeleteSharedList = createMutationHook({
+    endpoint: DeleteSharedListCommand.TSQ_url,
+    routeParamsSchema: DeleteSharedListCommand.RequestParamSchema,
+    requestMethod: DeleteSharedListCommand.endpointDetails.REQUEST_METHOD,
+    rMutationParams: {
+        onSuccess: () => {
+            notifications.show({
+                title: 'Success',
+                message: 'Shared list deleted successfully',
+                color: 'teal'
+            })
+        },
+        onError: (error) => {
+            notifications.show({
+                title: `Delete Shared List`,
+                message:
+                    error instanceof Error ? error.message : `Request failed with unknown error.`,
+                color: 'red'
+            })
+        }
+    }
+})
+
+export const useSyncSharedList = createMutationHook({
+    endpoint: SyncSharedListCommand.TSQ_url,
+    bodySchema: SyncSharedListCommand.RequestBodySchema,
+    requestMethod: SyncSharedListCommand.endpointDetails.REQUEST_METHOD,
+    rMutationParams: {
+        onSuccess: () => {
+            notifications.show({
+                title: 'Success',
+                message: 'Sync queued for nodes using this list',
+                color: 'teal'
+            })
+        },
+        onError: (error) => {
+            notifications.show({
+                title: `Sync Shared List`,
                 message:
                     error instanceof Error ? error.message : `Request failed with unknown error.`,
                 color: 'red'

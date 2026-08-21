@@ -1,43 +1,23 @@
-import {
-    TbClockCheck,
-    TbClockExclamation,
-    TbClockPause,
-    TbExternalLink,
-    TbFingerprint,
-    TbId,
-    TbServer,
-    TbSum
-} from 'react-icons/tb'
-import {
-    ActionIcon,
-    Badge,
-    Box,
-    Divider,
-    Group,
-    ScrollArea,
-    Stack,
-    Text,
-    Tooltip
-} from '@mantine/core'
-import { createSearchParams, useNavigate } from 'react-router-dom'
+import type { AggregatedUser, AggregatedUserNode } from './use-sessions-explorer'
+
+import { ActionIcon, Badge, Box, Group, Tooltip } from '@mantine/core'
+import { forwardRef, memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PiUserCircle } from 'react-icons/pi'
-import { memo } from 'react'
-import clsx from 'clsx'
+import { TbFingerprint, TbId, TbServer, TbSum } from 'react-icons/tb'
+import { GroupedVirtuoso } from 'react-virtuoso'
 
-import { formatRelativeDateUtil, formatTimeUtil } from '@shared/utils/time-utils'
-import { useUserModalStoreActions } from '@entities/dashboard/user-modal-store'
-import { CopyableFieldShared } from '@shared/ui/copyable-field/copyable-field'
+import { showModal } from '@shared/_modals/show-modal'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { SEARCH_PARAMS } from '@shared/constants/search-params'
-import { isPwa } from '@shared/utils/open-or-navigate'
 import { SectionCard } from '@shared/ui/section-card'
-import { useResolveUser } from '@shared/api/hooks'
-import { ROUTES } from '@shared/constants'
 
-import type { AggregatedUser } from './use-sessions-explorer'
-
+import { SessionsExplorerIpRow } from './sessions-explorer-ip-row'
 import styles from './sessions-explorer.module.css'
+
+interface FlatIp {
+    ip: AggregatedUserNode['ips'][number]
+    nodeUuid: string
+}
 
 interface IProps {
     highThreshold: number
@@ -52,44 +32,52 @@ function getIpCountColor(count: number, mid: number, high: number): string {
     return 'teal'
 }
 
-const getLastSeenIndicator = (lastSeen: Date | string) => {
-    const diffMs = Date.now() - new Date(lastSeen).getTime()
-    const diffMinutes = diffMs / 60_000
-    if (diffMinutes <= 5) return { color: 'var(--mantine-color-teal-6)', Icon: TbClockCheck }
-    if (diffMinutes <= 60) return { color: 'var(--mantine-color-yellow-6)', Icon: TbClockPause }
-    return { color: 'var(--mantine-color-red-6)', Icon: TbClockExclamation }
+const StickyGroupWrapper = forwardRef<HTMLDivElement, React.HTMLProps<HTMLDivElement>>(
+    ({ className, style, ...rest }, ref) => (
+        <div
+            ref={ref}
+            {...rest}
+            className={className}
+            style={{
+                ...style
+            }}
+        />
+    )
+)
+
+const TopItemListWrapper = forwardRef<HTMLDivElement, React.HTMLProps<HTMLDivElement>>(
+    ({ style, ...rest }, ref) => <div ref={ref} {...rest} style={{ ...style, zIndex: 20 }} />
+)
+
+const virtuosoComponents = {
+    Group: StickyGroupWrapper,
+    TopItemList: TopItemListWrapper
 }
 
 export const SessionsExplorerCard = memo(
     ({ user, midThreshold, highThreshold, ipSearchQuery }: IProps) => {
-        const { t, i18n } = useTranslation()
-        const { mutateAsync: resolveUser, isPending: isLoading } = useResolveUser()
-        const navigate = useNavigate()
+        const { t } = useTranslation()
 
-        const userModalActions = useUserModalStoreActions()
+        const { visibleNodes, groupCounts, flatIps } = useMemo(() => {
+            const visible: AggregatedUserNode[] = []
+            const counts: number[] = []
+            const flat: FlatIp[] = []
+            for (const node of user.nodes) {
+                if (node.ips.length > 0) {
+                    visible.push(node)
+                    counts.push(node.ips.length)
+                    for (const ip of node.ips) flat.push({ ip, nodeUuid: node.nodeUuid })
+                }
+            }
+            return { visibleNodes: visible, groupCounts: counts, flatIps: flat }
+        }, [user.nodes])
 
         const handleViewUser = async () => {
-            const result = await resolveUser({
-                variables: {
-                    id: Number(user.userId)
-                }
-            })
-
-            if (result.uuid) {
-                if (isPwa()) {
-                    const searchParams = createSearchParams({
-                        [SEARCH_PARAMS.USER]: String(result.uuid)
-                    })
-
-                    navigate(`${ROUTES.DASHBOARD.MANAGEMENT.USERS}?${searchParams.toString()}`)
-                }
-                await userModalActions.setUserUuid(result.uuid)
-                userModalActions.changeModalState(true)
-            }
+            showModal('users_viewUserModal', { userId: user.userId })
         }
 
         return (
-            <SectionCard.Root dividerOpacity={0} gap="xs">
+            <SectionCard.Root dividerOpacity={0.2} gap={10}>
                 <SectionCard.Section>
                     <Group gap="xs" justify="space-between" wrap="nowrap">
                         <BaseOverlayHeader
@@ -98,7 +86,6 @@ export const SessionsExplorerCard = memo(
                                 <Tooltip label={t('node-active-session.item.widget.view-user')}>
                                     <ActionIcon
                                         color="cyan"
-                                        loading={isLoading}
                                         onClick={handleViewUser}
                                         size="lg"
                                         variant="soft"
@@ -109,7 +96,7 @@ export const SessionsExplorerCard = memo(
                             }
                             IconComponent={TbId}
                             iconVariant="soft"
-                            title={user.userId}
+                            title={user.userId.toString()}
                             titleOrder={5}
                             truncateTitle
                         />
@@ -143,118 +130,52 @@ export const SessionsExplorerCard = memo(
                     </Group>
                 </SectionCard.Section>
 
-                <ScrollArea.Autosize mah={400} mih={400}>
-                    {user.nodes.map((nodeData) => (
-                        <SectionCard.Root
-                            dividerOpacity={0}
-                            gap={4}
-                            key={nodeData.nodeUuid}
-                            mb="xs"
-                        >
-                            <SectionCard.Section>
-                                <Group justify="space-between">
-                                    <BaseOverlayHeader
-                                        countryCode={nodeData.countryCode}
-                                        hideIcon={true}
-                                        iconColor="blue"
-                                        IconComponent={TbServer}
-                                        iconVariant="soft"
-                                        title={nodeData.nodeName}
-                                        titleOrder={6}
-                                    />
+                <SectionCard.Section mt={-10} style={{ height: '400px' }}>
+                    <GroupedVirtuoso
+                        components={virtuosoComponents}
+                        computeItemKey={(index) => {
+                            const item = flatIps[index]
+                            return item
+                                ? `${item.nodeUuid}-${item.ip.ip}-${index}`
+                                : `__group-${index}`
+                        }}
+                        groupContent={(groupIndex) => {
+                            const node = visibleNodes[groupIndex]
+                            if (!node) return null
+                            return (
+                                <Box className={styles.stickyNodeHeader}>
+                                    <Group justify="space-between" wrap="nowrap">
+                                        <BaseOverlayHeader
+                                            countryCode={node.countryCode}
+                                            hideIcon
+                                            iconColor="blue"
+                                            IconComponent={TbServer}
+                                            iconVariant="soft"
+                                            title={node.nodeName}
+                                            titleOrder={6}
+                                        />
 
-                                    <Badge color="teal" size="lg" variant="default">
-                                        {nodeData.ips.length}
-                                    </Badge>
-                                </Group>
-                            </SectionCard.Section>
-
-                            <Divider opacity={0.3} />
-
-                            {nodeData.ips.map((item) => {
-                                const isMatch = !!ipSearchQuery && item.ip.includes(ipSearchQuery)
-
-                                return (
-                                    <SectionCard.Section
-                                        className={clsx(isMatch && styles.ipHighlight)}
-                                        key={`${nodeData.nodeUuid}-${item.ip}`}
-                                    >
-                                        <Group align="center" gap="xs" wrap="nowrap">
-                                            <ActionIcon
-                                                color="cyan"
-                                                component="a"
-                                                href={`https://ipinfo.io/${item.ip}`}
-                                                rel="noopener noreferrer"
-                                                size="input-sm"
-                                                target="_blank"
-                                                variant="soft"
-                                            >
-                                                <TbExternalLink size={18} />
-                                            </ActionIcon>
-
-                                            <Box style={{ flex: 1 }}>
-                                                <CopyableFieldShared
-                                                    leftSection={
-                                                        <Tooltip
-                                                            label={
-                                                                <Stack gap={2} p={4}>
-                                                                    <Text
-                                                                        c="white"
-                                                                        fw={600}
-                                                                        size="xs"
-                                                                    >
-                                                                        {formatRelativeDateUtil(
-                                                                            item.lastSeen,
-                                                                            t,
-                                                                            i18n.language
-                                                                        )}
-                                                                    </Text>
-                                                                    <Text
-                                                                        c="dimmed"
-                                                                        ff="monospace"
-                                                                        size="xs"
-                                                                    >
-                                                                        {formatTimeUtil({
-                                                                            time: item.lastSeen,
-                                                                            template:
-                                                                                'TIME_FIRST_DATETIME',
-                                                                            language: i18n.language
-                                                                        })}
-                                                                    </Text>
-                                                                </Stack>
-                                                            }
-                                                            radius="md"
-                                                        >
-                                                            {(() => {
-                                                                const { color, Icon } =
-                                                                    getLastSeenIndicator(
-                                                                        item.lastSeen
-                                                                    )
-                                                                return (
-                                                                    <Box
-                                                                        style={{
-                                                                            display: 'flex',
-                                                                            cursor: 'help',
-                                                                            color
-                                                                        }}
-                                                                    >
-                                                                        <Icon size={16} />
-                                                                    </Box>
-                                                                )
-                                                            })()}
-                                                        </Tooltip>
-                                                    }
-                                                    size="sm"
-                                                    value={item.ip}
-                                                />
-                                            </Box>
-                                        </Group>
-                                    </SectionCard.Section>
-                                )
-                            })}
-                        </SectionCard.Root>
-                    ))}
-                </ScrollArea.Autosize>
+                                        <Badge color="teal" size="lg" variant="default">
+                                            {node.ips.length}
+                                        </Badge>
+                                    </Group>
+                                </Box>
+                            )
+                        }}
+                        groupCounts={groupCounts}
+                        itemContent={(index) => {
+                            const item = flatIps[index]
+                            if (!item) return null
+                            return (
+                                <SessionsExplorerIpRow
+                                    ip={item.ip}
+                                    isMatch={!!ipSearchQuery && item.ip.ip.includes(ipSearchQuery)}
+                                />
+                            )
+                        }}
+                        style={{ height: '100%' }}
+                    />
+                </SectionCard.Section>
             </SectionCard.Root>
         )
     }

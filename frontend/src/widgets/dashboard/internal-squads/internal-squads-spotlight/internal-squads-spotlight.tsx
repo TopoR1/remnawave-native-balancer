@@ -1,9 +1,9 @@
-import { GetInternalSquadsCommand } from '@remnawave/backend-contract'
-import { TbCirclesRelation } from 'react-icons/tb'
-import { PiTag, PiUsers } from 'react-icons/pi'
 import { Badge, Group } from '@mantine/core'
+import { GetInternalSquadsCommand } from '@remnawave/backend-contract'
+import { PiTag, PiUsers } from 'react-icons/pi'
+import { TbCirclesRelation } from 'react-icons/tb'
 
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
+import { showModal } from '@shared/_modals/show-modal'
 import { UniversalSpotlightContentShared } from '@shared/ui/universal-spotlight'
 import { formatInt } from '@shared/utils/misc'
 
@@ -14,10 +14,8 @@ interface IProps {
 export const InternalSquadsSpotlightWidget = (props: IProps) => {
     const { internalSquads } = props
 
-    const openModalWithData = useModalsStoreOpenWithData()
-
     const handleOpenEditModal = (squadUuid: string) => {
-        openModalWithData(MODALS.INTERNAL_SQUAD_SHOW_INBOUNDS, {
+        showModal('internalSquads_internalSquadsInboundsDrawer', {
             squadUuid
         })
     }

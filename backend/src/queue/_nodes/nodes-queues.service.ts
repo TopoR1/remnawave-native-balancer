@@ -1,17 +1,22 @@
 import { Queue } from 'bullmq';
 
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+
+import { INodeConnectionOpts } from '@common/axios';
 
 import { IGetEnabledNodesPartialResponse } from '@modules/nodes/queries/get-enabled-nodes-partial/get-enabled-nodes-partial.query';
 
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
+import { NODES_JOB_NAMES } from './constants/nodes-job-name.constant';
 import {
     IAddUsersToNodePayload,
     IAddUserToNodePayload,
     IDropIpsConnectionsPayload,
     IDropUsersConnectionsPayload,
+    IGeocheckPayload,
+    IGeocheckResult,
     IGetIpsListProgress,
     IGetIpsListResult,
     IGetUsersIpsListResult,
@@ -26,7 +31,6 @@ import {
     IUnblockIpsPayload,
     IRecreateTablesPayload,
 } from './interfaces/executor.payload.interface';
-import { NODES_JOB_NAMES } from './constants/nodes-job-name.constant';
 
 @Injectable()
 export class NodesQueuesService implements OnApplicationBootstrap {
@@ -67,9 +71,11 @@ export class NodesQueuesService implements OnApplicationBootstrap {
 
     async onApplicationBootstrap(): Promise<void> {
         for (const queue of Object.values(this.queues)) {
-            const client = await queue.client;
-            if (client.status !== 'ready') {
-                throw new Error(`Queue "${queue.name}" not connected: ${client.status}.`);
+            try {
+                await queue.waitUntilReady();
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                throw new Error(`Queue "${queue.name}" not connected: ${reason}.`);
             }
         }
 
@@ -79,7 +85,7 @@ export class NodesQueuesService implements OnApplicationBootstrap {
         await this.startAllNodesQueue.setGlobalConcurrency(1);
     }
 
-    public async startNode(payload: { nodeUuid: string }) {
+    public async startNode(payload: { nodeUuid: string; force?: boolean }) {
         return this.startNodeQueue.add(NODES_JOB_NAMES.START_NODE, payload, {
             jobId: `${NODES_JOB_NAMES.START_NODE}-${payload.nodeUuid}`,
             removeOnComplete: true,
@@ -102,9 +108,8 @@ export class NodesQueuesService implements OnApplicationBootstrap {
                     name: NODES_JOB_NAMES.NODE_HEALTH_CHECK,
                     data: {
                         nodeUuid: node.uuid,
-                        nodeAddress: node.address,
-                        nodePort: node.port,
                         isConnected: node.isConnected,
+                        connectionOpts: node.connectionOpts,
                     } satisfies INodeHealthCheckPayload,
                     opts: {
                         jobId: `${NODES_JOB_NAMES.NODE_HEALTH_CHECK}-${node.uuid}`,
@@ -215,18 +220,19 @@ export class NodesQueuesService implements OnApplicationBootstrap {
         );
     }
 
-    public async queryNodes(payload: {
-        userId: string;
-        userUuid: string;
-    }): Promise<{ jobId: string } | null> {
-        const result = await this.queryNodesQueue.add(NODES_JOB_NAMES.FETCH_IPS_LIST, payload, {
-            removeOnComplete: {
-                age: 24 * 3_600,
+    public async connectionsByUser(payload: { userId: number }): Promise<{ jobId: string } | null> {
+        const result = await this.queryNodesQueue.add(
+            NODES_JOB_NAMES.CONNECTIONS_BY_USER,
+            payload,
+            {
+                removeOnComplete: {
+                    age: 24 * 3_600,
+                },
+                removeOnFail: {
+                    age: 24 * 3_600,
+                },
             },
-            removeOnFail: {
-                age: 24 * 3_600,
-            },
-        });
+        );
 
         if (!result || !result.id) {
             return null;
@@ -235,7 +241,7 @@ export class NodesQueuesService implements OnApplicationBootstrap {
         return { jobId: result.id };
     }
 
-    public async getIpsListResult(jobId: string): Promise<IGetIpsListResult | null> {
+    public async connectionsByUserResult(jobId: string): Promise<IGetIpsListResult | null> {
         const job = await this.queryNodesQueue.getJob(jobId);
         if (!job) {
             return null;
@@ -265,11 +271,11 @@ export class NodesQueuesService implements OnApplicationBootstrap {
         };
     }
 
-    public async queryUsersIpsList(payload: {
+    public async connectionsByNode(payload: {
         nodeUuid: string;
     }): Promise<{ jobId: string } | null> {
         const result = await this.queryNodesQueue.add(
-            NODES_JOB_NAMES.FETCH_USERS_IPS_LIST,
+            NODES_JOB_NAMES.CONNECTIONS_BY_NODE,
             payload,
             {
                 removeOnComplete: {
@@ -288,7 +294,7 @@ export class NodesQueuesService implements OnApplicationBootstrap {
         return { jobId: result.id };
     }
 
-    public async getUsersIpsListResult(jobId: string): Promise<IGetUsersIpsListResult | null> {
+    public async connectionsByNodeResult(jobId: string): Promise<IGetUsersIpsListResult | null> {
         const job = await this.queryNodesQueue.getJob(jobId);
         if (!job) {
             return null;
@@ -304,6 +310,56 @@ export class NodesQueuesService implements OnApplicationBootstrap {
 
             result: isCompleted ? job.returnvalue : null,
         };
+    }
+
+    public async geocheckByNode(payload: IGeocheckPayload): Promise<{ jobId: string } | null> {
+        const result = await this.queryNodesQueue.add(NODES_JOB_NAMES.GEOCHECK_BY_NODE, payload, {
+            removeOnComplete: {
+                age: 900,
+            },
+            removeOnFail: {
+                age: 900,
+            },
+        });
+
+        if (!result || !result.id) {
+            return null;
+        }
+
+        return { jobId: result.id };
+    }
+
+    public async geocheckByNodeResult(jobId: string): Promise<IGeocheckResult | null> {
+        const job = await this.queryNodesQueue.getJob(jobId);
+        if (!job) {
+            return null;
+        }
+
+        const state = await job.getState();
+        const isCompleted = state === 'completed';
+        const isFailed = state === 'failed';
+
+        return {
+            isCompleted,
+            isFailed,
+            result: isCompleted ? job.returnvalue : null,
+        };
+    }
+
+    public async exportNodeConnectionsBulk(payload: { nodeUuid: string }[]) {
+        return this.queryNodesQueue.addBulk(
+            payload.map((node) => {
+                return {
+                    name: NODES_JOB_NAMES.EXPORT_NODE_CONNECTIONS,
+                    data: node,
+                    opts: {
+                        jobId: `${NODES_JOB_NAMES.EXPORT_NODE_CONNECTIONS}-${node.nodeUuid}`,
+                        removeOnComplete: true,
+                        removeOnFail: true,
+                    },
+                };
+            }),
+        );
     }
 
     public async dropUsersConnections(payload: IDropUsersConnectionsPayload) {
@@ -328,8 +384,7 @@ export class NodesQueuesService implements OnApplicationBootstrap {
 
     public async collectReports(payload: {
         nodeUuid: string;
-        address: string;
-        port: number | null;
+        connectionOpts: INodeConnectionOpts;
     }) {
         return this.nodePluginsQueue.add(NODES_JOB_NAMES.COLLECT_REPORTS, payload);
     }
