@@ -1,25 +1,28 @@
 import {
     ActionIcon,
     Avatar,
+    Badge,
     Center,
     Group,
     MantineStyleProp,
     Stack,
     Text,
-    ThemeIcon
+    ThemeIcon,
+    Tooltip
 } from '@mantine/core'
-import { GetInfraProvidersCommand } from '@remnawave/backend-contract'
-import { TbCloud, TbEdit, TbLink, TbTrash } from 'react-icons/tb'
-import { useTranslation } from 'react-i18next'
 import { modals } from '@mantine/modals'
+import { GetInfraProvidersCommand } from '@remnawave/backend-contract'
+import { useTranslation } from 'react-i18next'
+import { TbCloud, TbEdit, TbLink, TbServer, TbTrash } from 'react-icons/tb'
 
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
-import { faviconResolver, formatCurrencyWithIntl } from '@shared/utils/misc'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { QueryKeys, useDeleteInfraProvider } from '@shared/api/hooks'
-import { CountryFlag } from '@shared/ui/get-country-flag'
-import { SectionCard } from '@shared/ui/section-card'
+import { showModal } from '@shared/_modals/show-modal'
 import { queryClient } from '@shared/api'
+import { QueryKeys, useDeleteInfraProvider } from '@shared/api/hooks'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import { SectionCard } from '@shared/ui/section-card'
+import { SingleRowOverflowList } from '@shared/ui/single-row-overflow-list'
+import { faviconResolver, formatCurrencyWithIntl } from '@shared/utils/misc'
+import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
 
 interface IProps {
     providers: GetInfraProvidersCommand.Response['response']['providers']
@@ -28,7 +31,6 @@ interface IProps {
 
 export function MobileProvidersListWidget(props: IProps) {
     const { providers, style } = props
-    const openModalWithData = useModalsStoreOpenWithData()
     const { t } = useTranslation()
 
     const { mutate: deleteProvider } = useDeleteInfraProvider({
@@ -44,19 +46,16 @@ export function MobileProvidersListWidget(props: IProps) {
         }
     })
 
-    const handleOpenProvider = (
-        provider: GetInfraProvidersCommand.Response['response']['providers'][number]
-    ) => {
-        openModalWithData(MODALS.VIEW_INFRA_PROVIDER_DRAWER, provider)
-    }
-
     const handleDeleteProvider = (uuid: string) =>
         modals.openConfirmModal({
             title: t('common.confirm-action'),
             children: t('common.confirm-action-description'),
             labels: { confirm: t('common.delete'), cancel: t('common.cancel') },
             centered: true,
-            confirmProps: { color: 'red' },
+            confirmProps: { color: 'red', variant: 'soft' },
+            cancelProps: {
+                variant: 'subtle'
+            },
             onConfirm: () => deleteProvider({ route: { uuid } })
         })
 
@@ -93,6 +92,7 @@ export function MobileProvidersListWidget(props: IProps) {
                                     <Avatar
                                         alt={provider.name}
                                         color="initials"
+                                        imageProps={{ decoding: 'async', loading: 'lazy' }}
                                         name={provider.name}
                                         onLoad={(event) => {
                                             const img = event.target as HTMLImageElement
@@ -109,6 +109,7 @@ export function MobileProvidersListWidget(props: IProps) {
                                 IconComponent={TbCloud}
                                 iconVariant="soft"
                                 title={provider.name}
+                                truncateTitle
                             />
 
                             <Group gap={4} wrap="nowrap">
@@ -130,7 +131,11 @@ export function MobileProvidersListWidget(props: IProps) {
                                 )}
                                 <ActionIcon
                                     color="blue"
-                                    onClick={() => handleOpenProvider(provider)}
+                                    onClick={() =>
+                                        showModal('infraBilling_viewInfraProviderModal', {
+                                            infraProvider: provider
+                                        })
+                                    }
                                     size="input-xs"
                                     variant="soft"
                                 >
@@ -179,21 +184,63 @@ export function MobileProvidersListWidget(props: IProps) {
 
                     {provider.billingNodes.length > 0 && (
                         <SectionCard.Section>
-                            <Group gap="xs">
-                                {provider.billingNodes.slice(0, 3).map((node, index) => (
-                                    <Group gap={4} key={`${node.nodeUuid}-${index}`}>
-                                        <CountryFlag countryCode={node.countryCode} />
-                                        <Text c="white" fw={500} size="xs">
-                                            {node.name}
-                                        </Text>
-                                    </Group>
-                                ))}
-                                {provider.billingNodes.length > 3 && (
-                                    <Text c="dimmed" fw={500} size="xs">
-                                        +{provider.billingNodes.length - 3}
-                                    </Text>
+                            <SingleRowOverflowList
+                                data={provider.billingNodes}
+                                gap={4}
+                                maxVisibleItems={3}
+                                renderItem={(node) => (
+                                    <Badge
+                                        autoContrast
+                                        color="gray"
+                                        key={`${node.details ? node.details.nodeUuid : node.name}`}
+                                        leftSection={
+                                            node.details ? (
+                                                resolveCountryCode(node.details.countryCode, 18)
+                                            ) : (
+                                                <TbServer size={18} />
+                                            )
+                                        }
+                                        size="md"
+                                        variant="soft"
+                                    >
+                                        {node.name}
+                                    </Badge>
                                 )}
-                            </Group>
+                                renderOverflow={(items) => (
+                                    <Tooltip
+                                        label={
+                                            <Stack gap="xs">
+                                                {items.map((node) => (
+                                                    <Badge
+                                                        color="gray"
+                                                        fullWidth
+                                                        key={`${node.details ? node.details.nodeUuid : node.name}`}
+                                                        leftSection={
+                                                            node.details ? (
+                                                                resolveCountryCode(
+                                                                    node.details.countryCode,
+                                                                    18
+                                                                )
+                                                            ) : (
+                                                                <TbServer size={18} />
+                                                            )
+                                                        }
+                                                        variant="soft"
+                                                    >
+                                                        {node.name}
+                                                    </Badge>
+                                                ))}
+                                            </Stack>
+                                        }
+                                        multiline
+                                        position="top"
+                                    >
+                                        <Badge color="gray" size="md" variant="soft">
+                                            +{items.length}
+                                        </Badge>
+                                    </Tooltip>
+                                )}
+                            />
                         </SectionCard.Section>
                     )}
                 </SectionCard.Root>

@@ -1,17 +1,19 @@
-import { FindAllApiTokensCommand } from '@remnawave/backend-contract'
+import { Container } from '@mantine/core'
+import { GetApiTokensCommand } from '@remnawave/backend-contract'
+import { ApiTokensCardWidget } from '@widgets/remnawave-settings/api-tokens-card/api-tokens-card.widget'
+import { AuthentificationSettingsCardWidget } from '@widgets/remnawave-settings/authentification-settings-card/authentification-settings-card.widget'
+import { BackendToolsCardWidget } from '@widgets/remnawave-settings/backend-tools-card/backend-tools-card.widget'
+import { BrandingSettingsCardWidget } from '@widgets/remnawave-settings/branding-settings-card/branding-settings-card.widget'
+import { VisualSettingsCardWidget } from '@widgets/remnawave-settings/visual-settings-card/visual-settings-card.widget'
+import { HostBalancerSettingsCardWidget } from '@widgets/remnawave-settings/host-balancer-settings-card/host-balancer-settings-card.widget'
 import { useTranslation } from 'react-i18next'
 import Masonry from 'react-layout-masonry'
-import { Container } from '@mantine/core'
 
-import { AuthentificationSettingsCardWidget } from '@widgets/remnawave-settings/authentification-settings-card/authentification-settings-card.widget'
-import { BrandingSettingsCardWidget } from '@widgets/remnawave-settings/branding-settings-card/branding-settings-card.widget'
-import { HostBalancerSettingsCardWidget } from '@widgets/remnawave-settings/host-balancer-settings-card/host-balancer-settings-card.widget'
-import { ApiTokensCardWidget } from '@widgets/remnawave-settings/api-tokens-card/api-tokens-card.widget'
-import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
 import { LoadingScreen, Logo, Page, PageHeaderShared } from '@shared/ui'
+import { RemnawaveSettings } from '@shared/api/hooks/remnawave-settings/remnawave-settings.query.hooks'
 
 interface IProps {
-    apiTokensData: FindAllApiTokensCommand.Response['response']
+    apiTokensData: GetApiTokensCommand.Response['response']
     remnawaveSettings: RemnawaveSettings
 }
 
@@ -43,8 +45,9 @@ export const RemnawaveSettingsPageComponent = (props: IProps) => {
                         passkeySettings={remnawaveSettings.passkeySettings}
                         passwordSettings={remnawaveSettings.passwordSettings}
                     />
-
                     <ApiTokensCardWidget apiTokensData={apiTokensData} />
+                    <VisualSettingsCardWidget />
+                    <BackendToolsCardWidget />
                     <HostBalancerSettingsCardWidget
                         hostBalancerEnvEnabled={remnawaveSettings.hostBalancerEnvEnabled}
                         hostBalancerGlobalEnabled={remnawaveSettings.hostBalancerGlobalEnabled}

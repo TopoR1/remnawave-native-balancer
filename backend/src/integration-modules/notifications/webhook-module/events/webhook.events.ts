@@ -1,11 +1,10 @@
-import { instanceToPlain } from 'class-transformer';
-import { serialize } from 'superjson';
 import dayjs from 'dayjs';
+import { serialize } from 'superjson';
 
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { ConfigService } from '@nestjs/config';
 
+import { TypedConfigService } from '@common/config/app-config';
 import { NotificationsConfigService } from '@common/config/common-config';
 import { RawCacheService } from '@common/raw-cache';
 import { CACHE_KEYS, EVENTS, EVENTS_SCOPES } from '@libs/contracts/constants';
@@ -20,9 +19,10 @@ import {
     TorrentBlockerEvent,
 } from '@integration-modules/notifications/interfaces';
 
+import { BaseUserHwidDevicesResponseModel } from '@modules/hwid-user-devices/models';
 import { INodeHotCache, INodeSystem, INodeVersions } from '@modules/nodes/interfaces';
-import { GetFullUserResponseModel } from '@modules/users/models';
 import { NodeResponseModel } from '@modules/nodes/models';
+import { GetFullUserResponseModel } from '@modules/users/models';
 
 import { WebhookLoggerQueueService } from '@queue/notifications/webhook-logger/webhook-logger.service';
 
@@ -34,15 +34,18 @@ export class WebhookEvents {
 
     constructor(
         private readonly webhookLoggerQueueService: WebhookLoggerQueueService,
-        private readonly configService: ConfigService,
+        private readonly configService: TypedConfigService,
         private readonly notificationsConfig: NotificationsConfigService,
         private readonly rawCacheService: RawCacheService,
     ) {
-        this.subPublicDomain = this.configService.getOrThrow<string>('SUB_PUBLIC_DOMAIN');
-        this.webhookUrls = this.configService
-            .getOrThrow<string>('WEBHOOK_URL')
-            .split(',')
-            .map((url) => url.trim());
+        this.subPublicDomain = this.configService.getOrThrow('SUB_PUBLIC_DOMAIN');
+
+        const webhookUrls = this.configService.get('WEBHOOK_URL');
+        if (webhookUrls) {
+            this.webhookUrls = webhookUrls.split(',').map((url) => url.trim());
+        } else {
+            this.webhookUrls = [];
+        }
     }
 
     @OnEvent(EVENTS.CATCH_ALL_USER_EVENTS)
@@ -56,10 +59,8 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.USER,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain(
-                    new GetFullUserResponseModel(event.user, this.subPublicDomain),
-                ),
-                meta: instanceToPlain(event.meta),
+                data: new GetFullUserResponseModel(event.user, this.subPublicDomain),
+                meta: event.meta,
             };
 
             const { json } = serialize(payload);
@@ -69,7 +70,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);
@@ -87,11 +88,9 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.NODE,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain(
-                    new NodeResponseModel(
-                        event.node,
-                        await this.getNodesSystemInfo(event.node.uuid),
-                    ),
+                data: new NodeResponseModel(
+                    event.node,
+                    await this.getNodesSystemInfo(event.node.uuid),
                 ),
             };
 
@@ -102,7 +101,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);
@@ -120,7 +119,7 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.SERVICE,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain(event.data),
+                data: event.data,
             };
 
             const { json } = serialize(payload);
@@ -130,7 +129,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);
@@ -148,7 +147,7 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.ERRORS,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain(event.data),
+                data: event.data,
             };
 
             const { json } = serialize(payload);
@@ -158,7 +157,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);
@@ -176,7 +175,7 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.CRM,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain(event.data),
+                data: event.data,
             };
 
             const { json } = serialize(payload);
@@ -186,7 +185,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);
@@ -204,10 +203,10 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.USER_HWID_DEVICES,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain({
-                    ...event.data,
+                data: {
+                    hwidUserDevice: new BaseUserHwidDevicesResponseModel(event.data.hwidUserDevice),
                     user: new GetFullUserResponseModel(event.data.user, this.subPublicDomain),
-                }),
+                },
             };
 
             const { json } = serialize(payload);
@@ -217,7 +216,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);
@@ -235,14 +234,14 @@ export class WebhookEvents {
                 scope: EVENTS_SCOPES.TORRENT_BLOCKER,
                 event: event.eventName,
                 timestamp: dayjs().toISOString(),
-                data: instanceToPlain({
+                data: {
                     ...event.data,
                     node: new NodeResponseModel(
                         event.data.node,
                         await this.getNodesSystemInfo(event.data.node.uuid),
                     ),
                     user: new GetFullUserResponseModel(event.data.user, this.subPublicDomain),
-                }),
+                },
             };
 
             const { json } = serialize(payload);
@@ -252,7 +251,7 @@ export class WebhookEvents {
                     payload: JSON.stringify(json),
                     timestamp: payload.timestamp,
                 },
-                this.webhookUrls,
+                [...this.webhookUrls, ...this.notificationsConfig.getWebhookUrls(event.eventName)],
             );
         } catch (error) {
             this.logger.error(`Error sending webhook event: ${error}`);

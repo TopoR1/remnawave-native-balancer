@@ -1,11 +1,9 @@
+import { createQueryKeys } from '@lukemorales/query-key-factory'
 import {
     GetPasskeyAuthenticationOptionsCommand,
     GetStatusCommand
 } from '@remnawave/backend-contract'
-import { createQueryKeys } from '@lukemorales/query-key-factory'
 import { keepPreviousData } from '@tanstack/react-query'
-
-import { sToMs } from '@shared/utils/time-utils'
 
 import { createGetQueryHook, errorHandler } from '../../tsq-helpers'
 
@@ -24,8 +22,7 @@ export const useGetAuthStatus = createGetQueryHook({
     getQueryKey: () => authQueryKeys.getAuthStatus.queryKey,
     rQueryParams: {
         refetchOnMount: false,
-        placeholderData: keepPreviousData,
-        staleTime: sToMs(500)
+        placeholderData: keepPreviousData
     },
     errorHandler: (error) => errorHandler(error, 'Authentication Error')
 })

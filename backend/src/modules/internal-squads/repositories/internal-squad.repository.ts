@@ -1,17 +1,19 @@
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
+import { sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 
-import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
-import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
 
 import { TxKyselyService } from '@common/database';
-import { ICrud } from '@common/types/crud-port';
 import { getKyselyUuid } from '@common/helpers';
+import { values } from '@common/helpers/kysely/values';
+import { ICrud } from '@common/types/crud-port';
 
-import { IGetSquadAccessibleNodes } from '../interfaces/get-squad-accessible-nodes.interface';
-import { InternalSquadEntity } from '../entities/internal-squad.entity';
-import { InternalSquadConverter } from '../internal-squad.converter';
 import { InternalSquadWithInfoEntity } from '../entities';
+import { InternalSquadEntity } from '../entities/internal-squad.entity';
+import { IGetSquadAccessibleNodes } from '../interfaces/get-squad-accessible-nodes.interface';
+import { InternalSquadConverter } from '../internal-squad.converter';
 
 @Injectable()
 export class InternalSquadRepository implements ICrud<InternalSquadEntity> {
@@ -111,18 +113,6 @@ export class InternalSquadRepository implements ICrud<InternalSquadEntity> {
                     .select(eb.fn.countAll().as('count'))
                     .whereRef('internalSquadMembers.internalSquadUuid', '=', 'internalSquads.uuid')
                     .as('membersCount'),
-
-                // TODO: add members list
-                // jsonArrayFrom(
-                //     eb
-                //         .selectFrom('internalSquadMembers')
-                //         .select(['userUuid'])
-                //         .whereRef(
-                //             'internalSquadMembers.internalSquadUuid',
-                //             '=',
-                //             'internalSquads.uuid',
-                //         ),
-                // ).as('members'),
 
                 eb
                     .selectFrom('internalSquadInbounds')
@@ -282,7 +272,7 @@ export class InternalSquadRepository implements ICrud<InternalSquadEntity> {
                     .selectFrom('users')
                     .select([
                         eb.val(getKyselyUuid(internalSquadUuid)).as('internalSquadUuid'),
-                        'tId',
+                        'id',
                     ]),
             )
             .onConflict((oc) => oc.doNothing())
@@ -335,6 +325,123 @@ export class InternalSquadRepository implements ICrud<InternalSquadEntity> {
             .execute();
 
         return result;
+    }
+
+    private getSquadNodesQuery(squadUuid: string) {
+        return this.qb.kysely
+            .selectFrom('nodes as n')
+            .innerJoin('configProfiles as cp', 'n.activeConfigProfileUuid', 'cp.uuid')
+            .innerJoin('configProfileInbounds as cpi', 'cpi.profileUuid', 'cp.uuid')
+            .innerJoin('configProfileInboundsToNodes as cpin', (join) =>
+                join
+                    .onRef('cpin.configProfileInboundUuid', '=', 'cpi.uuid')
+                    .onRef('cpin.nodeUuid', '=', 'n.uuid'),
+            )
+            .innerJoin('internalSquadInbounds as isi', 'isi.inboundUuid', 'cpi.uuid')
+            .where('isi.internalSquadUuid', '=', getKyselyUuid(squadUuid))
+            .select(['n.id', 'n.uuid'])
+            .distinct()
+            .execute();
+    }
+
+    public async getSquadUsage(params: {
+        squadUuid: string;
+        start: Date;
+        end: Date;
+        minTotalBytes: number;
+        limit: number;
+        cursor?: number;
+    }): Promise<{
+        users: { id: number; totalBytes: number }[];
+        nextCursor: string | null;
+        hasMore: boolean;
+    }> {
+        const { squadUuid, start, end, minTotalBytes, limit, cursor } = params;
+
+        const nodes = await this.getSquadNodesQuery(squadUuid);
+        if (nodes.length === 0) {
+            return { users: [], nextCursor: null, hasMore: false };
+        }
+
+        let qb = this.qb.kysely
+            .selectFrom('internalSquadMembers as m')
+            .innerJoin('nodesUserUsageHistory as h', 'h.userId', 'm.userId')
+            .where('m.internalSquadUuid', '=', getKyselyUuid(squadUuid))
+            .where('h.createdAt', '>=', start)
+            .where('h.createdAt', '<=', end)
+            .where(
+                'h.nodeId',
+                'in',
+                nodes.map((node) => node.id),
+            );
+
+        if (cursor) {
+            qb = qb.where('m.userId', '>', BigInt(cursor));
+        }
+
+        const rows = await qb
+            .groupBy(['m.userId'])
+            .having((eb) => eb(eb.fn.sum('h.totalBytes'), '>=', BigInt(minTotalBytes)))
+            .select((eb) => ['m.userId as id', eb.fn.sum('h.totalBytes').as('totalBytes')])
+            .orderBy('m.userId', 'asc')
+            .limit(limit + 1)
+            .execute();
+
+        const hasMore = rows.length > limit;
+        if (hasMore) {
+            rows.pop();
+        }
+
+        return {
+            users: rows.map((row) => ({
+                id: Number(row.id),
+                totalBytes: Number(row.totalBytes),
+            })),
+            nextCursor: hasMore ? String(rows[rows.length - 1].id) : null,
+            hasMore,
+        };
+    }
+
+    public async getUserSquadDailyUsage(params: {
+        squadUuid: string;
+        userId: bigint;
+        start: Date;
+        end: Date;
+        dates: string[];
+    }): Promise<{ date: string; nodes: { uuid: string; totalBytes: number }[] }[]> {
+        const { squadUuid, userId, start, end, dates } = params;
+
+        const nodes = await this.getSquadNodesQuery(squadUuid);
+        if (nodes.length === 0) {
+            return dates.map((date) => ({ date, nodes: [] }));
+        }
+        const nodeIds = nodes.map((node) => node.id);
+        const uuidByNodeId = new Map(nodes.map((node) => [node.id, node.uuid]));
+
+        const rows = await this.qb.kysely
+            .selectFrom('nodesUserUsageHistory as h')
+            .where('h.userId', '=', userId)
+            .where('h.createdAt', '>=', start)
+            .where('h.createdAt', '<=', end)
+            .where('h.nodeId', 'in', nodeIds)
+            .select((eb) => [
+                sql<string>`to_char(${eb.ref('h.createdAt')}, 'YYYY-MM-DD')`.as('date'),
+                'h.nodeId as nodeId',
+                'h.totalBytes as totalBytes',
+            ])
+            .execute();
+
+        const byDate = new Map<string, { uuid: string; totalBytes: number }[]>();
+        for (const row of rows) {
+            const bucket = byDate.get(row.date) ?? [];
+            bucket.push({
+                uuid: uuidByNodeId.get(row.nodeId)!,
+                totalBytes: Number(row.totalBytes),
+            });
+            byDate.set(row.date, bucket);
+        }
+
+        return dates.map((date) => ({ date, nodes: byDate.get(date) ?? [] }));
     }
 
     public async getSquadAccessibleNodes(squadUuid: string): Promise<IGetSquadAccessibleNodes> {
@@ -417,18 +524,58 @@ export class InternalSquadRepository implements ICrud<InternalSquadEntity> {
             viewPosition: number;
         }[],
     ): Promise<boolean> {
-        await this.prisma.withTransaction(async () => {
-            for (const { uuid, viewPosition } of dto) {
-                await this.prisma.tx.internalSquads.updateMany({
-                    where: { uuid },
-                    data: { viewPosition },
-                });
-            }
-        });
+        if (dto.length === 0) return true;
+
+        const v = values(
+            dto.map(({ uuid, viewPosition }) => ({
+                uuid: sql<string>`${uuid}::uuid`,
+                viewPosition: sql<number>`${viewPosition}::int`,
+            })),
+            'v',
+        );
+
+        await this.qb.kysely
+            .updateTable('internalSquads')
+            .from(v)
+            .set((eb) => ({ viewPosition: eb.ref('v.viewPosition') }))
+            .whereRef('internalSquads.uuid', '=', 'v.uuid')
+            .execute();
 
         await this.prisma.tx
             .$executeRaw`SELECT setval('internal_squads_view_position_seq', (SELECT MAX(view_position) FROM internal_squads) + 1)`;
 
         return true;
+    }
+
+    public async removeManyUsersFromInternalSquad(
+        squadUuid: string,
+        usersIds: bigint[],
+    ): Promise<void> {
+        if (usersIds.length === 0) return;
+
+        await this.qb.kysely
+            .deleteFrom('internalSquadMembers')
+            .where(
+                'userId',
+                'in',
+                usersIds.map((userId) => userId),
+            )
+            .where('internalSquadUuid', '=', getKyselyUuid(squadUuid))
+            .execute();
+    }
+
+    public async addManyUsersToInternalSquad(squadUuid: string, usersIds: bigint[]): Promise<void> {
+        if (usersIds.length === 0) return;
+
+        const records = usersIds.map((userId) => ({
+            userId,
+            internalSquadUuid: getKyselyUuid(squadUuid),
+        }));
+
+        await this.qb.kysely
+            .insertInto('internalSquadMembers')
+            .values(records)
+            .onConflict((oc) => oc.columns(['userId', 'internalSquadUuid']).doNothing())
+            .execute();
     }
 }

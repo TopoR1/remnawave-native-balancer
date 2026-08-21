@@ -11,25 +11,24 @@ export namespace UpsertNodeMetadataCommand {
         METADATA_ROUTES.NODE.UPSERT(':uuid'),
         'put',
         'Update or create Node Metadata',
+        { scope: 'upsert-node', kind: 'write' },
     );
 
     export const RequestParamsSchema = z.object({
-        uuid: z.string().uuid(),
+        uuid: z.uuid(),
     });
-
-    export type RequestParams = z.infer<typeof RequestParamsSchema>;
 
     export const RequestBodySchema = z.object({
-        metadata: z.object({}).passthrough(),
+        metadata: z.looseObject({}),
     });
-
-    export type RequestBody = z.infer<typeof RequestBodySchema>;
 
     export const ResponseSchema = z.object({
         response: z.object({
-            metadata: z.object({}).passthrough(),
+            metadata: z.looseObject({}),
         }),
     });
 
+    export type RequestParams = z.infer<typeof RequestParamsSchema>;
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

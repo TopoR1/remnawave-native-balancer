@@ -11,6 +11,8 @@ export * from './nodes';
 export * from './oauth2';
 export * from './response-rules';
 export * from './roles';
+export * from './scopes';
 export * from './subscription-template';
 export * from './templates';
 export * from './users';
+export * from './backend-tools';

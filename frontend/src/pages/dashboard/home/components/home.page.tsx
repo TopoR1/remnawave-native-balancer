@@ -1,14 +1,20 @@
 import { ActionIcon, Box, Group, SimpleGrid, Stack, Title } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
-import { useTranslation } from 'react-i18next'
-import { TbCamera } from 'react-icons/tb'
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { TbCamera, TbInfoCircle } from 'react-icons/tb'
 
-import { MetricCardShared, MetricCardWithTrendShared } from '@shared/ui/metrics/metric-card'
-import { copyScreenshotToClipboard } from '@shared/utils/copy-screenshot.util'
+import { useIsMobile } from '@shared/hooks'
 import { LoadingScreen } from '@shared/ui'
+import { DisclaimerOverlay } from '@shared/ui/disclaimer-overlay'
+import { MetricCardShared, MetricCardWithTrendShared } from '@shared/ui/metrics/metric-card'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { Page } from '@shared/ui/page'
+import { copyScreenshotToClipboard } from '@shared/utils/copy-screenshot.util'
 
+import classes from './home.module.css'
+import { IProps } from './interfaces'
 import {
     getBandwidthMetrics,
     getOnlineMetrics,
@@ -18,8 +24,7 @@ import {
     getUsersMetrics
 } from './metrics'
 import { RuntimeDetailCard } from './runtime-detail-card'
-import classes from './home.module.css'
-import { IProps } from './interfaces'
+import { RuntimeInfoModalContent } from './runtime-info-modal/runtime-info-modal'
 
 interface IAnimatedCardProps {
     children: React.ReactNode
@@ -35,6 +40,7 @@ const AnimatedCard = ({ children, index }: IAnimatedCardProps) => (
 export const HomePage = (props: IProps) => {
     const { t } = useTranslation()
 
+    const isMobile = useIsMobile()
     const runtimeRef = useRef<HTMLDivElement>(null)
     const [copying, setCopying] = useState(false)
 
@@ -44,10 +50,13 @@ export const HomePage = (props: IProps) => {
         if (!runtimeRef.current || copying) return
         setCopying(true)
         try {
-            await new Promise<void>((resolve) => {
-                setTimeout(resolve, 100)
-            })
-            await copyScreenshotToClipboard(runtimeRef.current)
+            await copyScreenshotToClipboard(async () => {
+                await new Promise<void>((resolve) => {
+                    setTimeout(resolve, 100)
+                })
+                if (!runtimeRef.current) throw new Error('runtimeRef')
+                return runtimeRef.current
+            }, 'remnawave-runtime.png')
         } catch (error) {
             notifications.show({
                 color: 'red',
@@ -194,6 +203,33 @@ export const HomePage = (props: IProps) => {
                             >
                                 <TbCamera size={24} />
                             </ActionIcon>
+
+                            <ActionIcon
+                                color="gray"
+                                onClick={() => {
+                                    modals.open({
+                                        title: (
+                                            <BaseOverlayHeader
+                                                iconColor="cyan"
+                                                IconComponent={TbInfoCircle}
+                                                iconSize={20}
+                                                iconVariant="soft"
+                                                subtitle={t('home.runtime-info.subtitle')}
+                                                title={t('home.runtime-info.title')}
+                                            />
+                                        ),
+                                        size: 'xl',
+                                        centered: true,
+                                        fullScreen: isMobile,
+                                        children: <RuntimeInfoModalContent />
+                                    })
+                                }}
+                                radius="md"
+                                size="sm"
+                                variant="transparent"
+                            >
+                                <TbInfoCircle size={24} />
+                            </ActionIcon>
                         </Group>
                         <SimpleGrid cols={{ base: 1, sm: 1, xl: 2 }} ref={runtimeRef} spacing="xs">
                             {remnawaveHealth.runtimeMetrics.map((metric, index) => (
@@ -205,6 +241,7 @@ export const HomePage = (props: IProps) => {
                     </div>
                 )}
             </Stack>
+            <DisclaimerOverlay />
         </Page>
     )
 }

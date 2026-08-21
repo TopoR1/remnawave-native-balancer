@@ -1,16 +1,19 @@
 import { fromNanoToNumber } from '@common/utils/nano';
+import { TNodeIps } from '@libs/contracts/models';
 
 import { ConfigProfileInboundEntity } from '@modules/config-profiles/entities';
 import { InfraProviderEntity } from '@modules/infra-billing/entities';
 
-import { INodeHotCache, INodeSystem, INodeVersions } from '../interfaces';
 import { NodesEntity } from '../entities';
+import { INodeHotCache, INodeSystem, INodeVersions } from '../interfaces';
 
 export class NodeResponseModel {
     public uuid: string;
+    public id: number;
     public name: string;
     public address: string;
     public port: null | number;
+    public proxyUrl: string | null;
     public isConnected: boolean;
     public isConnecting: boolean;
     public isDisabled: boolean;
@@ -18,14 +21,17 @@ export class NodeResponseModel {
     public lastStatusMessage: null | string;
     public trafficResetDay: null | number;
     public consumptionMultiplier: number;
+    public nodeConsumptionMultiplier: number;
     public isTrafficTrackingActive: boolean;
     public trafficLimitBytes: null | number;
     public trafficUsedBytes: null | number;
     public notifyPercent: null | number;
-
+    public note: null | string;
     public viewPosition: number;
     public countryCode: string;
     public tags: string[];
+    public integrationUuids: string[];
+    public ips: TNodeIps;
     public createdAt: Date;
     public updatedAt: Date;
 
@@ -44,9 +50,11 @@ export class NodeResponseModel {
 
     constructor(data: NodesEntity, hotCache: INodeHotCache) {
         this.uuid = data.uuid;
+        this.id = Number(data.id);
         this.name = data.name;
         this.address = data.address;
         this.port = data.port;
+        this.proxyUrl = data.proxyUrl;
         this.isConnected = data.isConnected;
         this.isConnecting = data.isConnecting;
         this.isDisabled = data.isDisabled;
@@ -57,10 +65,12 @@ export class NodeResponseModel {
         this.trafficLimitBytes = Number(data.trafficLimitBytes);
         this.trafficUsedBytes = Number(data.trafficUsedBytes);
         this.notifyPercent = data.notifyPercent;
-
+        this.note = data.note;
         this.consumptionMultiplier = fromNanoToNumber(data.consumptionMultiplier);
-
+        this.nodeConsumptionMultiplier = fromNanoToNumber(data.nodeConsumptionMultiplier);
         this.tags = data.tags;
+        this.integrationUuids = data.integrationUuids;
+        this.ips = data.ips;
         this.createdAt = data.createdAt;
         this.updatedAt = data.updatedAt;
 

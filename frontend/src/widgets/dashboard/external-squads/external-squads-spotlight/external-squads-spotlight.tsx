@@ -1,9 +1,9 @@
-import { GetExternalSquadsCommand } from '@remnawave/backend-contract'
 import { Badge, Group } from '@mantine/core'
-import { TbWebhook } from 'react-icons/tb'
+import { GetExternalSquadsCommand } from '@remnawave/backend-contract'
 import { PiUsers } from 'react-icons/pi'
+import { TbWebhook } from 'react-icons/tb'
 
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
+import { showModal } from '@shared/_modals/show-modal'
 import { UniversalSpotlightContentShared } from '@shared/ui/universal-spotlight'
 import { formatInt } from '@shared/utils/misc'
 
@@ -14,10 +14,10 @@ interface IProps {
 export const ExternalSquadsSpotlightWidget = (props: IProps) => {
     const { externalSquads } = props
 
-    const openModalWithData = useModalsStoreOpenWithData()
-
     const handleOpenEditModal = (uuid: string) => {
-        openModalWithData(MODALS.EXTERNAL_SQUAD_DRAWER, uuid)
+        showModal('externalSquads_externalSquadsDrawer', {
+            uuid: uuid
+        })
     }
 
     return (

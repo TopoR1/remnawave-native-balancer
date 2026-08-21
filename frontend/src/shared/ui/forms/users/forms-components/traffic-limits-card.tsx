@@ -1,22 +1,25 @@
+import { Select, Stack } from '@mantine/core'
+import { UseFormReturnType } from '@mantine/form'
 import { CreateUserCommand, UpdateUserCommand } from '@remnawave/backend-contract'
 import { ForwardRefComponent, HTMLMotionProps, Variants } from 'motion/react'
-import { NumberInput, Select, Stack, Text } from '@mantine/core'
-import { UseFormReturnType } from '@mantine/form'
-import { PiClockDuotone } from 'react-icons/pi'
 import { useTranslation } from 'react-i18next'
+import { PiClockDuotone } from 'react-icons/pi'
 import { TbChartLine } from 'react-icons/tb'
 
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { resetDataStrategy } from '@shared/constants/forms'
+import { TrafficLimitInput } from '@shared/ui/forms/traffic-limit-input'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
 
-interface IProps<T extends CreateUserCommand.Request | UpdateUserCommand.Request> {
+interface IProps<T extends CreateUserCommand.RequestBody | UpdateUserCommand.RequestBody> {
     cardVariants: Variants
     form: UseFormReturnType<T>
     motionWrapper: ForwardRefComponent<HTMLDivElement, HTMLMotionProps<'div'>>
 }
 
-export const TrafficLimitsCard = <T extends CreateUserCommand.Request | UpdateUserCommand.Request>(
+export const TrafficLimitsCard = <
+    T extends CreateUserCommand.RequestBody | UpdateUserCommand.RequestBody
+>(
     props: IProps<T>
 ) => {
     const { t } = useTranslation()
@@ -40,25 +43,11 @@ export const TrafficLimitsCard = <T extends CreateUserCommand.Request | UpdateUs
                 </SectionCard.Section>
                 <SectionCard.Section>
                     <Stack gap="md">
-                        <NumberInput
-                            allowDecimal={false}
-                            allowNegative={false}
-                            decimalScale={0}
-                            description={t('create-user-modal.widget.data-limit-description')}
+                        <TrafficLimitInput
+                            description={t('traffic-limits-card.traffic-limit-description')}
                             key={form.key('trafficLimitBytes')}
-                            label={t('create-user-modal.widget.data-limit')}
-                            leftSection={
-                                <Text
-                                    display="flex"
-                                    size="0.75rem"
-                                    style={{ justifyContent: 'center' }}
-                                    ta="center"
-                                    w={26}
-                                >
-                                    GB
-                                </Text>
-                            }
-                            thousandSeparator=","
+                            label={t('traffic-limits-card.traffic-limit')}
+                            leftSection={<TbChartLine size={16} />}
                             {...form.getInputProps('trafficLimitBytes')}
                             styles={{
                                 label: { fontWeight: 500 }

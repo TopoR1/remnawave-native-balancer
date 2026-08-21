@@ -1,18 +1,21 @@
-import { DataTable, type DataTableSortStatus, useDataTableColumns } from 'mantine-datatable'
-import { GetAllNodesCommand } from '@remnawave/backend-contract'
-import { memo, useLayoutEffect, useMemo, useState } from 'react'
-import { Box, Button, Group, Stack, Text } from '@mantine/core'
+import { DataTable, type DataTableSortStatus, useDataTableColumns } from '@kastov/mantine-datatable'
+import { Box, Button, Stack, Text } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
+import { GetNodesCommand } from '@remnawave/backend-contract'
+import { memo, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { TbRestore } from 'react-icons/tb'
 import { PiEmpty } from 'react-icons/pi'
-import get from 'lodash/get'
 
-import { useGetConfigProfiles, useGetNodePlugins, useGetNodes } from '@shared/api/hooks'
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
-import { preventBackScrollTables } from '@shared/utils/misc'
+import { showModal } from '@shared/_modals/show-modal'
+import {
+    useGetConfigProfiles,
+    useGetNodeIntegrations,
+    useGetNodePlugins,
+    useGetNodes
+} from '@shared/api/hooks'
+import { usePreventTableBackScroll } from '@shared/hooks'
+import { DataTableControls, LoadingScreen, sortRecords } from '@shared/ui'
 import { sToMs } from '@shared/utils/time-utils'
-import { LoadingScreen } from '@shared/ui'
 
 import {
     getNodesTableColumns,
@@ -20,32 +23,25 @@ import {
     type NodeStatusFilter
 } from './use-nodes-table-widget'
 
-type NodeType = GetAllNodesCommand.Response['response'][number]
-
-function getNodeSortValue(node: NodeType, accessor: string): unknown {
-    return get(node, accessor)
-}
+type NodeType = GetNodesCommand.Response['response'][number]
 
 interface IProps {
-    nodes: GetAllNodesCommand.Response['response'] | undefined
+    nodes: GetNodesCommand.Response['response'] | undefined
     selectedRecords: NodeType[]
     setSelectedRecords: (records: NodeType[]) => void
 }
 
-const PAGE_SIZE = 50
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 150, 200]
-const NODES_CACHE_KEY = 'nodes-datatable-nodes-v2'
+const NODES_CACHE_KEY = 'nodes-datatable-nodes-v7'
+const DEFAULT_SORT_STATUS: DataTableSortStatus<NodeType> = {
+    columnAccessor: 'viewPosition',
+    direction: 'asc'
+}
 
 export const NodesDataTableWidget = memo((props: IProps) => {
     const { nodes, selectedRecords, setSelectedRecords } = props
     const { t } = useTranslation()
 
-    const [pageSize, setPageSize] = useState(PAGE_SIZE)
-    const [page, setPage] = useState(1)
-    const [sortStatus, setSortStatus] = useState<DataTableSortStatus<NodeType>>({
-        columnAccessor: 'viewPosition',
-        direction: 'asc'
-    })
+    const [sortStatus, setSortStatus] = useState<DataTableSortStatus<NodeType>>(DEFAULT_SORT_STATUS)
 
     const [nameQuery, setNameQuery] = useState('')
     const [debouncedNameQuery] = useDebouncedValue(nameQuery, 200)
@@ -53,13 +49,13 @@ export const NodesDataTableWidget = memo((props: IProps) => {
     const [selectedProviders, setSelectedProviders] = useState<string[]>([])
     const [selectedConfigProfiles, setSelectedConfigProfiles] = useState<string[]>([])
     const [selectedPlugins, setSelectedPlugins] = useState<string[]>([])
+    const [selectedIntegrations, setSelectedIntegrations] = useState<string[]>([])
     const [selectedInbounds, setSelectedInbounds] = useState<string[]>([])
     const [selectedStatuses, setSelectedStatuses] = useState<NodeStatusFilter[]>([])
 
     const { data: configProfiles } = useGetConfigProfiles({})
     const { data: nodePlugins } = useGetNodePlugins()
-
-    const openModalWithData = useModalsStoreOpenWithData()
+    const { data: nodeIntegrations } = useGetNodeIntegrations()
 
     useGetNodes({
         rQueryParams: {
@@ -68,17 +64,10 @@ export const NodesDataTableWidget = memo((props: IProps) => {
         }
     })
 
-    useLayoutEffect(() => {
-        document.body.addEventListener('wheel', preventBackScrollTables, {
-            passive: false
-        })
-        return () => {
-            document.body.removeEventListener('wheel', preventBackScrollTables)
-        }
-    }, [])
+    usePreventTableBackScroll()
 
     const handleViewNode = (nodeUuid: string) => {
-        openModalWithData(MODALS.EDIT_NODE_BY_UUID_MODAL, { nodeUuid })
+        showModal('nodes_editNodeModal', { nodeUuid })
     }
 
     const { availableTags, availableProviders, availableInbounds } = useMemo(() => {
@@ -116,15 +105,26 @@ export const NodesDataTableWidget = memo((props: IProps) => {
         [nodePlugins]
     )
 
+    const availableIntegrations = useMemo(
+        () =>
+            (nodeIntegrations?.nodeIntegrations ?? []).map((integration) => ({
+                label: integration.name,
+                value: integration.uuid
+            })),
+        [nodeIntegrations]
+    )
+
     const filters: NodesTableFilters = {
         availableConfigProfiles,
         availableInbounds,
+        availableIntegrations,
         availablePlugins,
         availableProviders,
         availableTags,
         nameQuery,
         selectedConfigProfiles,
         selectedInbounds,
+        selectedIntegrations,
         selectedPlugins,
         selectedProviders,
         selectedStatuses,
@@ -132,23 +132,36 @@ export const NodesDataTableWidget = memo((props: IProps) => {
         setNameQuery,
         setSelectedConfigProfiles,
         setSelectedInbounds,
+        setSelectedIntegrations,
         setSelectedPlugins,
         setSelectedProviders,
         setSelectedStatuses,
         setSelectedTags
     }
 
-    const { effectiveColumns, resetColumnsWidth, resetColumnsOrder, resetColumnsToggle } =
-        useDataTableColumns({
-            key: NODES_CACHE_KEY,
-            columns: getNodesTableColumns(
-                t,
-                configProfiles?.configProfiles ?? [],
-                nodePlugins?.nodePlugins ?? [],
-                handleViewNode,
-                filters
-            )
-        })
+    const tableColumns = getNodesTableColumns(
+        t,
+        configProfiles?.configProfiles ?? [],
+        nodePlugins?.nodePlugins ?? [],
+        nodeIntegrations?.nodeIntegrations ?? [],
+        handleViewNode,
+        filters
+    ).map((column) => ({ draggable: true, resizable: true, toggleable: true, ...column }))
+
+    const {
+        effectiveColumns,
+        resetColumnsWidth,
+        resetColumnsOrder,
+        resetColumnsToggle,
+        columnsToggle,
+        setColumnsToggle
+    } = useDataTableColumns({ key: NODES_CACHE_KEY, columns: tableColumns })
+
+    const columnLabels = Object.fromEntries(
+        tableColumns
+            .filter((column) => typeof column.title === 'string' && column.title !== '')
+            .map((column) => [column.accessor, column.title])
+    ) as Record<string, string>
 
     const filteredAndSortedNodes = useMemo(() => {
         if (!nodes) return []
@@ -188,6 +201,13 @@ export const NodesDataTableWidget = memo((props: IProps) => {
             }
 
             if (
+                selectedIntegrations.length > 0 &&
+                !selectedIntegrations.some((uuid) => node.integrationUuids?.includes(uuid))
+            ) {
+                return false
+            }
+
+            if (
                 selectedInbounds.length > 0 &&
                 !selectedInbounds.some((tag) =>
                     node.configProfile?.activeInbounds?.some((inbound) => inbound.tag === tag)
@@ -209,29 +229,7 @@ export const NodesDataTableWidget = memo((props: IProps) => {
             return true
         })
 
-        const isDesc = sortStatus.direction === 'desc'
-        const sorted = [...filtered].sort((a, b) => {
-            const aVal = getNodeSortValue(a, sortStatus.columnAccessor)
-            const bVal = getNodeSortValue(b, sortStatus.columnAccessor)
-
-            if (aVal == null && bVal == null) return 0
-            if (aVal == null) return 1
-            if (bVal == null) return -1
-
-            let result: number
-            if (typeof aVal === 'string' && typeof bVal === 'string') {
-                result = aVal.toLowerCase().localeCompare(bVal.toLowerCase())
-            } else if (aVal < bVal) {
-                result = -1
-            } else if (aVal > bVal) {
-                result = 1
-            } else {
-                result = 0
-            }
-
-            return isDesc ? -result : result
-        })
-        return sorted
+        return sortRecords(filtered, sortStatus)
     }, [
         nodes,
         debouncedNameQuery,
@@ -239,15 +237,11 @@ export const NodesDataTableWidget = memo((props: IProps) => {
         selectedProviders,
         selectedConfigProfiles,
         selectedPlugins,
+        selectedIntegrations,
         selectedInbounds,
         selectedStatuses,
         sortStatus
     ])
-
-    const handleChangePageSize = (newSize: number) => {
-        setPageSize(newSize)
-        setPage(1)
-    }
 
     if (!nodes || !configProfiles) return <LoadingScreen height="60vh" />
 
@@ -264,6 +258,7 @@ export const NodesDataTableWidget = memo((props: IProps) => {
                     toggleable: true,
                     resizable: true
                 }}
+                height="55vh"
                 emptyState={
                     <Stack align="center" gap="xs">
                         <Box mb={4} p={4}>
@@ -280,53 +275,37 @@ export const NodesDataTableWidget = memo((props: IProps) => {
                 fetching={false}
                 highlightOnHover={true}
                 idAccessor="uuid"
-                onPageChange={setPage}
-                onRecordsPerPageChange={handleChangePageSize}
                 onSelectedRecordsChange={setSelectedRecords}
                 onSortStatusChange={setSortStatus}
-                page={page}
                 pinFirstColumn
                 pinLastColumn
-                records={filteredAndSortedNodes.slice((page - 1) * pageSize, page * pageSize)}
-                recordsPerPage={pageSize}
-                recordsPerPageOptions={PAGE_SIZE_OPTIONS}
+                records={filteredAndSortedNodes}
                 selectedRecords={selectedRecords}
                 sortStatus={sortStatus}
                 storeColumnsKey={NODES_CACHE_KEY}
                 striped
-                totalRecords={filteredAndSortedNodes.length}
-                withColumnBorders={false}
-                withRowBorders={true}
-                withTableBorder={true}
+                withColumnBorders
+                withRowBorders
+                withTableBorder
+                columnResizeMode="expand"
+                rowVirtualization={{
+                    fixedLayout: false,
+                    overscan: 25
+                }}
             />
-            <Group grow justify="space-between" mt="md">
-                <Group justify="right">
-                    <Button
-                        leftSection={<TbRestore size={16} />}
-                        onClick={resetColumnsWidth}
-                        size="sm"
-                        variant="default"
-                    >
-                        {t('nodes-datatable.widget.column-width')}
-                    </Button>
-                    <Button
-                        leftSection={<TbRestore size={16} />}
-                        onClick={resetColumnsOrder}
-                        size="sm"
-                        variant="default"
-                    >
-                        {t('nodes-datatable.widget.column-order')}
-                    </Button>
-                    <Button
-                        leftSection={<TbRestore size={16} />}
-                        onClick={resetColumnsToggle}
-                        size="sm"
-                        variant="default"
-                    >
-                        {t('nodes-datatable.widget.column-toggle')}
-                    </Button>
-                </Group>
-            </Group>
+            <DataTableControls
+                columnsToggle={columnsToggle}
+                labelByAccessor={columnLabels}
+                onResetColumnsOrder={resetColumnsOrder}
+                onResetColumnsToggle={resetColumnsToggle}
+                onResetColumnsWidth={resetColumnsWidth}
+                onResetSort={() => setSortStatus(DEFAULT_SORT_STATUS)}
+                setColumnsToggle={setColumnsToggle}
+                sortResetDisabled={
+                    sortStatus.columnAccessor === DEFAULT_SORT_STATUS.columnAccessor &&
+                    sortStatus.direction === DEFAULT_SORT_STATUS.direction
+                }
+            />
         </>
     )
 })

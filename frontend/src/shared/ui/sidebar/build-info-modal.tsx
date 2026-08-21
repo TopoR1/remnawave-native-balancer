@@ -12,6 +12,7 @@ import {
     Text,
     Tooltip
 } from '@mantine/core'
+import { GetMetadataCommand } from '@remnawave/backend-contract'
 import {
     TbBrandGithub,
     TbBrandTelegram,
@@ -23,13 +24,12 @@ import {
     TbServer,
     TbWorld
 } from 'react-icons/tb'
-import { GetMetadataCommand } from '@remnawave/backend-contract'
 
 import { formatTimeUtil } from '@shared/utils/time-utils'
 
 import { CopyableCodeBlock } from '../copyable-code-block'
-import classes from './build-info-modal.module.css'
 import { Logo } from '../logo'
+import classes from './build-info-modal.module.css'
 
 interface BuildInfoModalProps {
     isNewVersionAvailable: boolean

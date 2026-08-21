@@ -12,21 +12,20 @@ export namespace CreateSnippetCommand {
         SNIPPETS_ROUTES.CREATE,
         'post',
         'Create snippet',
+        { scope: 'create', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
+    export const RequestBodySchema = z.object({
         name: z
             .string()
-            .min(2, 'Name must be at least 2 characters')
-            .max(255, 'Name must be less than 255 characters')
+            .min(2)
+            .max(255)
             .regex(
                 /^[A-Za-z0-9_\s-]+$/,
                 'Name can only contain letters, numbers, underscores, dashes and spaces',
             ),
-        snippet: z.array(z.object({}).passthrough()),
+        snippet: z.array(z.looseObject({})),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: z.object({
@@ -35,5 +34,6 @@ export namespace CreateSnippetCommand {
         }),
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

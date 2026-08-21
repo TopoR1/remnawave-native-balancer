@@ -11,6 +11,7 @@ export namespace GetTorrentBlockerReportsStatsCommand {
         NODE_PLUGINS_ROUTES.TORRENT_BLOCKER.GET_REPORTS_STATS,
         'get',
         'Get Torrent Blocker Reports Stats',
+        { scope: 'torrent-blocker-stats', kind: 'read' },
     );
 
     export const ResponseSchema = z.object({
@@ -23,7 +24,7 @@ export namespace GetTorrentBlockerReportsStatsCommand {
             }),
             topUsers: z.array(
                 z.object({
-                    uuid: z.string().uuid(),
+                    userId: z.number(),
                     color: z.string(),
                     username: z.string(),
                     total: z.number(),
@@ -31,7 +32,7 @@ export namespace GetTorrentBlockerReportsStatsCommand {
             ),
             topNodes: z.array(
                 z.object({
-                    uuid: z.string().uuid(),
+                    uuid: z.uuid(),
                     countryCode: z.string(),
                     color: z.string(),
                     name: z.string(),

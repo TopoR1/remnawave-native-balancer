@@ -3,8 +3,7 @@
 import { Box, BoxProps, ElementProps } from '@mantine/core'
 
 interface LogoProps
-    extends ElementProps<'svg', keyof BoxProps>,
-        Omit<BoxProps, 'children' | 'ref'> {
+    extends ElementProps<'svg', keyof BoxProps>, Omit<BoxProps, 'children' | 'ref'> {
     size?: number | string
 }
 

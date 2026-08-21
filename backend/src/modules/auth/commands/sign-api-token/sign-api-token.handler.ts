@@ -1,3 +1,5 @@
+import type { IJWTAuthPayload } from '../../interfaces';
+
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { JwtService } from '@nestjs/jwt';
 
@@ -5,7 +7,6 @@ import { ok, TResult } from '@common/types';
 import { ROLE } from '@libs/contracts/constants';
 
 import { SignApiTokenCommand } from './sign-api-token.command';
-import { IJWTAuthPayload } from '../../interfaces';
 
 @CommandHandler(SignApiTokenCommand)
 export class SignApiTokenHandler implements ICommandHandler<SignApiTokenCommand, TResult<string>> {
@@ -20,7 +21,7 @@ export class SignApiTokenHandler implements ICommandHandler<SignApiTokenCommand,
 
         return ok(
             this.jwtService.sign(payload, {
-                expiresIn: '99999d',
+                expiresIn: `${command.expireInDays}d`,
             }),
         );
     }

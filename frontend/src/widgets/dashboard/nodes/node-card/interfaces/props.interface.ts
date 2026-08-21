@@ -1,8 +1,12 @@
-import { GetAllNodesCommand } from '@remnawave/backend-contract'
+import { GetNodesCommand } from '@remnawave/backend-contract'
 
 export interface IProps {
+    disableReordering?: boolean
     handleViewNode: (nodeUuid: string) => void
+    index: number
     isDragOverlay?: boolean
     isMobile: boolean
-    node: GetAllNodesCommand.Response['response'][number]
+    node: GetNodesCommand.Response['response'][number]
+    integrationsNames: string[]
+    pluginsName: string | undefined
 }

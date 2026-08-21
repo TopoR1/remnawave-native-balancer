@@ -1,5 +1,5 @@
-import { ConfigService } from '@nestjs/config';
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { TAllEventChannels, TAllEvents } from '@libs/contracts/constants';
 
@@ -21,5 +21,9 @@ export class NotificationsConfigService {
         }
 
         return true;
+    }
+
+    getWebhookUrls(eventName: TAllEvents): string[] {
+        return this.config.events[eventName]?.additionalWebhookUrls ?? [];
     }
 }

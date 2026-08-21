@@ -1,4 +1,4 @@
-FROM node:24.14-trixie-slim AS frontend-build
+FROM node:24.19-trixie-slim AS frontend-build
 WORKDIR /opt/frontend
 
 RUN apt-get update \
@@ -21,7 +21,7 @@ RUN test -f dist/index.html \
     && curl -L https://validator.remna.dev/xray.schema.cn.json -o dist/assets/xray.schema.cn.json \
     && curl -L https://validator.remna.dev/main.wasm -o dist/assets/main.wasm
 
-FROM node:24.14-trixie-slim AS backend-build
+FROM node:24.19-trixie-slim AS backend-build
 WORKDIR /opt/app
 
 ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x,linux-arm64-openssl-3.0.x
@@ -29,7 +29,6 @@ ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x,linux-arm64-openssl-3.0.x
 COPY backend/package*.json ./
 COPY backend/prisma ./prisma
 COPY backend/prisma.config.ts ./prisma.config.ts
-COPY backend/patches ./patches
 
 RUN npm ci
 
@@ -43,10 +42,13 @@ RUN npm cache clean --force
 
 RUN npm prune --omit=dev
 
-FROM node:24.14-trixie-slim
+FROM node:24.19-trixie-slim
 
 LABEL org.opencontainers.image.title="Remnawave Native Balancer"
 LABEL org.opencontainers.image.description="Remnawave backend bundled with the local native Host Balancer frontend"
+LABEL org.opencontainers.image.version="native-balancer-3.3.2"
+LABEL org.opencontainers.image.remnawave.backend.version="3.3.2"
+LABEL org.opencontainers.image.remnawave.frontend.version="3.3.2"
 LABEL org.opencontainers.image.url="https://github.com/remnawave/backend"
 LABEL org.opencontainers.image.source="https://github.com/remnawave/backend"
 LABEL org.opencontainers.image.vendor="Remnawave"
@@ -84,7 +86,6 @@ ENV __RW_METADATA_BUILD_NUMBER=${__RW_METADATA_BUILD_NUMBER}
 COPY --from=backend-build /opt/app/dist ./dist
 COPY --from=frontend-build /opt/frontend/dist ./frontend
 COPY --from=backend-build /opt/app/prisma ./prisma
-COPY --from=backend-build /opt/app/patches ./patches
 COPY --from=backend-build /opt/app/node_modules ./node_modules
 
 COPY --from=backend-build /opt/app/configs /var/lib/remnawave/configs

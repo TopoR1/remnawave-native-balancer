@@ -1,9 +1,8 @@
+import { DeleteUserHwidDeviceCommand } from '@contract/commands';
 import { createZodDto } from 'nestjs-zod';
 
-import { DeleteUserHwidDeviceCommand } from '@contract/commands';
-
-export class DeleteUserHwidDeviceRequestDto extends createZodDto(
-    DeleteUserHwidDeviceCommand.RequestSchema,
+export class DeleteUserHwidDeviceBodyDto extends createZodDto(
+    DeleteUserHwidDeviceCommand.RequestBodySchema,
 ) {}
 
 export class DeleteUserHwidDeviceResponseDto extends createZodDto(

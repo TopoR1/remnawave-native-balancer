@@ -1,14 +1,14 @@
-import { FetchUsersIpsResultCommand, GetAllNodesCommand } from '@remnawave/backend-contract'
+import { ConnectionsByNodeResultCommand, GetNodesCommand } from '@remnawave/backend-contract'
 import { useEffect, useRef, useState } from 'react'
 
-import { useFetchUsersIps, useFetchUsersIpsResultMutation } from '@shared/api/hooks'
+import { useConnectionsByNodeResultMutation, useConnectionsByNode } from '@shared/api/hooks'
 
-type NodeType = GetAllNodesCommand.Response['response'][number]
+type NodeType = GetNodesCommand.Response['response'][number]
 type NodeIpEntry = NonNullable<
-    FetchUsersIpsResultCommand.Response['response']['result']
+    ConnectionsByNodeResultCommand.Response['response']['result']
 >['users'][number]['ips'][number]
 
-type PollResult = NonNullable<FetchUsersIpsResultCommand.Response['response']['result']>
+type PollResult = NonNullable<ConnectionsByNodeResultCommand.Response['response']['result']>
 
 export interface AggregatedUserNode {
     countryCode: string
@@ -21,7 +21,7 @@ export interface AggregatedUser {
     nodes: AggregatedUserNode[]
     totalIps: number
     uniqueIps: number
-    userId: string
+    userId: number
 }
 
 export interface ExplorerStats {
@@ -47,7 +47,7 @@ export interface ExplorerProgress {
 
 export type ExplorerPhase = 'completed' | 'failed' | 'idle' | 'running'
 
-const MAX_CONCURRENT = 5
+const MAX_CONCURRENT = 10
 const POLL_INTERVAL = 1000
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
@@ -97,11 +97,11 @@ interface NodeResult {
     countryCode: string
     nodeName: string
     nodeUuid: string
-    users: Array<{ ips: NodeIpEntry[]; userId: string }>
+    users: Array<{ ips: NodeIpEntry[]; userId: number }>
 }
 
 function aggregateResults(results: NodeResult[]) {
-    const userMap = new Map<string, AggregatedUser>()
+    const userMap = new Map<number, AggregatedUser>()
     const globalIpSet = new Set<string>()
     let totalIpCount = 0
 
@@ -152,8 +152,8 @@ export function useSessionsExplorer(nodes: NodeType[] | undefined) {
     const [aggregatedUsers, setAggregatedUsers] = useState<AggregatedUser[]>([])
     const [stats, setStats] = useState<ExplorerStats | null>(null)
 
-    const { mutateAsync: createNodeJob } = useFetchUsersIps()
-    const { mutateAsync: fetchUsersIpsResult } = useFetchUsersIpsResultMutation()
+    const { mutateAsync: createNodeJob } = useConnectionsByNode()
+    const { mutateAsync: connectionsByNodeResult } = useConnectionsByNodeResultMutation()
 
     const abortRef = useRef<AbortController | null>(null)
     const nodesRef = useRef(nodes)
@@ -201,7 +201,7 @@ export function useSessionsExplorer(nodes: NodeType[] | undefined) {
 
         const pollUntilDone = async (jobId: string): Promise<null | PollResult> => {
             await delay(POLL_INTERVAL, signal)
-            const resp = await fetchUsersIpsResult({ route: { jobId }, query: { signal } })
+            const resp = await connectionsByNodeResult({ route: { jobId }, query: { signal } })
 
             if (resp.isFailed || (resp.isCompleted && !resp.result?.success)) {
                 return null

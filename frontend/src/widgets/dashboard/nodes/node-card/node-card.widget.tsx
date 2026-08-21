@@ -1,3 +1,12 @@
+import { OptimisticSortingPlugin } from '@dnd-kit/dom/sortable'
+import { useSortable } from '@dnd-kit/react/sortable'
+import { Avatar, Badge, Box, Flex, Progress, Stack, Text, Tooltip } from '@mantine/core'
+import { useClipboard } from '@mantine/hooks'
+import { notifications } from '@mantine/notifications'
+import clsx from 'clsx'
+import { CSSProperties, memo, useMemo } from 'react'
+import ReactCountryFlag from 'react-country-flag'
+import { useTranslation } from 'react-i18next'
 import {
     PiArrowDownDuotone,
     PiArrowsCounterClockwise,
@@ -8,26 +17,17 @@ import {
     PiMemoryDuotone,
     PiUsersDuotone
 } from 'react-icons/pi'
-import { Avatar, Badge, Box, Flex, Grid, Progress, Stack, Text, Tooltip } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
-import { CSSProperties, memo, useMemo } from 'react'
-import ReactCountryFlag from 'react-country-flag'
-import { useSortable } from '@dnd-kit/sortable'
-import { TbAlertCircle } from 'react-icons/tb'
-import { useTranslation } from 'react-i18next'
-import { useClipboard } from '@mantine/hooks'
-import { CSS } from '@dnd-kit/utilities'
-import clsx from 'clsx'
+import { TbAlertCircle, TbPackage, TbPlugConnected } from 'react-icons/tb'
 
-import { prettyBytesToAnyUtil, prettySiRealtimeBytesUtil } from '@shared/utils/bytes'
-import { getNodeResetDaysUtil, getXrayUptimeUtil } from '@shared/utils/time-utils'
-import { faviconResolver } from '@shared/utils/misc'
-import { XrayLogo } from '@shared/ui/logos'
 import { Logo } from '@shared/ui/logo'
+import { XrayLogo } from '@shared/ui/logos'
+import { prettifyBytesUtil, prettySiRealtimeBytesUtil } from '@shared/utils/bytes'
+import { faviconResolver } from '@shared/utils/misc'
+import { getNodeResetDaysUtil, getXrayUptimeUtil } from '@shared/utils/time-utils'
 
 import { NodeStatusBadgeWidget } from '../node-status-badge'
-import classes from './NodeCard.module.css'
 import { IProps } from './interfaces'
+import classes from './NodeCard.module.css'
 
 const getNodeColors = (node: IProps['node']) => {
     if (node.isDisabled) {
@@ -67,24 +67,37 @@ const getProgressColor = (percentage: number, fallback: boolean) => {
 
 export const NodeCardWidget = memo((props: IProps) => {
     const { t } = useTranslation()
-    const { handleViewNode, node, isDragOverlay = false, isMobile } = props
+    const {
+        handleViewNode,
+        node,
+        index,
+        isDragOverlay = false,
+        isMobile,
+        disableReordering = false,
+        integrationsNames,
+        pluginsName
+    } = props
 
     const clipboard = useClipboard({ timeout: 500 })
 
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-        id: node.uuid
+    const sortable = useSortable({
+        id: node.uuid,
+        index,
+        disabled: isDragOverlay || disableReordering,
+        plugins: (defaults) => defaults.filter((plugin) => plugin !== OptimisticSortingPlugin)
     })
 
+    const isDragging = !isDragOverlay && sortable.isDragging
+    const { ref, handleRef } = sortable
+
     const style: CSSProperties = {
-        transform: CSS.Transform.toString(transform),
-        transition,
         opacity: isDragging ? 0 : 1,
         zIndex: isDragging ? 1000 : 'auto'
     }
 
-    const prettyUsedData = prettyBytesToAnyUtil(node.trafficUsedBytes || 0) || '0 B'
+    const prettyUsedData = prettifyBytesUtil(node.trafficUsedBytes || 0) || '0 B'
     const maxData = node.isTrafficTrackingActive
-        ? prettyBytesToAnyUtil(node.trafficLimitBytes || 0) || '∞'
+        ? prettifyBytesUtil(node.trafficLimitBytes || 0) || '∞'
         : '∞'
 
     const calcPercentage = () => {
@@ -170,9 +183,9 @@ export const NodeCardWidget = memo((props: IProps) => {
             className={clsx(classes.nodeRow, {
                 [classes.nodeRowDragging]: isDragging
             })}
-            data-dnd-overlay={isDragOverlay}
+            data-drag-overlay={isDragOverlay}
             onClick={() => handleViewNode(node.uuid)}
-            ref={isDragOverlay ? undefined : setNodeRef}
+            ref={isDragOverlay ? undefined : ref}
             style={{
                 ...style,
                 background: `linear-gradient(
@@ -184,20 +197,21 @@ export const NodeCardWidget = memo((props: IProps) => {
                 boxShadow
             }}
         >
-            <Box
-                {...(isDragOverlay ? {} : attributes)}
-                {...(isDragOverlay ? {} : listeners)}
-                className={clsx(classes.dragHandle, {
-                    [classes.dragHandleActive]: isDragging
-                })}
-            >
-                <PiDotsSixVertical color="white" size="24px" />
-            </Box>
+            {!disableReordering && (
+                <Box
+                    className={clsx(classes.dragHandle, {
+                        [classes.dragHandleActive]: isDragging
+                    })}
+                    ref={isDragOverlay ? undefined : handleRef}
+                >
+                    <PiDotsSixVertical color="white" size="24px" />
+                </Box>
+            )}
 
             {!isMobile && (
                 <>
-                    <Grid align="center" className={classes.desktopGrid} gutter="md">
-                        <Grid.Col span={{ base: 12, sm: 5.5 }}>
+                    <div className={classes.desktopGrid}>
+                        <div>
                             <Flex align="center" gap="sm">
                                 {isConfigMissing ? (
                                     <Badge
@@ -246,6 +260,10 @@ export const NodeCardWidget = memo((props: IProps) => {
                                                 <Avatar
                                                     alt={node.provider.name}
                                                     color="initials"
+                                                    imageProps={{
+                                                        decoding: 'async',
+                                                        loading: 'lazy'
+                                                    }}
                                                     name={node.provider.name}
                                                     onLoad={(event) => {
                                                         const img = event.target as HTMLImageElement
@@ -276,9 +294,9 @@ export const NodeCardWidget = memo((props: IProps) => {
                                     )}
                                 </Flex>
                             </Flex>
-                        </Grid.Col>
+                        </div>
 
-                        <Grid.Col span={{ base: 12, sm: 2.5 }}>
+                        <div>
                             <Flex align="center" gap="xs">
                                 <PiGlobeSimple className={classes.icon} size={14} />
                                 <Text
@@ -290,9 +308,9 @@ export const NodeCardWidget = memo((props: IProps) => {
                                     {node.address}
                                 </Text>
                             </Flex>
-                        </Grid.Col>
+                        </div>
 
-                        <Grid.Col span={{ base: 12, sm: 2 }}>
+                        <div>
                             <Box>
                                 <Flex direction="column" gap={4}>
                                     <Flex align="center" justify="space-between">
@@ -313,9 +331,9 @@ export const NodeCardWidget = memo((props: IProps) => {
                                     />
                                 </Flex>
                             </Box>
-                        </Grid.Col>
+                        </div>
 
-                        <Grid.Col span={{ base: 12, sm: 2 }}>
+                        <div>
                             <Flex align="center" gap="xs" justify="space-between">
                                 {node.isTrafficTrackingActive ? (
                                     <Flex align="center" gap={4}>
@@ -345,8 +363,8 @@ export const NodeCardWidget = memo((props: IProps) => {
                                     </Flex>
                                 )}
                             </Flex>
-                        </Grid.Col>
-                    </Grid>
+                        </div>
+                    </div>
 
                     <Flex align="center" gap="md" mt={8}>
                         <Flex align="center" gap={6} style={{ flex: 1, maxWidth: 200 }}>
@@ -427,6 +445,38 @@ export const NodeCardWidget = memo((props: IProps) => {
                             </Text>
                         </Flex>
                         <Flex align="center" gap="md" ml="auto">
+                            {pluginsName && (
+                                <Flex align="center" gap={4} maw={150}>
+                                    <TbPackage
+                                        color="var(--mantine-color-dimmed)"
+                                        size={12}
+                                        style={{ flexShrink: 0 }}
+                                    />
+                                    <Text c="dimmed" ff="monospace" size="xs" truncate="end">
+                                        {pluginsName}
+                                    </Text>
+                                </Flex>
+                            )}
+                            {integrationsNames.length > 0 && (
+                                <Tooltip
+                                    label={integrationsNames.join(', ')}
+                                    multiline
+                                    radius="md"
+                                    w={250}
+                                >
+                                    <Flex align="center" gap={4} maw={220}>
+                                        <TbPlugConnected
+                                            color="var(--mantine-color-pink-5)"
+                                            size={12}
+                                            style={{ flexShrink: 0 }}
+                                        />
+                                        <Text c="dimmed" ff="monospace" size="xs" truncate="end">
+                                            {integrationsNames.join(', ')}
+                                        </Text>
+                                    </Flex>
+                                </Tooltip>
+                            )}
+
                             <Flex align="center" gap={4}>
                                 <XrayLogo color="var(--mantine-color-dimmed)" size={12} />
                                 <Text c="dimmed" ff="monospace" size="xs">
@@ -497,6 +547,7 @@ export const NodeCardWidget = memo((props: IProps) => {
                                         <Avatar
                                             alt={node.provider.name}
                                             color="initials"
+                                            imageProps={{ decoding: 'async', loading: 'lazy' }}
                                             name={node.provider.name}
                                             onLoad={(event) => {
                                                 const img = event.target as HTMLImageElement
@@ -526,6 +577,7 @@ export const NodeCardWidget = memo((props: IProps) => {
                                         <Avatar
                                             alt="Unknown"
                                             color="initials"
+                                            imageProps={{ decoding: 'async', loading: 'lazy' }}
                                             name="Unknown"
                                             radius="sm"
                                             size={16}

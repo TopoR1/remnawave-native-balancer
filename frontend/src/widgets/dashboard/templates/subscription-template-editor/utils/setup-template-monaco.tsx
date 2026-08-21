@@ -1,9 +1,48 @@
-import { GetAllHostsCommand } from '@remnawave/backend-contract'
-import { configureMonacoYaml } from 'monaco-yaml'
 import { Monaco } from '@monaco-editor/react'
+import {
+    GetHostsCommand,
+    SUBSCRIPTION_TEMPLATE_TYPE,
+    TSubscriptionTemplateType
+} from '@remnawave/backend-contract'
+import axios from 'axios'
 import consola from 'consola'
+import { configureMonacoYaml, MonacoYaml, MonacoYamlOptions, SchemasSettings } from 'monaco-yaml'
+import { app } from 'src/config'
 
-type Host = GetAllHostsCommand.Response['response'][number]
+import { registerJsonSchema } from '@shared/utils/monaco/json-schema-registry'
+
+type Host = GetHostsCommand.Response['response'][number]
+
+interface IJsonSchemaDocument {
+    [key: string]: unknown
+    properties?: Record<string, unknown>
+}
+
+export const getTemplateModelPath = (templateType: TSubscriptionTemplateType) =>
+    `subscription-template://${templateType.toLowerCase()}`
+
+const YAML_OPTIONS: MonacoYamlOptions = {
+    validate: true,
+    enableSchemaRequest: true,
+    hover: true,
+    completion: true,
+    format: {
+        enable: true
+    }
+}
+
+let monacoYaml: MonacoYaml | undefined
+
+const configureYaml = (monaco: Monaco, schemas?: SchemasSettings[]) => {
+    const options: MonacoYamlOptions = { ...YAML_OPTIONS, schemas }
+
+    if (monacoYaml) {
+        monacoYaml.update(options)
+        return
+    }
+
+    monacoYaml = configureMonacoYaml(monaco, options)
+}
 
 const DOCS_URL = 'https://docs.rw/docs/learn/xray-json-advanced'
 const DOCS_LINK = `\n\n[📖 Documentation](${DOCS_URL})`
@@ -26,7 +65,7 @@ function buildMarkdownDescription(host: Host): string {
         `| **Status** | ${icon} ${label} |`
     ]
 
-    if (host.tag) rows.push(`| **Tag** | \`${host.tag}\` |`)
+    if (host.tags.length > 0) rows.push(`| **Tags** | \`${host.tags.join(', ')}\` |`)
     if (host.sni) rows.push(`| **SNI** | \`${host.sni}\` |`)
     if (host.serverDescription) rows.push(`| **Description** | ${host.serverDescription} |`)
     if (host.inbound.configProfileUuid) {
@@ -39,20 +78,28 @@ function buildMarkdownDescription(host: Host): string {
     return rows.join('\n')
 }
 
-export const configureMonaco = (
+export const configureMonaco = async (
     monaco: Monaco,
     language: 'json' | 'yaml',
-    hosts: GetAllHostsCommand.Response['response']
+    hosts: GetHostsCommand.Response['response'],
+    templateType: TSubscriptionTemplateType
 ) => {
     try {
         if (language === 'yaml') {
-            configureMonacoYaml(monaco, {
-                validate: true,
-                enableSchemaRequest: true,
-                hover: true,
-                completion: true,
-                format: true
-            })
+            const schemas =
+                templateType === SUBSCRIPTION_TEMPLATE_TYPE.MIHOMO
+                    ? [
+                          {
+                              fileMatch: [getTemplateModelPath(templateType)],
+                              uri: new URL(
+                                  app.templateEditor.mihomoYamlSchemaUrl,
+                                  window.location.origin
+                              ).href
+                          }
+                      ]
+                    : undefined
+
+            configureYaml(monaco, schemas)
         }
 
         if (language === 'json') {
@@ -92,6 +139,7 @@ export const configureMonaco = (
                                                         },
                                                         required: ['type']
                                                     },
+                                                    // oxlint-disable-next-line
                                                     then: {
                                                         properties: {
                                                             type: true,
@@ -120,6 +168,7 @@ export const configureMonaco = (
                                                         },
                                                         required: ['type']
                                                     },
+                                                    // oxlint-disable-next-line
                                                     then: {
                                                         properties: {
                                                             type: true,
@@ -139,6 +188,7 @@ export const configureMonaco = (
                                                         },
                                                         required: ['type']
                                                     },
+                                                    // oxlint-disable-next-line
                                                     then: {
                                                         properties: {
                                                             type: true,
@@ -160,6 +210,7 @@ export const configureMonaco = (
                                                         },
                                                         required: ['type']
                                                     },
+                                                    // oxlint-disable-next-line
                                                     then: {
                                                         properties: { type: true },
                                                         additionalProperties: false
@@ -220,19 +271,27 @@ export const configureMonaco = (
                 }
             }
 
-            monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
-                allowComments: false,
-                enableSchemaRequest: true,
-                schemaRequest: 'warning',
-                schemas: [
-                    {
-                        fileMatch: ['*'],
-                        schema,
-                        uri: 'https://subscription-template-schema.json'
-                    }
-                ],
-                validate: true
+            registerJsonSchema({
+                fileMatch: ['subscription-template://*', getTemplateModelPath(templateType)],
+                schema,
+                uri: 'https://subscription-template-schema.json'
             })
+
+            if (templateType === SUBSCRIPTION_TEMPLATE_TYPE.SINGBOX) {
+                const response = await axios.get<IJsonSchemaDocument>(
+                    app.templateEditor.singboxJsonSchemaUrl
+                )
+                const singboxSchema = response.data
+
+                registerJsonSchema({
+                    fileMatch: [getTemplateModelPath(templateType)],
+                    schema: {
+                        ...singboxSchema,
+                        properties: { ...singboxSchema.properties, remnawave: true }
+                    },
+                    uri: 'https://singbox-schema.json'
+                })
+            }
         }
     } catch (error) {
         consola.error(`Failed to configure Monaco ${language.toUpperCase()}:`, error)

@@ -9,12 +9,12 @@ export const ROUTES = {
     DASHBOARD: {
         ROOT: '/dashboard',
         HOME: '/dashboard/home',
+        OPEN_ENTITY: '/dashboard/open/:entity/:id',
         MANAGEMENT: {
             ROOT: '/dashboard/management',
             USERS: '/dashboard/management/users',
             HOSTS: '/dashboard/management/hosts',
             NODES: '/dashboard/management/nodes',
-            NODES_BANDWIDTH_TABLE: '/dashboard/management/bandwidth-table',
             NODES_STATS: '/dashboard/management/stats/nodes',
             NODES_METRICS: '/dashboard/management/metrics/nodes',
             SUBSCRIPTION_SETTINGS: '/dashboard/management/subscription-settings',
@@ -34,7 +34,9 @@ export const ROUTES = {
             HWID_INSPECTOR: '/dashboard/tools/hwid-inspector',
             SRH_INSPECTOR: '/dashboard/tools/srh-inspector',
             TORRENT_BLOCKER_REPORTS: '/dashboard/tools/torrent-blocker-reports',
-            SESSIONS_EXPLORER: '/dashboard/tools/sessions-explorer'
+            SESSIONS_EXPLORER: '/dashboard/tools/sessions-explorer',
+            HTTP_STATS: '/dashboard/tools/http-stats',
+            QUICK_OPEN: '/dashboard/tools/quick-open'
         },
         TEMPLATES: {
             ROOT: '/dashboard/templates',
@@ -51,3 +53,18 @@ export const ROUTES = {
         }
     }
 } as const
+
+export const OPEN_ENTITY = {
+    CONFIG_PROFILE: 'config-profile',
+    EXTERNAL_SQUAD: 'external-squad',
+    INTERNAL_SQUAD: 'internal-squad',
+    NODE: 'node',
+    NODE_PLUGIN: 'node-plugin',
+    SUBPAGE_CONFIG: 'subpage-config',
+    USER: 'user'
+} as const
+
+export type TOpenEntity = (typeof OPEN_ENTITY)[keyof typeof OPEN_ENTITY]
+
+export const buildOpenEntityUrl = (entity: TOpenEntity, id: number | string) =>
+    `${window.location.origin}${ROUTES.DASHBOARD.OPEN_ENTITY.replace(':entity', entity).replace(':id', String(id))}`

@@ -12,13 +12,12 @@ export namespace CloneNodePluginCommand {
         NODE_PLUGINS_ROUTES.ACTIONS.CLONE,
         'post',
         'Clone Node Plugin',
+        { scope: 'clone', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        cloneFromUuid: z.string().uuid(),
+    export const RequestBodySchema = z.object({
+        cloneFromUuid: z.uuid(),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: NodePluginSchema.extend({
@@ -26,5 +25,6 @@ export namespace CloneNodePluginCommand {
         }),
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

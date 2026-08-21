@@ -1,10 +1,12 @@
+import { createQueryKeys } from '@lukemorales/query-key-factory'
 import {
     GetNodePluginCommand,
     GetNodePluginsCommand,
+    GetSharedListCommand,
+    GetSharedListsCommand,
     GetTorrentBlockerReportsCommand,
     GetTorrentBlockerReportsStatsCommand
 } from '@remnawave/backend-contract'
-import { createQueryKeys } from '@lukemorales/query-key-factory'
 import { keepPreviousData } from '@tanstack/react-query'
 
 import { sToMs } from '@shared/utils/time-utils'
@@ -12,7 +14,7 @@ import { sToMs } from '@shared/utils/time-utils'
 import { createGetQueryHook, errorHandler } from '../../tsq-helpers'
 
 export const nodePluginsQueryKeys = createQueryKeys('nodePlugins', {
-    getNodePlugin: (route: GetNodePluginCommand.Request) => ({
+    getNodePlugin: (route: GetNodePluginCommand.RequestParam) => ({
         queryKey: [route]
     }),
     getNodePlugins: {
@@ -23,12 +25,18 @@ export const nodePluginsQueryKeys = createQueryKeys('nodePlugins', {
     }),
     getTorrentBlockerStats: {
         queryKey: null
+    },
+    getSharedList: (route: GetSharedListCommand.RequestParam) => ({
+        queryKey: [route]
+    }),
+    getSharedLists: {
+        queryKey: null
     }
 })
 
 export const useGetNodePlugin = createGetQueryHook({
     endpoint: GetNodePluginCommand.TSQ_url,
-    routeParamsSchema: GetNodePluginCommand.RequestSchema,
+    routeParamsSchema: GetNodePluginCommand.RequestParamSchema,
     responseSchema: GetNodePluginCommand.ResponseSchema,
     getQueryKey: ({ route }) => nodePluginsQueryKeys.getNodePlugin(route!).queryKey,
     rQueryParams: {
@@ -72,4 +80,27 @@ export const useGetTorrentBlockerStats = createGetQueryHook({
         staleTime: sToMs(30)
     },
     errorHandler: (error) => errorHandler(error, 'Get Torrent Blocker Reports Stats')
+})
+
+export const useGetSharedLists = createGetQueryHook({
+    endpoint: GetSharedListsCommand.TSQ_url,
+    responseSchema: GetSharedListsCommand.ResponseSchema,
+    getQueryKey: () => nodePluginsQueryKeys.getSharedLists.queryKey,
+    rQueryParams: {
+        refetchOnMount: false,
+        staleTime: sToMs(15)
+    },
+    errorHandler: (error) => errorHandler(error, 'Get Shared Lists')
+})
+
+export const useGetSharedList = createGetQueryHook({
+    endpoint: GetSharedListCommand.TSQ_url,
+    routeParamsSchema: GetSharedListCommand.RequestParamSchema,
+    responseSchema: GetSharedListCommand.ResponseSchema,
+    getQueryKey: ({ route }) => nodePluginsQueryKeys.getSharedList(route!).queryKey,
+    rQueryParams: {
+        refetchOnMount: true,
+        staleTime: sToMs(5)
+    },
+    errorHandler: (error) => errorHandler(error, 'Get Shared List')
 })

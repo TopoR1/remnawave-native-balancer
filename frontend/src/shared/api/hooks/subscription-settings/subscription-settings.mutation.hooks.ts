@@ -1,11 +1,11 @@
-import { UpdateSubscriptionSettingsCommand } from '@remnawave/backend-contract'
 import { notifications } from '@mantine/notifications'
+import { UpdateSubscriptionSettingsCommand } from '@remnawave/backend-contract'
 
 import { createMutationHook } from '../../tsq-helpers'
 
 export const useUpdateSubscriptionSettings = createMutationHook({
     endpoint: UpdateSubscriptionSettingsCommand.TSQ_url,
-    bodySchema: UpdateSubscriptionSettingsCommand.RequestSchema,
+    bodySchema: UpdateSubscriptionSettingsCommand.RequestBodySchema,
     responseSchema: UpdateSubscriptionSettingsCommand.ResponseSchema,
     requestMethod: UpdateSubscriptionSettingsCommand.endpointDetails.REQUEST_METHOD,
     rMutationParams: {

@@ -1,12 +1,15 @@
-import { ApiBearerAuth, ApiOkResponse, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Body, Controller, HttpStatus, Param, Query, UseFilters, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
 
-import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
-import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
-import { errorHandler } from '@common/helpers/error-handler.helper';
-import { RolesGuard } from '@common/guards/roles/roles.guard';
 import { Endpoint } from '@common/decorators/base-endpoint';
 import { Roles } from '@common/decorators/roles/roles';
+import { ApiScopeResource } from '@common/decorators/scopes';
+import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
+import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
+import { RolesGuard } from '@common/guards/roles/roles.guard';
+import { ScopesGuard } from '@common/guards/scopes';
+import { errorHandler } from '@common/helpers/error-handler.helper';
+import { CONTROLLERS_INFO, HOST_BALANCERS_CONTROLLER } from '@libs/contracts/api';
 import {
     GetHostBalancerCommand,
     GetHostBalancerDecisionsCommand,
@@ -17,7 +20,6 @@ import {
     UpdateHostBalancerTargetsCommand,
     ValidateHostBalancerTargetsCommand,
 } from '@libs/contracts/commands';
-import { CONTROLLERS_INFO, HOST_BALANCERS_CONTROLLER } from '@libs/contracts/api';
 import { ROLE } from '@libs/contracts/constants';
 
 import {
@@ -47,17 +49,18 @@ import {
 import { HostBalancerService } from './host-balancer.service';
 
 @ApiBearerAuth('Authorization')
+@ApiScopeResource(CONTROLLERS_INFO.HOST_BALANCERS.resource)
 @ApiTags(CONTROLLERS_INFO.HOST_BALANCERS.tag)
 @Roles(ROLE.ADMIN, ROLE.API)
-@UseGuards(JwtDefaultGuard, RolesGuard)
+@UseGuards(JwtDefaultGuard, RolesGuard, ScopesGuard)
 @UseFilters(HttpExceptionFilter)
 @Controller(HOST_BALANCERS_CONTROLLER)
 export class HostBalancersController {
     constructor(private readonly hostBalancerService: HostBalancerService) {}
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: GetHostBalancerResponseDto })
     @Endpoint({
+        type: GetHostBalancerResponseDto,
         command: GetHostBalancerCommand,
         httpCode: HttpStatus.OK,
     })
@@ -69,11 +72,10 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: UpdateHostBalancerResponseDto })
     @Endpoint({
+        type: UpdateHostBalancerResponseDto,
         command: UpdateHostBalancerCommand,
         httpCode: HttpStatus.OK,
-        apiBody: UpdateHostBalancerRequestBodyDto,
     })
     async updateSettings(
         @Param() { hostUuid }: UpdateHostBalancerRequestDto,
@@ -84,11 +86,10 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: ToggleHostBalancerResponseDto })
     @Endpoint({
+        type: ToggleHostBalancerResponseDto,
         command: ToggleHostBalancerCommand,
         httpCode: HttpStatus.OK,
-        apiBody: ToggleHostBalancerRequestBodyDto,
     })
     async toggle(
         @Param() { hostUuid }: ToggleHostBalancerRequestDto,
@@ -99,11 +100,10 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: UpdateHostBalancerTargetsResponseDto })
     @Endpoint({
+        type: UpdateHostBalancerTargetsResponseDto,
         command: UpdateHostBalancerTargetsCommand,
         httpCode: HttpStatus.OK,
-        apiBody: UpdateHostBalancerTargetsRequestBodyDto,
     })
     async updateTargets(
         @Param() { hostUuid }: UpdateHostBalancerTargetsRequestDto,
@@ -114,11 +114,10 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: ValidateHostBalancerTargetsResponseDto })
     @Endpoint({
+        type: ValidateHostBalancerTargetsResponseDto,
         command: ValidateHostBalancerTargetsCommand,
         httpCode: HttpStatus.OK,
-        apiBody: ValidateHostBalancerTargetsRequestBodyDto,
     })
     async validateTargets(
         @Param() { hostUuid }: ValidateHostBalancerTargetsRequestDto,
@@ -129,8 +128,8 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: PreviewHostBalancerResponseDto })
     @Endpoint({
+        type: PreviewHostBalancerResponseDto,
         command: PreviewHostBalancerCommand,
         httpCode: HttpStatus.OK,
     })
@@ -146,8 +145,8 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: GetHostBalancerStatsResponseDto })
     @Endpoint({
+        type: GetHostBalancerStatsResponseDto,
         command: GetHostBalancerStatsCommand,
         httpCode: HttpStatus.OK,
     })
@@ -159,8 +158,8 @@ export class HostBalancersController {
     }
 
     @ApiParam({ name: 'hostUuid', type: String, required: true })
-    @ApiOkResponse({ type: GetHostBalancerDecisionsResponseDto })
     @Endpoint({
+        type: GetHostBalancerDecisionsResponseDto,
         command: GetHostBalancerDecisionsCommand,
         httpCode: HttpStatus.OK,
     })

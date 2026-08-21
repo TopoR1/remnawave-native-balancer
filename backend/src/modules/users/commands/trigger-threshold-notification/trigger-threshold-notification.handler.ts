@@ -1,17 +1,17 @@
 import { ERRORS } from '@contract/constants';
 
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 
 import { fail, ok, TResult } from '@common/types';
 
-import { TriggerThresholdNotificationCommand } from './trigger-threshold-notification.command';
 import { UsersRepository } from '../../repositories/users.repository';
+import { TriggerThresholdNotificationCommand } from './trigger-threshold-notification.command';
 
 @CommandHandler(TriggerThresholdNotificationCommand)
 export class TriggerThresholdNotificationHandler implements ICommandHandler<
     TriggerThresholdNotificationCommand,
-    TResult<{ tId: bigint }[]>
+    TResult<{ id: bigint }[]>
 > {
     public readonly logger = new Logger(TriggerThresholdNotificationHandler.name);
 
@@ -19,7 +19,7 @@ export class TriggerThresholdNotificationHandler implements ICommandHandler<
 
     async execute(
         command: TriggerThresholdNotificationCommand,
-    ): Promise<TResult<{ tId: bigint }[]>> {
+    ): Promise<TResult<{ id: bigint }[]>> {
         try {
             const result = await this.usersRepository.triggerThresholdNotifications(
                 command.percentages,

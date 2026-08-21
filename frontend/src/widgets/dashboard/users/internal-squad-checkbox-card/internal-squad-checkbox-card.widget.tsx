@@ -1,9 +1,9 @@
 import { ActionIcon, Badge, Checkbox, Group, Text } from '@mantine/core'
+import { memo } from 'react'
 import { PiTag, PiUsers } from 'react-icons/pi'
 import { TbEdit } from 'react-icons/tb'
-import { memo } from 'react'
 
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
+import { showModal } from '@shared/_modals/show-modal'
 import { formatInt } from '@shared/utils/misc'
 
 import classes from './Checkbox.module.css'
@@ -12,10 +12,8 @@ import { IProps } from './interfaces'
 export const InternalSquadCheckboxCard = memo((props: IProps) => {
     const { internalSquad, hideEditButton } = props
 
-    const openModalWithData = useModalsStoreOpenWithData()
-
     const handleOpenEditModal = (squadUuid: string) => {
-        openModalWithData(MODALS.INTERNAL_SQUAD_SHOW_INBOUNDS, {
+        showModal('internalSquads_internalSquadsInboundsDrawer', {
             squadUuid
         })
     }

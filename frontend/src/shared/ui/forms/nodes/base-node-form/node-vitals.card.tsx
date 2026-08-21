@@ -1,35 +1,68 @@
 import {
+    CheckIcon,
+    ComboboxItem,
+    Group,
+    MultiSelect,
+    NumberInput,
+    Select,
+    Stack,
+    Text,
+    TextInput
+} from '@mantine/core'
+import { UseFormReturnType } from '@mantine/form'
+import {
     CreateNodeCommand,
+    GetNodeIntegrationsCommand,
     GetNodePluginsCommand,
-    GetPubKeyCommand,
+    GetNodeSecretKeyCommand,
     UpdateNodeCommand
 } from '@remnawave/backend-contract'
-import { TbCertificate, TbMapPin, TbPackage, TbUserCheck, TbWorld } from 'react-icons/tb'
 import { ForwardRefComponent, HTMLMotionProps, Variants } from 'motion/react'
-import { Group, NumberInput, Select, Stack, TextInput } from '@mantine/core'
-import { UseFormReturnType } from '@mantine/form'
-import { HiOutlineServer } from 'react-icons/hi'
 import { useTranslation } from 'react-i18next'
+import { HiOutlineServer } from 'react-icons/hi'
+import {
+    TbCertificate,
+    TbMapPin,
+    TbNetwork,
+    TbPackage,
+    TbPlugConnected,
+    TbUserCheck,
+    TbWorld
+} from 'react-icons/tb'
 
 import { CopyableFieldShared } from '@shared/ui/copyable-field/copyable-field'
 import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
+import { TagInputPill } from '@shared/ui/tag-input-pill'
 
 import { COUNTRIES } from './constants'
+import integrationsClasses from './integrations-select.module.css'
 
-interface IProps<T extends CreateNodeCommand.Request | UpdateNodeCommand.Request> {
+interface IProps<T extends CreateNodeCommand.RequestBody | UpdateNodeCommand.RequestBody> {
     cardVariants: Variants
     form: UseFormReturnType<T>
     motionWrapper: ForwardRefComponent<HTMLDivElement, HTMLMotionProps<'div'>>
+    nodeIntegrations: GetNodeIntegrationsCommand.Response['response']['nodeIntegrations']
     nodePlugins: GetNodePluginsCommand.Response['response']['nodePlugins']
-    pubKey: GetPubKeyCommand.Response['response'] | undefined
+    nodeUuid: string
+    secretKey: GetNodeSecretKeyCommand.Response['response'] | undefined
 }
 
-export const NodeVitalsCard = <T extends CreateNodeCommand.Request | UpdateNodeCommand.Request>(
+export const NodeVitalsCard = <
+    T extends CreateNodeCommand.RequestBody | UpdateNodeCommand.RequestBody
+>(
     props: IProps<T>
 ) => {
     const { t } = useTranslation()
-    const { cardVariants, form, motionWrapper, nodePlugins, pubKey } = props
+    const {
+        cardVariants,
+        form,
+        motionWrapper,
+        nodeIntegrations,
+        nodePlugins,
+        secretKey,
+        nodeUuid
+    } = props
 
     const MotionWrapper = motionWrapper
 
@@ -41,8 +74,10 @@ export const NodeVitalsCard = <T extends CreateNodeCommand.Request | UpdateNodeC
                         iconColor="blue"
                         IconComponent={HiOutlineServer}
                         iconVariant="soft"
+                        subtitle={nodeUuid}
                         title={t('base-node-form.node-vitals')}
                         titleOrder={5}
+                        withCopy
                     />
                 </SectionCard.Section>
                 <SectionCard.Section>
@@ -109,7 +144,7 @@ export const NodeVitalsCard = <T extends CreateNodeCommand.Request | UpdateNodeC
                             label="Secret Key (SECRET_KEY)"
                             leftSection={<TbCertificate size={16} />}
                             size="sm"
-                            value={`${pubKey?.pubKey.trimEnd() ?? 'Error loading...'}`}
+                            value={`${secretKey?.secretKey.trimEnd() ?? 'Error loading...'}`}
                         />
 
                         <Select
@@ -132,6 +167,66 @@ export const NodeVitalsCard = <T extends CreateNodeCommand.Request | UpdateNodeC
                             styles={{
                                 label: { fontWeight: 500 }
                             }}
+                        />
+
+                        <MultiSelect
+                            key={form.key('integrationUuids')}
+                            label={t('node-integrations.select.label')}
+                            {...form.getInputProps('integrationUuids')}
+                            clearable
+                            data={nodeIntegrations.map((integration) => ({
+                                label: integration.name,
+                                value: integration.uuid,
+                                description: integration.description
+                            }))}
+                            leftSection={<TbPlugConnected size={16} />}
+                            nothingFoundMessage={t('common.nothing-found')}
+                            placeholder={t('node-integrations.select.placeholder')}
+                            classNames={{ option: integrationsClasses.option }}
+                            scrollAreaProps={{ styles: { content: { minWidth: '100%' } } }}
+                            renderOption={({ option, checked }) => {
+                                const { description } = option as ComboboxItem & {
+                                    description?: null | string
+                                }
+
+                                return (
+                                    <Group gap="xs" miw={0} w="100%" wrap="nowrap">
+                                        <CheckIcon
+                                            size={12}
+                                            style={{
+                                                flexShrink: 0,
+                                                opacity: checked ? 1 : 0.25
+                                            }}
+                                        />
+                                        <Stack flex={1} gap={0} miw={0}>
+                                            <Text size="sm" truncate="end">
+                                                {option.label}
+                                            </Text>
+                                            {description && (
+                                                <Text c="dimmed" size="xs" truncate="end">
+                                                    {description}
+                                                </Text>
+                                            )}
+                                        </Stack>
+                                    </Group>
+                                )
+                            }}
+                            renderPill={({ option, value, onRemove }) => (
+                                <TagInputPill onRemove={onRemove} value={option?.label ?? value} />
+                            )}
+                            searchable
+                            styles={{
+                                label: { fontWeight: 500 }
+                            }}
+                        />
+
+                        <TextInput
+                            key={form.key('proxyUrl')}
+                            label={t('node-vitals.card.proxy-url')}
+                            {...form.getInputProps('proxyUrl')}
+                            description={t('node-vitals.card.proxy-url-description')}
+                            leftSection={<TbNetwork size={16} />}
+                            placeholder="socks5://user:pass@address:port"
                         />
                     </Stack>
                 </SectionCard.Section>

@@ -1,2 +1,8 @@
 export { useAuth } from './use-auth'
+export { useIsMobile } from './use-is-mobile'
+export { useModalEscapeGuard } from './use-modal-escape-guard'
 export { usePreventBackNavigation } from './use-prevent-back-navigation'
+export { usePreventTableBackScroll } from './use-prevent-table-back-scroll'
+export { isPseudoFullscreenActive, usePseudoFullscreen } from './use-pseudo-fullscreen'
+export type { UsePseudoFullscreenReturn } from './use-pseudo-fullscreen'
+export { useViewportFillHeight } from './use-viewport-fill-height'

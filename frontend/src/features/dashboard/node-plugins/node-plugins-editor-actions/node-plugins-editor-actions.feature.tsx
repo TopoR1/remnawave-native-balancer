@@ -1,26 +1,29 @@
 import type { editor } from 'monaco-editor'
 
+import { ActionIcon, Button, Group, Menu } from '@mantine/core'
+import { useClipboard, useDisclosure } from '@mantine/hooks'
+import { notifications } from '@mantine/notifications'
+import { Monaco } from '@monaco-editor/react'
+import { UpdateNodePluginCommand } from '@remnawave/backend-contract'
+import consola from 'consola/browser'
+import { RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
+import { PiCheckSquareOffset, PiFloppyDisk } from 'react-icons/pi'
 import {
     TbClipboardCopy,
     TbClipboardText,
     TbCut,
     TbDownload,
     TbMenuDeep,
+    TbPackage,
     TbSelectAll
 } from 'react-icons/tb'
-import { useClipboard, useDisclosure, useMediaQuery } from '@mantine/hooks'
-import { UpdateNodePluginCommand } from '@remnawave/backend-contract'
-import { PiCheckSquareOffset, PiFloppyDisk } from 'react-icons/pi'
-import { ActionIcon, Button, Group, Menu } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
-import { useTranslation } from 'react-i18next'
-import { Monaco } from '@monaco-editor/react'
-import consola from 'consola/browser'
-import { RefObject } from 'react'
 
-import { useDownloadTemplate } from '@shared/ui/load-templates/use-download-template'
-import { QueryKeys, useUpdateNodePlugin } from '@shared/api/hooks'
+import { openApplyToNodesModal } from '@shared/_modals/universal'
 import { queryClient } from '@shared/api'
+import { QueryKeys, useSyncNodePlugin, useUpdateNodePlugin } from '@shared/api/hooks'
+import { useIsMobile } from '@shared/hooks'
+import { useDownloadTemplate } from '@shared/ui/load-templates/use-download-template'
 
 interface Props {
     editorRef: RefObject<editor.IStandaloneCodeEditor | null>
@@ -49,9 +52,19 @@ export function NodePluginsEditorActionsFeature(props: Props) {
     } = props
     const { t } = useTranslation()
 
-    const isMobile = useMediaQuery('(max-width: 48em)')
+    const isMobile = useIsMobile()
     const clipboard = useClipboard({ timeout: 500 })
     const [opened, handlers] = useDisclosure(false)
+
+    const { mutate: syncNodePlugin } = useSyncNodePlugin()
+
+    const openSyncChoiceModal = () => {
+        openApplyToNodesModal({
+            IconComponent: TbPackage,
+            iconColor: 'grape',
+            onApply: () => syncNodePlugin({ variables: { uuid: pluginUuid } })
+        })
+    }
 
     const { mutate: updateNodePluginRes, isPending: isUpdating } = useUpdateNodePlugin({
         mutationFns: {
@@ -75,6 +88,8 @@ export function NodePluginsEditorActionsFeature(props: Props) {
                 )
 
                 setHasUnsavedChanges(false)
+
+                openSyncChoiceModal()
             },
             onError: (error) => {
                 setIsNodePluginValid(false)
@@ -187,6 +202,7 @@ export function NodePluginsEditorActionsFeature(props: Props) {
                 leftSection={<PiFloppyDisk size={16} />}
                 loading={isUpdating}
                 onClick={handleSave}
+                variant="soft"
             >
                 {t('common.save')}
             </Button>

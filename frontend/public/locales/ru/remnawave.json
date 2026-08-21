@@ -27,8 +27,10 @@
         "response-rules": "Правила ответов",
         "remnawave-settings": "Настройки Remnawave",
         "node-plugins": "Плагины",
+        "quick-open": "Quick open",
         "tb-reports": "Torrent Blocker Reports",
-        "sessions-explorer": "Обозреватель сессий"
+        "sessions-explorer": "Обозреватель сессий",
+        "http-stats": "HTTP Статистика"
     },
     "common": {
         "delete": "Удалить",
@@ -36,6 +38,7 @@
         "cancel": "Закрыть",
         "copied": "Скопировано",
         "copy": "Скопировать",
+        "paste": "Вставить",
         "refresh": "Обновить",
         "save": "Сохранить",
         "update": "Обновить",
@@ -46,6 +49,7 @@
         "confirm-action-description": "Вы уверены, что хотите выполнить это действие? Это действие нельзя отменить.",
         "edit": "Изменить",
         "copy-uuid": "Скопировать UUID",
+        "copy-link": "Copy link",
         "rename": "Переименовать",
         "close": "Закрыть",
         "change": "Изменить",
@@ -60,7 +64,29 @@
         "nothing-found": "Ничего не найдено",
         "name": "Имя",
         "clone": "Клонировать",
-        "event-sent": "Запрос отправлен"
+        "event-sent": "Запрос отправлен",
+        "open": "Открыть",
+        "view": "Посмотреть",
+        "clear": "Очистить",
+        "color": "Цвет",
+        "all": "Все",
+        "without-tags": "Без тегов",
+        "reset": "Сбросить",
+        "actions": "Действия",
+        "clear-selection": "Очистить выбор",
+        "select-all": "Выделить все",
+        "selected": "Выбрано: {{count}}",
+        "bulk-actions": "Массовые действия",
+        "bulk-edit": "Массовое редактирование",
+        "creation": "Создание",
+        "processing": "Обработка",
+        "operation-completed": "Операция завершена",
+        "usage-stats": "Статистика использования",
+        "active-sessions": "Активные сессии",
+        "shared-lists": "Общие списки",
+        "try-again": "Попробуйте снова",
+        "interface": "Интерфейс",
+        "ip-address": "IP-адрес"
     },
     "bandwidth-metrics": {
         "current-year": "Текущий год",
@@ -123,16 +149,7 @@
             "new-user": "Создать польз.",
             "reset-table": "Сбросить таблицу",
             "clear-filters": "Очистить фильтры",
-            "bulk-actions": "Масс. действия",
-            "help": "Справка",
-            "table-controls-help": "Помощь по управлению таблицей",
-            "table-controler-description-line-1": "Эта таблица содержит несколько элементов управления, которые помогут вам эффективно просматривать и управлять данными. Вот что делает каждый переключатель:",
-            "table-controler-description-line-2": "Переключатель",
-            "table-controler-description-line-3": "Описание",
-            "table-controler-description-line-4": "Переключение фильтров столбцов для поиска и фильтрации данных",
-            "show-or-hide-specific-columns": "Показать или скрыть определенные столбцы",
-            "adjust-row-spacing-density": "Регулировка плотности таблицы",
-            "toggle-fullscreen-table-view": "Полноэкранный вид таблицы"
+            "help": "Справка"
         }
     },
     "use-table-columns": {
@@ -153,7 +170,8 @@
         "internal-squads": "Внутренние сквады",
         "first-connected-at": "Первое подключение",
         "sub-last-opened-at": "Последний запрос подписки",
-        "tag": "Tag"
+        "tag": "Tag",
+        "used-traffic": "Использованный трафик (%)"
     },
     "header-buttons": {
         "feature": {}
@@ -210,11 +228,7 @@
         "widget": {
             "edit-host": "Редактировать хост",
             "dangling-host-cannot-be-cloned": "Хост со статусом DANGLING не может быть клонирован",
-            "error": "Ошибка",
-            "are-you-sure": "Вы уверены?",
-            "allowing-insecure-connections-can-lead-to-security-risks-we-do-not-recommend-enabling-this-option": "Разрешение небезопасных соединений может привести к рискам безопасности. Мы не рекомендуем включать эту опцию.",
-            "proceed": "Продолжить",
-            "cancel": "Закрыть"
+            "error": "Ошибка"
         }
     },
     "hosts-page-header": {
@@ -297,8 +311,6 @@
             "pick-value": "Выберите значение",
             "traffic-reset-strategy": "Стратегия сброса трафика",
             "traffic-reset-strategy-description": "Как часто следует сбрасывать трафик пользователя",
-            "data-limit": "Лимит трафика",
-            "data-limit-description": "Введите лимит данных в ГБ, 0 – безлимит.",
             "username-cannot-be-changed-later": "Имя пользователя нельзя будет изменить позже",
             "loading-user-creation": "Загрузка создания пользователя...",
             "create-user": "Создать пользователя",
@@ -414,8 +426,7 @@
         "override-sni-from-address": "Переопределить SNI из адреса",
         "override-sni-from-address-description": "Эта опция заменяет значение SNI на указанное значение поля Адрес. Это особенно полезно для опций: мульти-домен или Wildcard-домен.",
         "legacy-options": "Устаревшие настройки",
-        "allow-insecure": "Разрешить небезопасные",
-        "shuffled-hosts-hover-card": "Перемешиваемые узлы будут помещены в верхней части списка и отсортированы случайным образом.",
+        "shuffled-hosts-hover-card": "Перемешиваемые хосты будут помещены в верхней части списка и отсортированы случайным образом.",
         "vless-route-description": "От 1 до 65535, оставьте пустым (или 0) для отключения",
         "misc-settings": "Прочие настройки",
         "shuffle-host": "Перемешать хост",
@@ -437,6 +448,7 @@
         "server-description-1": "В поддерживаемых клиентах имя протокола (например, vless) будет заменено на описание, указанное здесь.",
         "server-description-2": "Не все клиентские приложения поддерживают эту функцию. Для получения более подробной информации обратитесь к документации по приложениям, перечисленным ниже.",
         "supported-clients": "Поддерживаемые клиенты",
+        "mapper": "Маппер",
         "balancing": "Балансировка",
         "help-balancing-description": "Balancer выбирает одну целевую ноду внутри этого Host. Пользователь видит публичное название Host, но подключается к выбранной цели.",
         "enable-balancing": "Включить балансировку",
@@ -687,7 +699,6 @@
         "internal-name-placeholder": "e.g. US-NY-Node-01",
         "address": "Адрес",
         "e-g-example-com": "например, example.com",
-        "consumption-multiplier": "Коэффициент использования",
         "traffic-tracking": "Отслеживание трафика",
         "limit": "Лимит",
         "reset-day": "День сброса",
@@ -713,6 +724,25 @@
             "short-stats": "Краткая статистика",
             "remnawave-usage": "Remnawave Usage",
             "process-details": "Детали по процессам"
+        },
+        "runtime-info": {
+            "title": "Справка по метрикам Runtime",
+            "subtitle": "Что означает каждый значение в карточках runtime",
+            "intro": "Каждая карта показывает текущее состояние одного процесса <highlight>Remnawave</highlight>. Используйте это руководство, чтобы понять, что означает каждая метрика и когда беспокоиться о ней.",
+            "instance-types-title": "Типы процессов",
+            "instance-types-description": "Remnawave разделен на несколько специализированных процессов. Каждый из них выполняет свою задачу, имеет свою память и свой цикл обработки событий.",
+            "api-description": "Обрабатывает все HTTP-запросы с панели и подписки. Это <highlight>main user-facing process</highlight>— им обрабатывается практически каждый запрос к панели и подписке.",
+            "scheduler-description": "<highlight>cron-driven dispatcher</highlight> сам не выполняет никакой работы. В запланированный момент он добавляет задание в очередь для выполнения посредством <highlight>Processor</highlight>.",
+            "processor-description": "<highlight>worker</highlight> обрабатывает поставленные в очередь задания. А так-же выполняет обработку данных <highlight>node health checks</highlight> для <highlight>агрегации трафика</highlight> каждого пользователя и каждого узла, а также другие длительные задачи, которые не должны блокировать API.",
+            "memory-description": "Здесь процесс хранит свои рабочие данные. Все значения передаются Node.js в режиме реального времени.",
+            "heap-description": "Память, используемая объектами JavaScript, управляется <highlight>V8</highlight> движком Node.js. Отображается как <highlight>used / total</highlight>. Высокое значение означает, <highlight>expected and healthy</highlight> что V8 удерживает память до тех пор, пока ей действительно не потребуется больше, поэтому значение типа <highlight>100 / 120 MB</highlight> является нормальным, а не предупреждением.",
+            "rss-description": "<highlight>Resident Set Size</highlight> — общий объем физической памяти, выделенной процессу операционной системой, включая heap, собственный код и разделяемые библиотеки. Лучший отдельный показатель того, <highlight>сколько оперативной памяти фактически использует этот процесс</highlight>.",
+            "external-description": "Память, удерживаемая вне V8 нативными объектами C++, связанными с JavaScript — типичными источниками являются <highlight>open sockets</highlight>, <highlight>streams</highlight>, и полезные нагрузки, поддерживаемые буфером.",
+            "array-buffers-description": "Память выделена специально для экземпляров <highlight>ArrayBuffer</highlight> и <highlight>Buffer</highlight> (сырые бинарные данные). Она считается подмножеством <highlight>External</highlight>.",
+            "event-loop-description": "Проверка работоспособности однопоточного цикла, который управляет всей асинхронной работой в Node.js. Если цикл заблокирован, весь процесс останавливается.",
+            "delay-description": "Среднее время между последовательными тактами цикла событий. Нормальное значение близко к <highlight>0–2 ms</highlight>. Более высокие значения означают, что цикл блокируется длительной синхронной работой.",
+            "p99-description": "<highlight>99th percentile</highlight> задержка цикла событий в течение окна измерения. Выявляет наихудшую задержку, которую скрывает только среднее значение — полезно для обнаружения случайных всплесков.",
+            "active-handles-description": "Долгоживущие ресурсы, поддерживающие работоспособность контура: <highlight>open sockets</highlight>, <highlight>timers</highlight>, <highlight>file descriptors</highlight>. Стационарный режим — это нормально; <highlight>unbounded growth</highlight>— это сильный сигнал утечки."
         }
     },
     "login-form": {
@@ -766,8 +796,7 @@
         "column": {
             "monthly": "Ежемесячно",
             "weekly": "Еженедельно",
-            "daily": "Ежедневно",
-            "monthly-rolling": "Ежемесячно (скользящий)"
+            "daily": "Ежедневно"
         }
     },
     "get-time-ago": {
@@ -813,36 +842,16 @@
     "subscription-settings": {
         "widget": {
             "validation-error": "Ошибка валидации",
+            "main-settings": "Основные настройки",
             "you-must-add-at-least-one-remark-with-text": "Вы должны добавить хотя бы одно примечание с текстом",
-            "subscription-info": "Информация о подписке",
-            "this-title-will-be-displayed-as-subscription-name": "Этот заголовок будет отображаться как имя подписки.",
-            "profile-title": "Заголовок профиля",
-            "enter-profile-title": "Введите заголовок профиля",
-            "auto-update-description": "Некоторые клиенты могут использовать этот интервал для автоматического обновления подписки.",
-            "auto-update-interval-hours": "Интервал авто-обновления (часы)",
-            "support-link-description": "Некоторые клиенты могут отображать эту ссылку в странице подписки, которая должна вести на страницу поддержки.",
-            "support-link": "Ссылка на поддержку",
-            "happ-settings": "Настройки Happ",
-            "happ-announce-description": "Введите Happ Announce, максимум 200 символов. Будет отображаться в странице подписки.",
-            "happ-announce": "Happ Announce",
-            "enter-happ-announce-max-200-characters": "Введите Happ Announce, максимум 200 символов",
-            "happ-routing-description": "Happ routing — это функция, которая позволяет настроить маршрутизацию.",
-            "happ-routing-description-line-2": "Маршрутизация должна быть настроена через Happ Routing Builder. Используйте кнопку ниже для настройки маршрутизации.",
-            "configure-happ-routing": "Настроить Happ Routing",
-            "happ-routing": "Happ routing",
             "user-status-remarks-description": "Эти значения будут отображаться в странице подписки, если пользователь просрочен, ограничен или отключен.",
             "user-status-remarks-description-line-2": "Вы можете добавить несколько примечаний для каждого статуса.",
             "user-status-remarks-description-line-3": "Поскольку просроченные, ограниченные и отключенные пользователи не могут подключиться к серверу, они увидят эти примечания вместо пустой подписки.",
             "update-settings": "Обновить настройки",
             "enabled": "Включено",
             "disabled": "Выключено",
-            "profile-webpage-url": "URL страницы профиля",
-            "profile-webpage-url-description": "Используется некоторыми клиентами. \nВключено по умолчанию, домен резволится из SUB_PUBLIC_DOMAIN .env переменной.",
             "serve-json-at-base-subscription": "Использовать JSON в базовой подписке",
             "serve-json-description": "Это позволит вам сервить JSON подписку в базовом пути подписки. Если запрошенный клиент поддерживает его, он будет сервиться как JSON, в противном случае он будет сервиться как обычно.",
-            "subscription-info-description": "Эти настройки поддерживаются многими клиентами, такими как Happ, V2RayNG, Streisand и т.д.",
-            "happ-description-line-1": "Здесь вы можете сконфигурировать настройки Happ для подписки.",
-            "happ-description-line-2": "Эти настройки будут использоваться только в том случае, если подписка используется в Happ.",
             "custom-remarks": "Кастомные примечания"
         },
         "page": {
@@ -858,24 +867,18 @@
             "set-inbound": "Установить инбаунд",
             "set-port": "Установить порт",
             "port": "Порт",
-            "clear-selection": "Очистить выбор",
-            "select-all": "Выбрать все"
+            "dangling-hosts-skipped": "{{count}} хостов было пропущено при клонировании."
         }
     },
-    "bulk-user-actions-drawer": {
-        "widget": {
-            "bulk-user-actions": "Массовые действия с пользователями",
-            "users": "пользователей",
-            "actions": "Действия",
-            "danger": "Опасно"
-        }
+    "edit-many-hosts-drawer": {
+        "confirm-title": "Подтвердите массовое обновление",
+        "confirm-description": "Следующие поля будут обновлены для {{count}} хостов:",
+        "no-changes-title": "Обновлять нечего",
+        "no-changes-description": "Вы не изменили ни одного поля."
     },
     "delete-all-users-by-status": {
         "feature": {
-            "processing": "Обработка",
-            "deleting-users": "Удаление пользователей...",
-            "success": "Успешно",
-            "deleted-data-affectedrows-users": "Удалено {{count}} пользователей"
+            "deleting-users": "Удаление пользователей..."
         }
     },
     "bulk-all-user-actions-tabs": {
@@ -913,14 +916,6 @@
             }
         }
     },
-    "bulk-all-user-actions-drawer": {
-        "widget": {
-            "bulk-all-user-actions": "Массовые действия со всеми пользователями",
-            "all-users": "Все пользователи",
-            "actions": "Действия",
-            "danger": "Опасно"
-        }
-    },
     "bulk-user-actions": {
         "actions": {
             "tab": {
@@ -932,10 +927,8 @@
                     "perform-action-on-users": "Выполнить действия для {{usersCount}} выбранных пользователей",
                     "resets-the-traffic-usage-to-zero-for-all-selected-users": "Сбрасывает использование трафика до нуля для всех выбранных пользователей",
                     "revokes-subscription-for-all-selected-users": "Отзывает подписку для всех выбранных пользователей",
-                    "change-active-internal-squads": "Изменить активные внутренние группы",
                     "specify-internal-squads-that-will-be-assigned-to-the-user": "Выберите внутренние сквады, в которых будет состоять пользователь",
                     "internal-squads": "Внутренние сквады",
-                    "changes-the-active-internal-squads-for-all-selected-users": "Изменить активные внутренние сквады для всех выбранных пользователей",
                     "extend-expiration-date": "Продлить срок действия",
                     "enter-the-number-of-days-to-extend-the-expiration-date": "Введите количество дней, чтобы продлить срок действия",
                     "extend-days": "Добавить дни",
@@ -968,14 +961,6 @@
             }
         }
     },
-    "users-table-selection": {
-        "feature": {
-            "row-s-selected": "строк(а) выбрано",
-            "clear-selection": "Очистить выбор",
-            "select-all": "Выбрать все",
-            "bulk-actions": "Массовые действия"
-        }
-    },
     "get-user-subscription-links": {
         "feature": {
             "subscription-links": "Подписные ссылки",
@@ -988,7 +973,6 @@
         "widget": {
             "no-data-available-for-the-selected-period": "Нет доступных данных за выбранный период",
             "no-data-available": "Нет доступных данных",
-            "traffic-statistics": "Статистика трафика",
             "click-to-show-all": "Нажмите чтобы посмотреть все",
             "click-to-highlight-only-this-node": "Нажмите чтобы показать только эту ноду",
             "usage-by-period": "Использовано за период",
@@ -1009,16 +993,8 @@
             "click-to-see-all": "Показать все"
         }
     },
-    "get-user-usage": {
-        "feature": {
-            "show-usage": "Статистика",
-            "usage": "КТО ТАКОЙ ЭТОТ ВАШ ЮСАГЕ?",
-            "active-sessions": "Активные сеансы"
-        }
-    },
     "active-sessions-drawer": {
         "widget": {
-            "title": "Активные сеансы",
             "requirements": "Условия",
             "warning-activity": "IP адрес будет показан, когда <highlight>Xray-Core</highlight> считает подключение <highlight>еще действительным</highlight>. Это может привести к отображению IP адресов, которые в настоящий момент не подключены. Используйте значок <highlight>часов</highlight> для отслеживания последней активности данного IP.",
             "warning-version": "Версия Remnawave Node <highlight>{{version}}</highlight> или выше",
@@ -1030,7 +1006,6 @@
             "progress": "Опрошено {{completed}} из {{total}} нод",
             "job-failed": "Выполнить не удалось",
             "job-failed-description": "Не удалось получить активные сеансы.",
-            "try-again": "Попробовать снова",
             "clear": "Очистить",
             "no-active-sessions": "Нет активных сеансов",
             "no-active-sessions-description": "Активных IP адресов для этого пользователя не найдено.",
@@ -1063,7 +1038,6 @@
             "revoked-at": "Дата отзыва",
             "connection-information": "Информация о подключении",
             "trojan-password": "Trojan Password",
-            "vless-uuid": "VLESS UUID",
             "ss-password": "SS Password",
             "last-online": "Последний раз в сети",
             "last-connected-node": "Последняя подключенная нода",
@@ -1103,10 +1077,7 @@
             "active-nodes": "Активные ноды",
             "current-hour": "Текущий час",
             "download-speed": "Скорость загрузки",
-            "upload-speed": "Скорость отдачи",
-            "download-total": "Всего загружено",
-            "ram-usage": "Использовано ОЗУ",
-            "for-all-nodes": "Для всех нод"
+            "upload-speed": "Скорость отдачи"
         }
     },
     "node-users-usage-drawer": {
@@ -1118,7 +1089,6 @@
             "click-to-show-all-users": "Нажмите, чтобы показать всех пользователей",
             "click-to-highlight-only-this-user": "Нажмите, чтобы выделить только этого пользователя",
             "users-accordeon": "Пользователи ({{displayedUserCount}} из {{significantUserCount}} активных, {{userCount}} всего)",
-            "user-traffic-statistics": "Статистика трафика пользователя",
             "usage-by-period": "Использование по периоду",
             "7-days": "7 дней",
             "14-days": "14 дней",
@@ -1141,8 +1111,28 @@
             "total-traffic-prettybytestoanyutil": "Общий трафик: {{totalTraffic}}",
             "user": "Пользователь",
             "traffic": "Трафик",
-            "no-users-with-traffic-100-kb": "Нет пользователей с трафиком ≥ 100 KB",
-            "users-hidden-with-less-than-100-kb": "{{usersCount}} пользователей с трафиком <100 KB, ({{totalTraffic}} всего)"
+            "no-users-with-traffic-100-kb": "Нет пользователей с трафиком ≥ 100 KiB",
+            "users-hidden-with-less-than-100-kb": "{{usersCount}} пользователей с трафиком <100 KiB, ({{totalTraffic}} всего)"
+        }
+    },
+    "internal-squads-usage-drawer": {
+        "info": {
+            "title": "Как считается трафик",
+            "summary": "Возвращает участников внутреннего сквада, израсходовавших за выбранный период не меньше заданного порога, с <b>суммарным объёмом</b> по каждому.",
+            "nodes-title": "Какие ноды участвуют в подсчёте",
+            "nodes-intro": "Сквад не привязан к нодам напрямую – связь вычисляется через инбаунды:",
+            "nodes-step-1": "Берутся все инбаунды, входящие во внутренний сквад.",
+            "nodes-step-2": "Для каждого инбаунда находятся Профили, которым он принадлежит.",
+            "nodes-step-3": "Нода учитывается, если такой Профиль установлен у неё <b>активным</b> и этот инбаунд включён на самой ноде.",
+            "nodes-outro": "То есть учитываются ровно те ноды, к которым участник сквада <hl>реально может подключиться прямо сейчас</hl>. Если у сквада нет ни одного инбаунда, доступного хотя бы на одной ноде, – список будет пустым.",
+            "traffic-title": "Как считается трафик",
+            "traffic-granularity": "Статистика хранится с точностью до <b>суток</b>: одна запись = пользователь + нода + день. Данные с нод сбрасываются в базу примерно <hl>раз в 2 минуты</hl>, поэтому цифры за текущий день –  почти реальное время, с отставанием до пары минут.",
+            "traffic-sum": "Для каждого участника суммируются все его дневные записи по нодам за период с начала дня <code>start</code> по конец дня <code>end</code> (обе даты включительно, UTC).",
+            "traffic-threshold": "В ответ попадают только пользователи, у которых сумма <b>≥ minTotalBytes</b>. Объём отдаётся в <hl>сырых байтах</hl>, без округлений.",
+            "caveats-title": "Что важно понимать",
+            "caveats-per-node": "Трафик считается <b>по ноде целиком</b>, а не по инбаунду. Если нода общая для нескольких сквадов (её активный профиль обслуживает и другие инбаунды), в сумму пользователя войдёт весь его трафик на этой ноде – включая тот, что он использовал через инбаунды других сквадов. Это <hl>верхняя оценка</hl>, а не точная атрибуция по скваду.",
+            "caveats-membership": "Состав сквада и набор нод берутся <b>на момент запроса</b>, а не исторические. Пользователь, вышедший из сквада, исчезнет из ответа (хотя трафик использовал); недавно вступивший – покажет весь свой трафик за период, включая дни до вступления. То же самое при смене активного профиля ноды.",
+            "caveats-sorting": "Список отсортирован по <b>ID пользователя</b>, а не по объёму. Так как трафик меняется в реальном времени, данные между страницами могут «плыть» – для поиска нарушителей задавайте порог <code>minTotalBytes</code>, а не вычитывайте всех."
         }
     },
     "get-hwid-user-devices": {
@@ -1243,15 +1233,13 @@
             "widget": {
                 "infra-provider": "Провайдер",
                 "name-description": "Имя провайдера. Используется для вывода в UI.",
-                "name": "Имя",
                 "enter-provider-name": "Введите имя провайдера",
                 "favicon-link": "Ссылка на Favicon",
                 "enter-favicon-link": "Введите ссылку на Favicon",
                 "favicon-link-description": "Это ссылка на иконку провайдера. Она используется для отображения иконки провайдера в UI. Достаточно просто ввести доменное имя.",
                 "login-url": "Ссылка для входа",
                 "enter-login-url": "Введите URL входа",
-                "login-url-description": "URL-адрес входа — это URL-адрес страницы входа провайдера. Он поможет вам быстро перейти на страницу входа провайдера.",
-                "save-changes": "Сохранить изменения"
+                "login-url-description": "URL-адрес входа — это URL-адрес страницы входа провайдера. Он поможет вам быстро перейти на страницу входа провайдера."
             }
         }
     },
@@ -1262,8 +1250,7 @@
             "new-date": "Новая дата",
             "today": "Сегодня",
             "tomorrow": "Завтра",
-            "next-month": "Следующий месяц",
-            "update-date": "Обновить дату"
+            "next-month": "Следующий месяц"
         }
     },
     "infra-providers-table": {
@@ -1339,7 +1326,10 @@
                 "please-select-a-provider-and-billing-node": "Пожалуйста, выберите провайдера и биллинг ноду",
                 "billing-node": "Биллинг нода",
                 "next-billing-at": "Следующий платеж",
-                "next-billing-at-description": "Дата и время для следующей оплаты этого узла. Remnawave уведомит вас о предстоящем платеже."
+                "next-billing-at-description": "Дата и время для следующей оплаты этого узла. Remnawave уведомит вас о предстоящем платеже.",
+                "existing": "Существующая",
+                "custom": "Кастомная",
+                "custom-name-description": "Если нода не управляется Remnawave, используйте пользовательское имя."
             }
         }
     },
@@ -1398,14 +1388,13 @@
     "internal-squads-list": {
         "widget": {
             "search-internal-squads": "Поиск по внутренним сквадам...",
-            "no-squads-found": "Внутренние отряды не найдены"
+            "no-squads-found": "Внутренние сквады не найдены"
         }
     },
     "user-accessible-nodes": {
         "modal": {
             "widget": {
                 "loading-accessible-nodes": "Загружаем ноды...",
-                "no-accessible-nodes-found-for-this-user": "Пользовать не имеет доступа ни к одной ноде",
                 "access-summary": "Сводка доступа",
                 "user-accessible-nodes": "Доступные ноды для пользователя"
             }
@@ -1440,7 +1429,6 @@
     "show-config-profiles-with-inbounds": {
         "feature": {
             "config-profile": "Профили",
-            "select-the-config-profile-that-will-be-applied-to-this-node": "Выберите профиль, который будет применить для этой ноды.",
             "no-config-profile-selected": "Профиль не выбран",
             "choose-a-profile-to-configure-inbounds-for-this-node": "Выберите профиль для настройки инбаундов для этой ноды"
         }
@@ -1464,11 +1452,10 @@
                 "unknown-inbound": "Неизвестный инбаунд",
                 "selected": "выбрано",
                 "no-inbound-selected": "Инбаунд не выбран",
-                "choose-an-inbound-to-apply-to-the-host": "Выберите инбаунд, который будет привязан к хосту.",
-                "apply-changes": "Применить изменения",
                 "search-profiles-or-inbounds": "Поиск по профилям или инбаундам...",
                 "no-profiles-or-inbounds-found": "Профили или инбаунды не найдены",
-                "no-config-profiles-available": "Нет доступных профилей"
+                "no-config-profiles-available": "Нет доступных профилей",
+                "assign-an-inbound-to-the-host": "[deprecated]"
             }
         }
     },
@@ -1480,7 +1467,12 @@
             "payments-in": "Платежей в {{month}}",
             "total-payments-made": "всего платежей",
             "total-spent": "Всего потрачено",
-            "lifetime-spending": "суммарных трат"
+            "lifetime-spending": "суммарных трат",
+            "overdue": "Просрочено",
+            "payment-overdue": "платеж просрочен",
+            "all-up-to-date": "все актуально",
+            "next-payment": "Следующий платёж",
+            "no-upcoming-payments": "нет предстоящих платежей"
         }
     },
     "edit-node-by-uuid-modal": {
@@ -1499,6 +1491,20 @@
             "address": "Поиск по адресу...",
             "filter-by-tags": "Фильтр по тегам"
         }
+    },
+    "disclaimer-overlay": {
+        "title": "Дисклеймер",
+        "subtitle": "Пожалуйста, прочтите это уведомление прежде чем продолжить.",
+        "intro": "Remnawave — это <highlight>решение с открытым исходным кодом для самостоятельного размещения</highlight>, предназначенное для управления прокси и пользователями. Программное обеспечение предоставляется <warning>«как есть», без каких-либо гарантий</warning>, явных или подразумеваемых.",
+        "responsibility": "Вы несёте полную ответственность за то, как вы развертываете и используете это программное обеспечение.",
+        "compliance": "Вы обязаны соблюдать все законы и правила, действующие в вашей юрисдикции.",
+        "liability": "Разработчики и контрибьюторы проекта не несут никакой ответственности за любое неправомерное использование, ущерб или потерю данных.",
+        "license-acknowledgement": "Продолжая, вы подтверждаете, что прочитали и согласны с <anchor>условиями лицензии</anchor>.",
+        "accept-button": "Я понимаю и принимаю"
+    },
+    "connection-status-overlay": {
+        "connection-lost": "Соединение потеряно",
+        "reconnecting": "Переподключение..."
     },
     "mobile-warning-overlay": {
         "mobile-device-detected": "Обнаружен смартфон",
@@ -1532,7 +1538,9 @@
     },
     "restart-node-button": {
         "feature": {
-            "restart": "Перезапустить"
+            "restart": "Перезапустить",
+            "restart-description-line-1": "гарантирует перезапуск ядра Xray на ноде. Рекомендуется использовать данный вариант.",
+            "restart-description-line-2": "будет отправлен запрос этой ноде для перезапуска Xray, но запрос может быть невыполнен, если хэш узла совпадает с текущим."
         }
     },
     "node-details-card": {
@@ -1555,8 +1563,6 @@
                 "config-profiles": "Профили",
                 "no-profile-selected": "Профиль не выбран",
                 "no-inbounds-selected": "Инбаунды не выбраны",
-                "choose-config-profile-to-apply-to-the-node": "Выберите Профиль для применения к ноде.",
-                "apply-changes": "Сохранить",
                 "search-profiles-or-inbounds": "Поиск по профилям или инбаундам...",
                 "no-profiles-or-inbounds-found": "Профили или инбаунды не найдены",
                 "no-config-profiles-available": "Нет доступных профилей"
@@ -1584,8 +1590,7 @@
             "system": "Система",
             "system-uptime": "Время работы системы",
             "network": "Сеть",
-            "kernel": "Ядро",
-            "interface": "Интерфейс"
+            "kernel": "Ядро"
         }
     },
     "node-stats": {
@@ -1632,7 +1637,6 @@
             "subscription-request-history": "История запросов подписки",
             "nothing-to-show": "Нечего показывать...",
             "request-at": "Запрос в",
-            "ip-address": "IP-адрес",
             "user-agent": "User Agent",
             "request-history": "История запросов"
         }
@@ -1668,7 +1672,9 @@
         "request-ip": "IP адрес запроса",
         "user-agent": "User Agent",
         "request-at": "Дата запроса",
-        "user-uuid": "UUID польз."
+        "user-uuid": "UUID польз.",
+        "response-type": "Тип ответа",
+        "rule-name": "Имя правила"
     },
     "srh-inspector-table": {
         "widget": {
@@ -1708,12 +1714,7 @@
                 "snippet-is-valid": "Сниппет валиден",
                 "edit-snippet": "Редактировать сниппет",
                 "snippets": "Сниппеты",
-                "new-snippet": "Новый сниппет",
-                "snippets-help-line-1": "Они используются для предопределения некоторых элементов ваших конфигураций.",
-                "snippets-help-line-2": "Сниппет должен содержать массив объектов Outbound или Rules и требуется хотя бы один элемент внутри этого массива.",
-                "snippets-help-line-3": "Автозаполнение доступно для имен сниппетов. Кроме того, вы можете быстро просмотреть сниппет, наведя курсор на имя в редакторе.",
-                "snippets-help-line-4": "Внутри outbounds[], вы можете ссылаться на сниппеты по имени.",
-                "snippets-help-line-5": "Внутри routing.rules[], вы можете ссылаться на сниппеты по имени."
+                "new-snippet": "Новый сниппет"
             }
         }
     },
@@ -1737,7 +1738,8 @@
         "copy-the": "Скопируйте",
         "content-for-the-remnawave-node-below": "содержимое для Remnawave node ниже.",
         "learn-more": "Дополнительная информация.",
-        "domain-or-ip": "Домен или IP"
+        "domain-or-ip": "Домен или IP",
+        "additional-options": "Дополнительные параметры"
     },
     "create-node-step-3-status": {
         "establishing-mtls-connection": "Установка mTLS соединения...",
@@ -1870,7 +1872,6 @@
     "passkeys-drawer": {
         "component": {
             "passkeys": "Passkeys",
-            "passkeys-description": "С помощью ключей входа вы можете безопасности входить без паролей. Вы можете зарегистрировать несколько ключей входа с помощью разных устройств.",
             "active-passkeys": "Активные ключи входа",
             "no-passkeys-registered-yet": "Ключей входа пока что не зарегистрировано",
             "add-passkeys-description": "Добавьте свой первый ключ входа, чтобы включить безопасную и беспарольную аутентификацию на ваших устройствах",
@@ -1886,7 +1887,7 @@
             "the-title-that-will-be-displayed-on-login-page": "Заголовок, отображаемый на странице входа",
             "brand-name": "Название бренда",
             "logo-url": "Ссылка на логотип",
-            "the-url-to-your-brand-logo-image": "URL-адрес логотипа вашего бренда",
+            "the-url-to-your-brand-logo-image": "URL логотипа вашего бренда. Принимает обычный URL http(s) или URL данных base64 (data:image/svg+xml;base64,...)",
             "colored-title-format": "Цветной формат заголовка",
             "colored-title-description": "Вы можете окрасить отдельные слова, используя синтаксис {color}. Поддерживает оба цвета HEX (#RRGGBB) и MantineUI цвета.",
             "example-hex-colors": "Пример цветов HEX",
@@ -1895,12 +1896,29 @@
             "color-format-note": "💡 Цвет применяется только к словам, непосредственно следующим за маркером. Без маркеров текст будет белым."
         }
     },
+    "visual-settings-card": {
+        "widget": {
+            "layout-style": "Стиль оформления",
+            "choose-how-the-desktop-navigation-is-displayed": "Выберите способ навигации по интерфейсу панели",
+            "compact": "Компактный",
+            "sidebar": "Боковая панель"
+        }
+    },
     "api-tokens-card": {
         "widget": {
             "api-tokens-description": "Управление API токенами для доступа из кода.",
             "api-tokens": "API токены",
             "no-api-tokens-found": "API токены не найдены",
-            "token-name": "Название токена"
+            "token-name": "Название токена",
+            "create-api-token": "Создать API токен",
+            "full-access": "Полные права",
+            "col-scopes": "Области",
+            "col-created": "Создано",
+            "col-expires": "Истекает",
+            "expired": "Истек",
+            "expires-in-days": "Срок жизни (дней)",
+            "expires-in": "Истекает",
+            "one-time-notice": "Из соображений безопасности токен отображается <emphasis>только один раз</emphasis> сразу после создания. Обязательно скопируйте и сохраните его в надежном месте — вы больше не сможете его увидеть."
         }
     },
     "external-squads-hosts": {
@@ -1940,7 +1958,13 @@
     },
     "external-squads-response-headers": {
         "widget": {
-            "response-headers": "Хэдеры"
+            "response-headers": "Хэдеры",
+            "headers-inherited-description": "По умолчанию хэдеры ответов унаследованы от основных настроек подписки.",
+            "add-headers": "Добавить хэдер",
+            "add-headers-description": "Хэдеры, перечисленные здесь, добавляются к унаследованным хэдерам. Если хэдер с таким ключом уже существует в основных настройках, он будет переопределен.",
+            "remove-headers": "Удалить хедер",
+            "remove-headers-description": "Хэдеры перечисленные здесь, будут удалены из ответа, даже если они предоставлены основными настройками.",
+            "enter-header-key": "Введите хэдер"
         }
     },
     "subscription-hwid-settings": {
@@ -1987,8 +2011,8 @@
     },
     "use-nodes-table-widget": {
         "online": "Онлайн",
-        "name": "Имя",
         "address": "Адрес",
+        "ip-addresses": "IP адреса",
         "traffic-used": "Польз. трафик",
         "config-profile": "Профиль",
         "inbounds": "Инбаунды",
@@ -2216,7 +2240,9 @@
         "contact-information": "Контактная информация"
     },
     "traffic-limits-card": {
-        "traffic-and-limits": "Трафик и лимиты"
+        "traffic-and-limits": "Трафик и лимиты",
+        "traffic-limit-description": "0 - неограниченно",
+        "traffic-limit": "Лимит трафика"
     },
     "node-plugin-editor-page": {
         "component": {
@@ -2228,7 +2254,9 @@
             "plugin": "Плагин",
             "review-documentation-for-more-information": "Просмотрите документацию для более подробной информации.",
             "nothing-found": "Ничего не найдено...",
-            "select-plugin": "Выбрать плагин"
+            "select-plugin": "Выбрать плагин",
+            "proxy-url": "Адрес прокси",
+            "proxy-url-description": "Необязательно. Если указано, внутреннее API-соединение между панелью и узлом будет осуществляться через этот прокси сервер."
         }
     },
     "node-plugin-card": {
@@ -2345,7 +2373,7 @@
             "all-nodes-failed-to-return-session-data": "Не удалось вернуть сессионные данные по всем нодам.",
             "total-ips": "Всего IP",
             "unique-ips": "Уникальные IP",
-            "nodes-explored": "Нод опрошенно",
+            "nodes-explored": "Нод опрошено",
             "total-users": "Всего пользователей",
             "no-active-sessions-found-on-any-node": "Не найдено активных сессий ни на одной ноде.",
             "restart-scan": "Повторить сканирование",
@@ -2353,6 +2381,201 @@
             "search-by-ip": "Поиск по IP-адресу...",
             "no-results-for-ip": "Не найдено пользователей с совпадающим IP \"{{ip}}\""
         }
+    },
+    "mobile-stats": {
+        "widget": {
+            "billing-nodes": "Биллинг нод",
+            "upcoming": "Предстоящие",
+            "per-month": "За месяц",
+            "total-spent": "Всего потрачено",
+            "overdue": "Просрочено",
+            "no-upcoming": "Нет предстоящих"
+        }
+    },
+    "mobile-providers-list": {
+        "widget": {
+            "invoices": "Счета"
+        }
+    },
+    "mobile-infra-billing": {
+        "widget": {
+            "history": "История",
+            "providers": "Провайдеры"
+        }
+    },
+    "prime-modal": {
+        "shared": {
+            "description": "Поддержите проект и станьте частью его ближайшего окружения — будьте ближе к команде, плану развития и самой работе.",
+            "priority-support-title": "Приоритетная поддержка",
+            "priority-support-description": "Избегайте очередей — на ваши вопросы ответят в первую очередь непосредственно сотрудники команды.",
+            "private-community-title": "Частное сообщество",
+            "private-community-description": "Приватный круг членов Prime.",
+            "shape-the-roadmap-title": "Сформируйте дорожную карту",
+            "shape-the-roadmap-description": "Проголосуйте за будущие нововведения, и помогите определить дальнейшее направление проекта.",
+            "direct-developer-access-title": "Прямой доступ для разработчиков",
+            "direct-developer-access-description": "Прямая связь с разработчиком — никаких заявок, никаких посредников.",
+            "join-button": "Присоединиться к RW Prime"
+        }
+    },
+    "hosts-datatable": {
+        "widget": {
+            "reset-sort": "Сброс сортировки"
+        }
+    },
+    "columns-visibility-popover": {
+        "show-all": "Показать все",
+        "hide-all": "Cкрыть все"
+    },
+    "use-hosts-table-widget": {
+        "disabled": "Выключено",
+        "enabled": "Включено",
+        "hidden": "Скрыто"
+    },
+    "node-tracking-and-billing": {
+        "card": {
+            "note": "Заметка"
+        }
+    },
+    "node-ips": {
+        "title": "IP адреса",
+        "add-ip": "Добавить IP",
+        "status": "Статус",
+        "remove-ip": "Удалить IP",
+        "invalid-ip": "Недопустимый IPv4 или IPv6 адрес",
+        "ip-is-required": "Не указан IP-адрес",
+        "max-ips-reached": "Максимум {{max}} IP адресов",
+        "no-ips-yet": "Нет IP адресов"
+    },
+    "node-ip-statuses": {
+        "inbound": "Входящий",
+        "outbound": "Исходящий",
+        "management": "Менеджмент",
+        "transit": "Транзит",
+        "monitoring": "Мониторинг",
+        "reserve": "Резерв",
+        "blocked": "Заблокирован",
+        "flagged": "Помеченный",
+        "deprecated": "Устаревший",
+        "unknown": "Неизвестно"
+    },
+    "node-consumption": {
+        "card": {
+            "node-consumption-multiplier-1": "Применяется выбранный множитель к трафику ноды (1,0 = обычный, 0,5 = половина, 2,0 = двойной).",
+            "node-consumption-multiplier-2": "В основном используется для точного отображения лимитов использования при включенном отслеживании трафика. Множитель потребления узла не влияет на отображение подробной статистики (на графиках).",
+            "node-consumption-multiplier": "Коэффициент потребления нодой",
+            "user-consumption-multiplier": "Коэффициент потребления пользователем"
+        }
+    },
+    "keypair-generator": {
+        "widget": {
+            "generate": "Сгенерировать"
+        }
+    },
+    "bulk-all-users-actions": {
+        "modal": {
+            "perform-actions-on-all-users": "Выполнить действия для всех пользователей"
+        }
+    },
+    "backend-tools-card": {
+        "widget": {
+            "queue-viewer": "Просмотр очереди",
+            "queue-viewer-description": "Мониторинг и управление очередями фоновых заданий.",
+            "scalar-description": "Современные интерактивные API методы.",
+            "swagger-description": "Классический исследователь документации OpenAPI.",
+            "backend-tools-description": "Доступ к Queue Viewer, Scalar или Swagger.",
+            "login": "Перейти",
+            "backend-tools": "Бэкэнд инструменты"
+        }
+    },
+    "http-stats": {
+        "page": {
+            "component": {
+                "http-stats-description": "Сводные данные о количестве запросов по каждому маршруту API с момента последнего перезапуска панели."
+            }
+        }
+    },
+    "http-stats-table": {
+        "widget": {
+            "total-requests": "Всего запросов",
+            "tracked-routes": "Отслеживаемые эндпоинты",
+            "peak-requests": "Пиковые запросы",
+            "avg-route": "Среднее / Эндпоинт"
+        }
+    },
+    "get-node-inbounds-hosts": {
+        "feature": {
+            "inbounds-and-hosts": "Инбаунды и хосты"
+        }
+    },
+    "node-inbounds-hosts-drawer": {
+        "widget": {
+            "inbounds-and-hosts": "Инбаунды и хосты",
+            "no-active-config-profile": "Эта нода не имеет активного профиля конфигурации",
+            "linked": "Связанный"
+        }
+    },
+    "node-integrations": {
+        "modal": {
+            "title": "Интеграции ноды",
+            "delete-description": "Интеграция будет удалена со всех нод и затрагиваемые ноды будут перезапущены."
+        },
+        "editor": {
+            "description": "Описание",
+            "description-placeholder": "Что делает эта интеграция",
+            "config-must-be-an-object": "Конфигурация должна быть JSON объектом"
+        },
+        "select": {
+            "label": "Интеграции",
+            "placeholder": "Выбрать интеграцию"
+        }
+    },
+    "shared-lists": {
+        "modal": {
+            "subtitle": "Множественное использование IP и ASN списков, на которые ссылаются плагины как ext:name",
+            "delete-description": "Список будет удален. Плагины, ссылающиеся на него, сохраняют свою актуальность: ссылка не будет проверена до тех пор, пока не будет исправлена."
+        },
+        "editor": {
+            "name-description": "Ссылки в плагинах как ext:name. Нельзя изменить позже."
+        }
+    },
+    "apply-to-nodes": {
+        "title": "Применить к нодам?",
+        "apply": "Применить сейчас",
+        "apply-description": "Затрагиваемые ноды сразу же получают новую конфигурацию.",
+        "later": "Позже",
+        "later-description": "Изменения сохранены, но ноды сохраняют текущую версию до их следующей синхронизации или перезапуска."
+    },
+    "node-geocheck": {
+        "title": "GeoCheck",
+        "source-default": "По умолчанию",
+        "default-placeholder": "Автоматически",
+        "default-description": "Узел будет использовать исходящий маршрут по умолчанию.",
+        "ip-description": "Выберите один из IP-адресов узла или введите любой адрес",
+        "interface-description": "Выберите один из интерфейсов узла или введите любое имя",
+        "run": "Запустить проверку",
+        "running": "Выполняется проверка геоданных",
+        "running-description": "Нода проверяет соединение, обычно занимает до минуты.",
+        "failed-description": "Нода не смогла завершить GeoCheck.",
+        "view-image": "Отчет",
+        "no-image": "Нет изображения в отчете, открыть JSON",
+        "requires-node-version": "Требуется Remnawave Node {{version}} или новее"
+    },
+    "quick-open": {
+        "page": {
+            "description": "Open any entity by its identifier, or copy a direct link to share"
+        }
+    },
+    "bulk-user-actions-drawer": {
+        "widget": {}
+    },
+    "bulk-all-user-actions-drawer": {
+        "widget": {}
+    },
+    "users-table-selection": {
+        "feature": {}
+    },
+    "get-user-usage": {
+        "feature": {}
     },
     "host-balancer-settings-card": {
         "title": "Host Balancer",
@@ -2370,24 +2593,5 @@
         "active-targets": "Активные targets",
         "warnings": "Предупреждения",
         "errors": "Ошибки"
-    },
-    "mobile-stats": {
-        "widget": {
-            "billing-nodes": "Биллинг нод",
-            "upcoming": "Предстоящие",
-            "per-month": "За месяц",
-            "total-spent": "Всего потрачено"
-        }
-    },
-    "mobile-providers-list": {
-        "widget": {
-            "invoices": "Счета"
-        }
-    },
-    "mobile-infra-billing": {
-        "widget": {
-            "history": "История",
-            "providers": "Провайдеры"
-        }
     }
 }

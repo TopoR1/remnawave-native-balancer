@@ -1,13 +1,16 @@
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Body, Controller, HttpStatus, UseFilters, UseGuards } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
-import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
-import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
-import { errorHandler } from '@common/helpers/error-handler.helper';
+import { TypedConfigService } from '@common/config/app-config';
 import { Endpoint } from '@common/decorators/base-endpoint';
 import { Roles } from '@common/decorators/roles/roles';
+import { ApiScopeResource } from '@common/decorators/scopes';
+import { HttpExceptionFilter } from '@common/exception/http-exception.filter';
+import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
 import { RolesGuard } from '@common/guards/roles';
+import { ScopesGuard } from '@common/guards/scopes';
+import { errorHandler } from '@common/helpers/error-handler.helper';
+import { CONTROLLERS_INFO, USERS_CONTROLLER } from '@libs/contracts/api';
 import {
     BulkAllExtendExpirationDateCommand,
     BulkAllResetTrafficUsersCommand,
@@ -20,259 +23,150 @@ import {
     BulkUpdateUsersCommand,
     BulkUpdateUsersSquadsCommand,
 } from '@libs/contracts/commands';
-import { CONTROLLERS_INFO, USERS_CONTROLLER } from '@libs/contracts/api';
 import { ROLE } from '@libs/contracts/constants';
 
 import {
-    BulkAllResetTrafficUsersResponseDto,
-    BulkAllUpdateUsersRequestDto,
-    BulkAllUpdateUsersResponseDto,
-    BulkDeleteUsersByStatusRequestDto,
-    BulkDeleteUsersByStatusResponseDto,
-    BulkDeleteUsersRequestDto,
-    BulkDeleteUsersResponseDto,
-    BulkResetTrafficUsersRequestDto,
-    BulkResetTrafficUsersResponseDto,
-    BulkRevokeUsersSubscriptionRequestDto,
-    BulkRevokeUsersSubscriptionResponseDto,
-    BulkUpdateUsersSquadsRequestDto,
-    BulkUpdateUsersSquadsResponseDto,
-    BulkUpdateUsersRequestDto,
-    BulkUpdateUsersResponseDto,
-    BulkAllExtendExpirationDateResponseDto,
-    BulkAllExtendExpirationDateRequestDto,
-    BulkExtendExpirationDateResponseDto,
-    BulkExtendExpirationDateRequestDto,
+    BulkAllUpdateUsersBodyDto,
+    BulkDeleteUsersByStatusBodyDto,
+    BulkDeleteUsersBodyDto,
+    BulkResetTrafficUsersBodyDto,
+    BulkRevokeUsersSubscriptionBodyDto,
+    BulkUpdateUsersSquadsBodyDto,
+    BulkUpdateUsersBodyDto,
+    BulkAllExtendExpirationDateBodyDto,
+    BulkExtendExpirationDateBodyDto,
 } from '../dtos';
 import { UsersService } from '../users.service';
 
 @ApiBearerAuth('Authorization')
+@ApiScopeResource(CONTROLLERS_INFO.USERS_BULK_ACTIONS.resource)
 @ApiTags(CONTROLLERS_INFO.USERS_BULK_ACTIONS.tag)
 @Roles(ROLE.ADMIN, ROLE.API)
-@UseGuards(JwtDefaultGuard, RolesGuard)
+@UseGuards(JwtDefaultGuard, RolesGuard, ScopesGuard)
 @UseFilters(HttpExceptionFilter)
 @Controller(USERS_CONTROLLER)
 export class UsersBulkActionsController {
     public readonly subPublicDomain: string;
     constructor(
         private readonly usersService: UsersService,
-        private readonly configService: ConfigService,
+        private readonly configService: TypedConfigService,
     ) {
-        this.subPublicDomain = this.configService.getOrThrow<string>('SUB_PUBLIC_DOMAIN');
+        this.subPublicDomain = this.configService.getOrThrow('SUB_PUBLIC_DOMAIN');
     }
 
-    @ApiOkResponse({
-        type: BulkDeleteUsersByStatusResponseDto,
-        description: 'Users deleted successfully',
-    })
     @Endpoint({
         command: BulkDeleteUsersByStatusCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkDeleteUsersByStatusRequestDto,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkDeleteUsersByStatus(
-        @Body() body: BulkDeleteUsersByStatusRequestDto,
-    ): Promise<BulkDeleteUsersByStatusResponseDto> {
+    async bulkDeleteUsersByStatus(@Body() body: BulkDeleteUsersByStatusBodyDto) {
         const result = await this.usersService.bulkDeleteUsersByStatus(body);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkDeleteUsersResponseDto,
-        description: 'Users deleted successfully',
-    })
     @Endpoint({
         command: BulkDeleteUsersCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkDeleteUsersRequestDto,
+        httpCode: HttpStatus.NO_CONTENT,
     })
-    async bulkDeleteUsers(
-        @Body() body: BulkDeleteUsersRequestDto,
-    ): Promise<BulkDeleteUsersResponseDto> {
-        const result = await this.usersService.bulkDeleteUsersByUuid(body.uuids);
+    async bulkDeleteUsers(@Body() body: BulkDeleteUsersBodyDto) {
+        const result = await this.usersService.bulkDeleteUsersByUserId(body.userIds);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkRevokeUsersSubscriptionResponseDto,
-        description: 'Users subscription revoked successfully',
-    })
     @Endpoint({
         command: BulkRevokeUsersSubscriptionCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkRevokeUsersSubscriptionRequestDto,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkRevokeUsersSubscription(
-        @Body() body: BulkRevokeUsersSubscriptionRequestDto,
-    ): Promise<BulkRevokeUsersSubscriptionResponseDto> {
-        const result = await this.usersService.bulkRevokeUsersSubscription(body.uuids);
+    async bulkRevokeUsersSubscription(@Body() body: BulkRevokeUsersSubscriptionBodyDto) {
+        const result = await this.usersService.bulkRevokeUsersSubscription(body.userIds);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkResetTrafficUsersResponseDto,
-        description: 'Users traffic reset successfully',
-    })
     @Endpoint({
         command: BulkResetTrafficUsersCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkResetTrafficUsersRequestDto,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkResetUserTraffic(
-        @Body() body: BulkResetTrafficUsersRequestDto,
-    ): Promise<BulkResetTrafficUsersResponseDto> {
-        const result = await this.usersService.bulkResetUserTraffic(body.uuids);
+    async bulkResetUserTraffic(@Body() body: BulkResetTrafficUsersBodyDto) {
+        const result = await this.usersService.bulkResetUserTraffic(body.userIds);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkUpdateUsersResponseDto,
-        description: 'Users updated successfully',
-    })
     @Endpoint({
         command: BulkUpdateUsersCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkUpdateUsersRequestDto,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkUpdateUsers(
-        @Body() body: BulkUpdateUsersRequestDto,
-    ): Promise<BulkUpdateUsersResponseDto> {
+    async bulkUpdateUsers(@Body() body: BulkUpdateUsersBodyDto) {
         const result = await this.usersService.bulkUpdateUsers(body);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkUpdateUsersSquadsResponseDto,
-        description: 'Internal squads updated successfully',
-    })
     @Endpoint({
         command: BulkUpdateUsersSquadsCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkUpdateUsersSquadsRequestDto,
+        httpCode: HttpStatus.NO_CONTENT,
     })
-    async bulkUpdateUsersInternalSquads(
-        @Body() body: BulkUpdateUsersSquadsRequestDto,
-    ): Promise<BulkUpdateUsersSquadsResponseDto> {
+    async bulkUpdateUsersInternalSquads(@Body() body: BulkUpdateUsersSquadsBodyDto) {
         const result = await this.usersService.bulkUpdateUsersInternalSquads(
-            body.uuids,
+            body.userIds,
             body.activeInternalSquads,
         );
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkExtendExpirationDateResponseDto,
-        description: 'Users expiration date extended successfully',
-    })
-    @ApiOperation({
-        summary: 'Bulk Extend Users Expiration Date',
-        description: 'Bulk extend all users expiration date',
-    })
     @Endpoint({
         command: BulkExtendExpirationDateCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkExtendExpirationDateRequestDto,
+        httpCode: HttpStatus.NO_CONTENT,
     })
-    async bulkExtendExpirationDate(
-        @Body() body: BulkExtendExpirationDateRequestDto,
-    ): Promise<BulkExtendExpirationDateResponseDto> {
+    async bulkExtendExpirationDate(@Body() body: BulkExtendExpirationDateBodyDto) {
         const result = await this.usersService.bulkExtendExpirationDate({
-            uuids: body.uuids,
+            userIds: body.userIds,
             extendDays: body.extendDays,
         });
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkAllUpdateUsersResponseDto,
-        description: 'All users updated successfully',
-    })
     @Endpoint({
         command: BulkAllUpdateUsersCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkAllUpdateUsersRequestDto,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkUpdateAllUsers(
-        @Body() body: BulkAllUpdateUsersRequestDto,
-    ): Promise<BulkAllUpdateUsersResponseDto> {
+    async bulkUpdateAllUsers(@Body() body: BulkAllUpdateUsersBodyDto) {
         const result = await this.usersService.bulkUpdateAllUsers(body);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkAllResetTrafficUsersResponseDto,
-        description: 'All users traffic reset successfully',
-    })
-    @ApiOperation({
-        summary: 'Bulk Reset All Users Traffic',
-        description: 'Bulk reset all users traffic',
-    })
     @Endpoint({
         command: BulkAllResetTrafficUsersCommand,
-        httpCode: HttpStatus.OK,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkAllResetUserTraffic(): Promise<BulkAllResetTrafficUsersResponseDto> {
+    async bulkAllResetUserTraffic() {
         const result = await this.usersService.bulkAllResetUserTraffic();
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 
-    @ApiOkResponse({
-        type: BulkAllExtendExpirationDateResponseDto,
-        description: 'All users expiration date extended successfully',
-    })
-    @ApiOperation({
-        summary: 'Bulk Extend All Users Expiration Date',
-        description: 'Bulk extend all users expiration date',
-    })
     @Endpoint({
         command: BulkAllExtendExpirationDateCommand,
-        httpCode: HttpStatus.OK,
-        apiBody: BulkAllExtendExpirationDateRequestDto,
+        httpCode: HttpStatus.ACCEPTED,
     })
-    async bulkAllExtendExpirationDate(
-        @Body() body: BulkAllExtendExpirationDateRequestDto,
-    ): Promise<BulkAllExtendExpirationDateResponseDto> {
+    async bulkAllExtendExpirationDate(@Body() body: BulkAllExtendExpirationDateBodyDto) {
         const result = await this.usersService.bulkAllExtendExpirationDate(body.extendDays);
 
-        const data = errorHandler(result);
-        return {
-            response: data,
-        };
+        errorHandler(result);
+        return;
     }
 }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { getEndpointDetails } from '../../constants';
 import { REST_API, SYSTEM_ROUTES } from '../../api';
+import { getEndpointDetails } from '../../constants';
 
 export namespace GetRecapCommand {
     export const url = REST_API.SYSTEM.STATS.RECAP;
@@ -11,6 +11,7 @@ export namespace GetRecapCommand {
         SYSTEM_ROUTES.STATS.RECAP,
         'get',
         'Get Recap',
+        { scope: 'recap', kind: 'read' },
     );
 
     export const ResponseSchema = z.object({
@@ -28,9 +29,7 @@ export namespace GetRecapCommand {
                 distinctCountries: z.number(),
             }),
             version: z.string(),
-            initDate: z
-                .string()
-                .datetime({ local: true, offset: true })
+            initDate: z.iso.datetime({ local: true, offset: true })
                 .transform((str) => new Date(str)),
         }),
     });

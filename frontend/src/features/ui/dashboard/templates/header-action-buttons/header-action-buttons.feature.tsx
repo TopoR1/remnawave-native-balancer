@@ -1,32 +1,13 @@
-import {
-    ActionIcon,
-    ActionIconGroup,
-    Button,
-    Group,
-    Modal,
-    Stack,
-    TextInput,
-    Tooltip
-} from '@mantine/core'
-import {
-    CreateSubscriptionTemplateCommand,
-    TSubscriptionTemplateType
-} from '@remnawave/backend-contract'
-import { generatePath, useNavigate } from 'react-router-dom'
-import { TbFolder, TbPlus, TbRefresh } from 'react-icons/tb'
-import { useDisclosure } from '@mantine/hooks'
+import { ActionIcon, ActionIconGroup, Group, Tooltip } from '@mantine/core'
+import { TSubscriptionTemplateType } from '@remnawave/backend-contract'
 import { useTranslation } from 'react-i18next'
-import { useField } from '@mantine/form'
+import { TbPlus, TbRefresh } from 'react-icons/tb'
+import { useNavigate } from 'react-router'
 
-import {
-    QueryKeys,
-    useCreateSubscriptionTemplate,
-    useGetSubscriptionTemplates
-} from '@shared/api/hooks'
-import { UniversalSpotlightActionIconShared } from '@shared/ui/universal-spotlight'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { ROUTES } from '@shared/constants'
+import { showModal } from '@shared/_modals/show-modal'
 import { queryClient } from '@shared/api'
+import { QueryKeys, useGetSubscriptionTemplates } from '@shared/api/hooks'
+import { UniversalSpotlightActionIconShared } from '@shared/ui/universal-spotlight'
 
 interface IProps {
     templateType: TSubscriptionTemplateType
@@ -36,42 +17,15 @@ export const TemplatesHeaderActionButtonsFeature = (props: IProps) => {
     const { templateType } = props
     const { t } = useTranslation()
 
-    const { isFetching } = useGetSubscriptionTemplates()
-
-    const [opened, { open, close }] = useDisclosure(false)
     const navigate = useNavigate()
+
+    const { isFetching } = useGetSubscriptionTemplates()
 
     const handleUpdate = async () => {
         await queryClient.refetchQueries({
             queryKey: QueryKeys.subscriptionTemplate.getSubscriptionTemplates.queryKey
         })
     }
-
-    const nameField = useField<CreateSubscriptionTemplateCommand.Request['name']>({
-        initialValue: '',
-        validateOnChange: true,
-        validate: (value) => {
-            const result = CreateSubscriptionTemplateCommand.RequestSchema.omit({
-                templateType: true
-            }).safeParse({ name: value, templateType })
-            return result.success ? null : result.error.errors[0]?.message
-        }
-    })
-    const { mutate: createTemplate, isPending } = useCreateSubscriptionTemplate({
-        mutationFns: {
-            onSuccess: (data) => {
-                close()
-                nameField.reset()
-                handleUpdate()
-                navigate(
-                    generatePath(ROUTES.DASHBOARD.TEMPLATES.TEMPLATE_EDITOR, {
-                        type: data.templateType,
-                        uuid: data.uuid
-                    })
-                )
-            }
-        }
-    })
 
     return (
         <Group grow preventGrowOverflow={false} wrap="wrap">
@@ -92,57 +46,21 @@ export const TemplatesHeaderActionButtonsFeature = (props: IProps) => {
 
             <ActionIconGroup>
                 <Tooltip label={t('header-action-buttons.feature.create-new-template')} withArrow>
-                    <ActionIcon color="teal" onClick={open} size="input-md" variant="soft">
+                    <ActionIcon
+                        color="teal"
+                        onClick={() =>
+                            showModal('createModal', {
+                                createFrom: 'template',
+                                contentOptions: { templateType, navigate }
+                            })
+                        }
+                        size="input-md"
+                        variant="soft"
+                    >
                         <TbPlus size="24px" />
                     </ActionIcon>
                 </Tooltip>
             </ActionIconGroup>
-
-            <Modal
-                centered
-                onClose={close}
-                opened={opened}
-                size="md"
-                title={
-                    <BaseOverlayHeader
-                        iconColor="teal"
-                        IconComponent={TbFolder}
-                        iconVariant="soft"
-                        title={t('header-action-buttons.feature.create-new-template')}
-                    />
-                }
-            >
-                <form
-                    onSubmit={(e) => {
-                        e.preventDefault()
-                        createTemplate({
-                            variables: {
-                                name: nameField.getValue(),
-                                templateType
-                            }
-                        })
-                    }}
-                >
-                    <Stack gap="md">
-                        <TextInput
-                            data-autofocus
-                            label={t('header-action-buttons.feature.template-name')}
-                            placeholder="My Mihomo template"
-                            required
-                            {...nameField.getInputProps()}
-                        />
-                        <Group justify="flex-end">
-                            <Button color="gray" onClick={close} variant="light">
-                                {t('common.cancel')}
-                            </Button>
-
-                            <Button color="teal" loading={isPending} type="submit">
-                                {t('common.create')}
-                            </Button>
-                        </Group>
-                    </Stack>
-                </form>
-            </Modal>
         </Group>
     )
 }

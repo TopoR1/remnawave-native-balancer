@@ -1,14 +1,14 @@
+import { TransactionHost } from '@nestjs-cls/transactional';
 // @ts-nocheck
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { TransactionHost } from '@nestjs-cls/transactional';
+import { Global, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { QueryBus } from '@nestjs/cqrs';
-import { Global, Module } from '@nestjs/common';
 
-import { RawCacheService } from '@common/raw-cache';
 import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
+import { RawCacheService } from '@common/raw-cache';
 
 import { HostBalancersModule } from './host-balancers.module';
 

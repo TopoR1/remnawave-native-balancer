@@ -1,9 +1,9 @@
-import { ExternalSquadHostOverridesSchema } from '@remnawave/backend-contract'
 import { ActionIcon, HoverCard, px, Stack, Text } from '@mantine/core'
-import { PiIdentificationBadge } from 'react-icons/pi'
-import { HiQuestionMarkCircle } from 'react-icons/hi'
-import { TbFileDescription } from 'react-icons/tb'
+import { ExternalSquadHostOverridesSchema } from '@remnawave/backend-contract'
 import { TFunction } from 'i18next'
+import { HiQuestionMarkCircle } from 'react-icons/hi'
+import { PiIdentificationBadge } from 'react-icons/pi'
+import { TbFileDescription } from 'react-icons/tb'
 
 const hoverCard = (text: string) => {
     return (

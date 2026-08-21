@@ -1,14 +1,14 @@
-import { TbClockHour2, TbFileReport, TbServer, TbUsers } from 'react-icons/tb'
-import { useTranslation } from 'react-i18next'
 import { SimpleGrid } from '@mantine/core'
 import { motion } from 'motion/react'
+import { useTranslation } from 'react-i18next'
+import { TbClockHour2, TbFileReport, TbServer, TbUsers } from 'react-icons/tb'
 
-import { IMetricCardProps, MetricCardShared } from '@shared/ui/metrics/metric-card'
-import { useUserModalStoreActions } from '@entities/dashboard/user-modal-store'
-import { TopLeaderboardCardShared } from '@shared/ui/leaderboard-item-card'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import { showModal } from '@shared/_modals/show-modal'
 import { useGetTorrentBlockerStats } from '@shared/api/hooks'
 import { CountryFlag } from '@shared/ui/get-country-flag'
+import { TopLeaderboardCardShared } from '@shared/ui/leaderboard-item-card'
+import { IMetricCardProps, MetricCardShared } from '@shared/ui/metrics/metric-card'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
 import { formatInt } from '@shared/utils/misc'
 
@@ -16,8 +16,6 @@ export function TorrentBlockerStatsWidget() {
     const { t } = useTranslation()
 
     const { data: stats, isLoading: isStatsLoading } = useGetTorrentBlockerStats()
-
-    const userModalActions = useUserModalStoreActions()
 
     const cards: IMetricCardProps[] = [
         {
@@ -84,12 +82,11 @@ export function TorrentBlockerStatsWidget() {
                         color: user.color,
                         name: user.username,
                         total: user.total,
-                        uuid: user.uuid
+                        userId: user.userId
                     }))}
                     maxHeight={230}
                     onItemClick={(user) => {
-                        userModalActions.setUserUuid(user.uuid)
-                        userModalActions.changeModalState(true)
+                        showModal('users_viewUserModal', { userId: user.userId })
                     }}
                     wrapper={(children) => (
                         <SectionCard.Root>

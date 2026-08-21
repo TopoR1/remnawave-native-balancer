@@ -4,6 +4,38 @@ Remnawave Native Host Balancer - форк Remnawave с нативной бала
 
 Проект находится в разработке. Перед установкой на production обязательно сделайте backup файлов и PostgreSQL, сначала запустите образ с `HOST_BALANCER_ENABLED=false`, проверьте панель, и только затем включайте балансировку для подписок.
 
+## Upgrade с Remnawave 2.7.4 на 3.3.2
+
+Эта ветка основана на точных upstream-релизах:
+
+- backend: [3.3.2](https://github.com/remnawave/backend/releases/tag/3.3.2);
+- frontend: [3.3.2](https://github.com/remnawave/frontend/releases/tag/3.3.2).
+
+Для production используйте версионированный образ, например
+`topor/remnawave-backend:native-balancer-3.3.2`. Не используйте `:latest`: rollback должен
+ссылаться на заранее записанный digest или прежний точный тег.
+
+Перед обновлением с 2.7.4:
+
+1. Остановите изменения пользователей и настроек на время backup.
+2. Сохраните `docker compose config`, env-файлы и полный `pg_dump -Fc`.
+3. Зафиксируйте digest текущего backend image.
+4. На копии production-БД выполните миграции и smoke-тест подписок.
+5. Первый запуск 3.3.2 выполните с `HOST_BALANCER_ENABLED=false` и
+   `HOST_BALANCER_DECISIONS_ENABLED=false`.
+6. Проверьте login, Hosts, Users, Nodes, HWID, Subscription Request History и выдачу обычной,
+   raw и XRAY JSON подписки.
+7. Включайте Native Host Balancer сначала глобально, затем только для одного тестового Host.
+
+Миграционная цепочка сохраняет данные Balancer при upstream-переходе пользователей с UUID на
+numeric `user_id`: назначения и decision audit переводятся через
+`20260720130000_host_balancers_user_id` до удаления `users.uuid`. Миграции необратимы на уровне
+схемы; штатный rollback после их применения — возврат образа только при совместимой схеме либо
+полное восстановление PostgreSQL из backup.
+
+Подробный аудит, breaking changes, проверки и runbook находятся в
+[`MIGRATION_2.7.4_TO_3.3.2.md`](MIGRATION_2.7.4_TO_3.3.2.md).
+
 Native Host Balancer не требует отдельного сервиса выдачи подписок: выбор target выполняется внутри backend Remnawave до генерации подписки. Оператор настраивает балансировку прямо в Remnawave Panel в форме создания или редактирования `Host`.
 
 ## Что делает Native Host Balancer
@@ -306,7 +338,7 @@ git pull --ff-only
 
 ```bash
 cd /opt/remnawave-native-balancer
-docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer .
+docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer-3.3.2 .
 ```
 
 ### 6. Подключить image в docker-compose.override.yml
@@ -316,7 +348,7 @@ docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-ba
 ```yaml
 services:
   remnawave:
-    image: topor/remnawave-backend:native-balancer
+    image: topor/remnawave-backend:native-balancer-3.3.2
     environment:
       HOST_BALANCER_ENABLED: "false"
       HOST_BALANCER_DECISIONS_ENABLED: "true"
@@ -407,7 +439,7 @@ git status
 
 ```bash
 git pull --ff-only
-docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer .
+docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer-3.3.2 .
 cd /opt/remnawave
 docker compose up -d --force-recreate remnawave
 docker logs remnawave --tail=200
@@ -452,7 +484,7 @@ git status
 После очистки:
 
 ```bash
-docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer .
+docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer-3.3.2 .
 cd /opt/remnawave
 docker compose up -d --force-recreate remnawave
 docker logs remnawave --tail=200
@@ -501,7 +533,7 @@ swapon --show
 
 ```bash
 cd /opt/remnawave-native-balancer
-docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer .
+docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-balancer-3.3.2 .
 ```
 
 Если нужно ограничить heap Node.js:
@@ -510,7 +542,7 @@ docker build --progress=plain -f Dockerfile -t topor/remnawave-backend:native-ba
 docker build --progress=plain \
   --build-arg FRONTEND_NODE_OPTIONS="--max-old-space-size=4096" \
   -f Dockerfile \
-  -t topor/remnawave-backend:native-balancer .
+  -t topor/remnawave-backend:native-balancer-3.3.2 .
 ```
 
 После сборки уберите временный swap:
@@ -539,7 +571,7 @@ cd ..
 ```bash
 docker build --progress=plain \
   -f Dockerfile.prebuilt-frontend \
-  -t topor/remnawave-backend:native-balancer .
+  -t topor/remnawave-backend:native-balancer-3.3.2 .
 ```
 
 ## Проверка Docker image
@@ -547,20 +579,20 @@ docker build --progress=plain \
 Обычный `docker run` запускает `docker-entrypoint.sh`. Entrypoint пытается выполнить миграции и требует `DATABASE_URL`, поэтому такая команда может упасть:
 
 ```bash
-docker run --rm topor/remnawave-backend:native-balancer sh -lc "ls -la /opt/app/frontend"
+docker run --rm topor/remnawave-backend:native-balancer-3.3.2 sh -lc "ls -la /opt/app/frontend"
 ```
 
 Для inspection используйте `--entrypoint sh`:
 
 ```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer \
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer-3.3.2 \
   -lc "ls -la /opt/app/frontend && find /opt/app/frontend -maxdepth 2 -type f | head -30"
 ```
 
 Проверка, что frontend assets попали в образ:
 
 ```bash
-docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer \
+docker run --rm --entrypoint sh topor/remnawave-backend:native-balancer-3.3.2 \
   -lc "find /opt/app/frontend -type f | grep -E 'index.html|assets' | head -30"
 ```
 

@@ -1,9 +1,9 @@
-import { CqrsModule } from '@nestjs/cqrs';
 import { Module } from '@nestjs/common';
+import { CqrsModule } from '@nestjs/cqrs';
 
-import { HostBalancersRepository } from './repositories/host-balancers.repository';
-import { HostBalancersController } from './host-balancers.controller';
 import { HostBalancerService } from './host-balancer.service';
+import { HostBalancersController } from './host-balancers.controller';
+import { HostBalancersRepository } from './repositories/host-balancers.repository';
 
 @Module({
     imports: [CqrsModule],

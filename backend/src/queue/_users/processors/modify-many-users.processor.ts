@@ -1,12 +1,12 @@
 import { Job } from 'bullmq';
 
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { CommandBus } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { CommandBus } from '@nestjs/cqrs';
 
+import { ResetUserTrafficCommand } from '@modules/users/commands/reset-user-traffic';
 import { RevokeUserSubscriptionCommand } from '@modules/users/commands/revoke-user-subscription';
 import { UpdateUserWithServiceCommand } from '@modules/users/commands/update-user-with-service';
-import { ResetUserTrafficCommand } from '@modules/users/commands/reset-user-traffic';
 
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
@@ -38,9 +38,9 @@ export class UsersModifyManyQueueProcessor extends WorkerHost {
 
     private async handleResetUsersTrafficJob(job: Job) {
         try {
-            const { uuid } = job.data;
+            const { userId } = job.data;
 
-            await this.commandBus.execute(new ResetUserTrafficCommand(uuid));
+            await this.commandBus.execute(new ResetUserTrafficCommand(userId));
 
             return;
         } catch (error) {
@@ -54,9 +54,9 @@ export class UsersModifyManyQueueProcessor extends WorkerHost {
 
     private async handleRevokeUsersSubscriptionJob(job: Job) {
         try {
-            const { uuid } = job.data;
+            const { userId } = job.data;
 
-            await this.commandBus.execute(new RevokeUserSubscriptionCommand(uuid));
+            await this.commandBus.execute(new RevokeUserSubscriptionCommand(userId));
 
             return;
         } catch (error) {
@@ -68,11 +68,11 @@ export class UsersModifyManyQueueProcessor extends WorkerHost {
 
     private async handleUpdateUsersJob(job: Job) {
         try {
-            const { uuid, fields } = job.data;
+            const { userId, fields } = job.data;
 
             await this.commandBus.execute(
                 new UpdateUserWithServiceCommand({
-                    uuid: uuid,
+                    id: userId,
                     ...fields,
                     trafficLimitBytes:
                         fields.trafficLimitBytes !== undefined

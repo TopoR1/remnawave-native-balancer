@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
+import { REST_API, SUBSCRIPTION_SETTINGS_ROUTES } from '../../api';
+import { getEndpointDetails } from '../../constants';
 import {
     CustomRemarksSchema,
     HwidSettingsSchema,
     ResponseRulesConfigSchema,
     SubscriptionSettingsSchema,
 } from '../../models';
-import { REST_API, SUBSCRIPTION_SETTINGS_ROUTES } from '../../api';
-import { getEndpointDetails } from '../../constants';
 
 export namespace UpdateSubscriptionSettingsCommand {
     export const url = REST_API.SUBSCRIPTION_SETTINGS.UPDATE;
@@ -17,28 +17,14 @@ export namespace UpdateSubscriptionSettingsCommand {
         SUBSCRIPTION_SETTINGS_ROUTES.UPDATE,
         'patch',
         'Update subscription settings',
+        { scope: 'update', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuid: z.string().uuid(),
-
-        profileTitle: z.optional(z.string()),
-        supportLink: z.optional(z.string()),
-        profileUpdateInterval: z.optional(z.number().int()),
-        isProfileWebpageUrlEnabled: z.optional(z.boolean()),
+    export const RequestBodySchema = z.object({
+        uuid: z.uuid(),
         serveJsonAtBaseSubscription: z.optional(z.boolean()),
-
-        happAnnounce: z.optional(
-            z
-                .string()
-                .max(200, { message: 'Announce must be less than 200 characters' })
-                .nullable(),
-        ),
-        happRouting: z.optional(z.string().nullable()),
-
         isShowCustomRemarks: z.optional(z.boolean()),
         customRemarks: z.optional(CustomRemarksSchema),
-
         customResponseHeaders: z.optional(
             z.record(
                 z
@@ -50,18 +36,15 @@ export namespace UpdateSubscriptionSettingsCommand {
                 z.string(),
             ),
         ),
-
         randomizeHosts: z.optional(z.boolean()),
-
         responseRules: z.optional(ResponseRulesConfigSchema),
         hwidSettings: z.optional(HwidSettingsSchema),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: SubscriptionSettingsSchema,
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

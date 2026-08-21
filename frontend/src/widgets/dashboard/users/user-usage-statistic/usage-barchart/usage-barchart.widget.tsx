@@ -1,4 +1,4 @@
-/* eslint-disable @stylistic/indent */
+import { Chart } from '@highcharts/react'
 import {
     alpha,
     Box,
@@ -11,17 +11,16 @@ import {
     Table,
     Text
 } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import { GetStatsUserUsageCommand } from '@remnawave/backend-contract'
 import { useTranslation } from 'react-i18next'
-import { TbChartBar } from 'react-icons/tb'
-import { Chart } from '@highcharts/react'
 import { PiEmpty } from 'react-icons/pi'
-import { modals } from '@mantine/modals'
+import { TbChartBar } from 'react-icons/tb'
 
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
-import { prettyBytesToAnyUtil } from '@shared/utils/bytes'
-import { formatTimeUtil } from '@shared/utils/time-utils'
 import { CountryFlag } from '@shared/ui/get-country-flag'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import { prettifyBytesUtil } from '@shared/utils/bytes'
+import { formatTimeUtil } from '@shared/utils/time-utils'
 
 interface IProps {
     categories: string[] | undefined
@@ -78,7 +77,7 @@ export const UserUsageBarchartWidget = (props: IProps) => {
                     iconColor="teal"
                     IconComponent={TbChartBar}
                     iconVariant="soft"
-                    subtitle={`Σ ${prettyBytesToAnyUtil(totalDayTraffic)}`}
+                    subtitle={`Σ ${prettifyBytesUtil(totalDayTraffic)}`}
                     title={formatTimeUtil({
                         time: category,
                         template: 'FULL_DATE',
@@ -119,9 +118,7 @@ export const UserUsageBarchartWidget = (props: IProps) => {
                                             </Group>
                                         </Table.Td>
                                         <Table.Td style={{ textAlign: 'right' }}>
-                                            <Text fw={500}>
-                                                {prettyBytesToAnyUtil(entry.value)}
-                                            </Text>
+                                            <Text fw={500}>{prettifyBytesUtil(entry.value)}</Text>
                                         </Table.Td>
                                     </Table.Tr>
                                 ))}
@@ -136,6 +133,7 @@ export const UserUsageBarchartWidget = (props: IProps) => {
     return (
         <Card h="100%" p="xs" withBorder>
             <Chart
+                title=""
                 options={{
                     chart: {
                         type: 'bar',
@@ -223,7 +221,7 @@ export const UserUsageBarchartWidget = (props: IProps) => {
                         labels: {
                             autoRotation: [-45, 45],
                             style: { color: 'var(--mantine-color-text)' },
-                            formatter: ({ value }) => prettyBytesToAnyUtil(value, true)
+                            formatter: ({ value }) => prettifyBytesUtil(value, true)
                         },
                         gridLineColor: undefined
                     },
@@ -276,20 +274,27 @@ export const UserUsageBarchartWidget = (props: IProps) => {
 
                             let nearbyDaysHtml = ''
 
+                            const mutedColor = alpha(parsedColor, 0.4)
+                            const mutedTextColor = alpha('var(--mantine-color-text)', 0.5)
+
                             nearbyDays.forEach((day) => {
                                 if (day.value === 0) {
                                     return
                                 }
 
                                 const fontWeight = day.isCurrent ? 600 : 400
+                                const textColor = day.isCurrent
+                                    ? 'var(--mantine-color-text)'
+                                    : mutedTextColor
+                                const barColor = day.isCurrent ? parsedColor : mutedColor
 
                                 nearbyDaysHtml += `
-                            <div style="display: flex; align-items: center; gap: 6px; opacity: ${day.isCurrent ? 1 : 0.5};">
+                            <div style="display: flex; align-items: center; gap: 6px; color: ${textColor};">
                                 <span style="width: 42px; font-size: 0.7rem; text-align: right; font-weight: ${fontWeight};">${day.date}</span>
                                 <div style="flex: 1; height: 6px; background: var(--mantine-color-body); border-radius: 3px; overflow: hidden;">
-                                    <div style="width: ${Math.max((day.value / maxValue) * 100, 2)}%; height: 100%; background: ${parsedColor}; border-radius: 3px;"></div>
+                                    <div style="width: ${Math.max((day.value / maxValue) * 100, 2)}%; height: 100%; background: ${barColor}; border-radius: 3px;"></div>
                                 </div>
-                                <span style="width: 50px; font-size: 0.7rem; font-weight: ${fontWeight};">${prettyBytesToAnyUtil(day.value, true)}</span>
+                                <span style="width: 50px; font-size: 0.7rem; font-weight: ${fontWeight};">${prettifyBytesUtil(day.value, true)}</span>
                             </div>
                         `
                             })
@@ -305,13 +310,13 @@ export const UserUsageBarchartWidget = (props: IProps) => {
                                     })}</span>
                                     <span style="font-size: 0.85rem; color: var(--mantine-color-dimmed); display: flex; align-items: center; gap: 4px;">
                                         <span style="font-size: 0.85rem;">Σ</span>
-                                        ${prettyBytesToAnyUtil(totalInThisDay, true)}
+                                        ${prettifyBytesUtil(totalInThisDay, true)}
                                     </span>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                                     <div style="width: 10px; height: 10px; background: ${parsedColor}; border-radius: 50%; flex-shrink: 0;"></div>
                                     <span style="flex: 1;">${this.series.name}</span>
-                                    <span style="font-weight: 600;">${prettyBytesToAnyUtil(value)}</span>
+                                    <span style="font-weight: 600;">${prettifyBytesUtil(value)}</span>
                                 </div>
                                 <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 8px; border-top: 1px solid var(--mantine-color-gray-4);">
                                     ${nearbyDaysHtml}

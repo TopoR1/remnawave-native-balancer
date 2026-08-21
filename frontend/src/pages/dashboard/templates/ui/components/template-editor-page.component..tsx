@@ -1,17 +1,17 @@
-import { GetAllHostsCommand, GetSubscriptionTemplateCommand } from '@remnawave/backend-contract'
 import { ActionIcon, Group } from '@mantine/core'
-import { useNavigate } from 'react-router-dom'
-import { TbArrowBackUp } from 'react-icons/tb'
-
+import { GetHostsCommand, GetSubscriptionTemplateCommand } from '@remnawave/backend-contract'
 import { SubscriptionTemplateEditorWidget } from '@widgets/dashboard/templates/subscription-template-editor'
-import { getCoreLogoFromType } from '@shared/ui/get-core-logo-from-type'
-import { HelpActionIconShared } from '@shared/ui/help-drawer'
-import { Page, PageHeaderShared } from '@shared/ui'
+import { TbArrowBackUp } from 'react-icons/tb'
+import { useNavigate } from 'react-router'
+
+import { HelpActionIconShared } from '@shared/_modals/universal'
 import { ROUTES } from '@shared/constants'
+import { Page, PageHeaderShared } from '@shared/ui'
+import { getCoreLogoFromType } from '@shared/ui/get-core-logo-from-type'
 
 interface Props {
     editorType: 'json' | 'yaml'
-    hosts: GetAllHostsCommand.Response['response']
+    hosts: GetHostsCommand.Response['response']
     template: GetSubscriptionTemplateCommand.Response['response']
     title: string
 }

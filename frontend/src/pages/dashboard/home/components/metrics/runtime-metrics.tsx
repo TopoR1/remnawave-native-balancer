@@ -1,3 +1,5 @@
+import { GetRemnawaveHealthCommand } from '@remnawave/backend-contract'
+import { TFunction } from 'i18next'
 import {
     PiClockDuotone,
     PiCloudDuotone,
@@ -7,11 +9,9 @@ import {
     PiTimerDuotone,
     PiTreeStructureDuotone
 } from 'react-icons/pi'
-import { GetRemnawaveHealthCommand } from '@remnawave/backend-contract'
-import { TFunction } from 'i18next'
 
 import { IMetricCardProps } from '@shared/ui/metrics/metric-card'
-import { prettyBytesToAnyUtil } from '@shared/utils/bytes'
+import { prettifyBytesUtil } from '@shared/utils/bytes'
 
 const PROCESS_CONFIG: Record<string, { Icon: typeof PiGearSixDuotone; name: string }> = {
     api: { Icon: PiCloudDuotone, name: 'API' },
@@ -44,14 +44,14 @@ export const getRuntimeSummaryMetrics = (
             iconColor: 'blue'
         },
         {
-            value: prettyBytesToAnyUtil(totalRss, true),
+            value: prettifyBytesUtil(totalRss, true),
             IconComponent: PiMemoryDuotone,
             title: t('pm2-metrics.total-memory'),
             iconVariant: 'soft',
             iconColor: 'cyan'
         },
         {
-            value: prettyBytesToAnyUtil(totalHeapUsed, true),
+            value: prettifyBytesUtil(totalHeapUsed, true),
             IconComponent: PiTreeStructureDuotone,
             title: 'Heap Used',
             iconVariant: 'soft',
@@ -77,7 +77,7 @@ export const getRuntimeProcessMetrics = (
     return runtimeMetrics.map((process) => {
         const config = PROCESS_CONFIG[process.instanceType] ?? DEFAULT_PROCESS
         return {
-            value: prettyBytesToAnyUtil(process.rss, true),
+            value: prettifyBytesUtil(process.rss, true),
             IconComponent: config.Icon,
             title: `${config.name}-${process.instanceId}`,
             iconVariant: 'soft',

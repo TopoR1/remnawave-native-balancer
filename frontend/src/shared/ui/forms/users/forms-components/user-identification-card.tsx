@@ -1,5 +1,6 @@
 import {
     ActionIcon,
+    Box,
     Code,
     Divider,
     Group,
@@ -11,40 +12,45 @@ import {
     Text,
     Tooltip
 } from '@mantine/core'
-import { TbCalendar, TbChartArcs, TbServerCog, TbUser, TbWifi } from 'react-icons/tb'
-import { GetUserByUuidCommand, USERS_STATUS } from '@remnawave/backend-contract'
-import { ForwardRefComponent, HTMLMotionProps, Variants } from 'motion/react'
-import { PiLinkDuotone, PiQrCode, PiUserCircle } from 'react-icons/pi'
-import { HiQuestionMarkCircle } from 'react-icons/hi'
-import { useTranslation } from 'react-i18next'
-import { useDisclosure } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
-import { renderSVG } from 'uqr'
-import { memo } from 'react'
-import dayjs from 'dayjs'
-
-import { GetUserSubscriptionRequestHistoryFeature } from '@features/ui/dashboard/users/get-user-subscription-request-history'
-import { GetUserTorrentBlockerReportsFeature } from '@features/ui/dashboard/users/get-user-torrent-blocker-reports'
-import { GetUserSubscriptionLinksFeature } from '@features/ui/dashboard/users/get-user-subscription-links'
-import { GetUserActiveSessionsFeature } from '@features/ui/dashboard/users/get-user-active-sessions'
-import { formatRelativeDateUtil, formatTimeUtil, getTimeAgoUtil } from '@shared/utils/time-utils'
-import { GetHwidUserDevicesFeature } from '@features/ui/dashboard/users/get-hwid-user-devices'
-import { MODALS, useModalsStoreOpenWithData } from '@entities/dashboard/modal-store'
-import { GetUserUsageFeature } from '@features/ui/dashboard/users/get-user-usage'
-import { useUserModalStoreActions } from '@entities/dashboard/user-modal-store'
-import { CopyableFieldShared } from '@shared/ui/copyable-field/copyable-field'
+import { GetUserByIdCommand, USERS_STATUS } from '@remnawave/backend-contract'
 import { UserStatusBadge } from '@widgets/dashboard/users/user-status-badge'
-import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
+import dayjs from 'dayjs'
+import { githubDarkTheme, JsonEditor } from 'json-edit-react'
+import { ForwardRefComponent, HTMLMotionProps, Variants } from 'motion/react'
+import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { HiQuestionMarkCircle } from 'react-icons/hi'
+import { PiLinkBreak, PiLinkDuotone, PiUserCircle } from 'react-icons/pi'
+import {
+    TbCalendar,
+    TbChartArcs,
+    TbDevices,
+    TbFlame,
+    TbJson,
+    TbQrcode,
+    TbRadar,
+    TbServerCog,
+    TbTimeline,
+    TbUser,
+    TbWifi
+} from 'react-icons/tb'
+
+import { showModal } from '@shared/_modals/show-modal'
+import { useGetUserMetadata } from '@shared/api/hooks'
 import { CopyableCodeBlock } from '@shared/ui/copyable-code-block'
-import { prettyBytesUtil } from '@shared/utils/bytes'
+import { CopyableFieldShared } from '@shared/ui/copyable-field/copyable-field'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { SectionCard } from '@shared/ui/section-card'
+import { prettifyBytesUtil } from '@shared/utils/bytes'
+import { resolveCountryCode } from '@shared/utils/misc/resolve-country-code'
+import { formatRelativeDateUtil, formatTimeUtil, getTimeAgoUtil } from '@shared/utils/time-utils'
 
 interface IProps {
     cardVariants: Variants
-    lastConnectedNode?: null | { countryCode: string; name: string }
+    lastConnectedNode?: null | { countryCode: string; name: string; uuid: string }
     motionWrapper: ForwardRefComponent<HTMLDivElement, HTMLMotionProps<'div'>>
-    user: GetUserByUuidCommand.Response['response']
+    user: GetUserByIdCommand.Response['response']
 }
 
 const statusIconColorMap = {
@@ -67,12 +73,11 @@ export const UserIdentificationCard = memo((props: IProps) => {
 
     const { cardVariants, lastConnectedNode, motionWrapper, user } = props
 
-    const [trafficStatisticsModalOpened, trafficStatisticsModalHandlers] = useDisclosure(false)
-
     const MotionWrapper = motionWrapper
 
-    const actions = useUserModalStoreActions()
-    const openModalWithData = useModalsStoreOpenWithData()
+    const { data: metadata, isLoading: isMetadataLoading } = useGetUserMetadata({
+        route: { userId: user.id }
+    })
 
     const statusIconColor = statusIconColorMap[user.status] ?? 'gray'
 
@@ -82,9 +87,9 @@ export const UserIdentificationCard = memo((props: IProps) => {
     const isUnlimited = limitBytes === 0
     const percentage = isUnlimited ? 0 : Math.floor((usedBytes * 100) / limitBytes)
 
-    const prettyUsedData = prettyBytesUtil(usedBytes) || '0 B'
-    const prettyLifetimeData = prettyBytesUtil(lifetimeBytes) || '0 B'
-    const maxData = isUnlimited ? '∞' : prettyBytesUtil(limitBytes) || '∞'
+    const prettyUsedData = prettifyBytesUtil(usedBytes) || '0 B'
+    const prettyLifetimeData = prettifyBytesUtil(lifetimeBytes) || '0 B'
+    const maxData = isUnlimited ? '∞' : prettifyBytesUtil(limitBytes) || '∞'
 
     const getProgressColor = () => {
         if (isUnlimited) return 'teal'
@@ -133,8 +138,8 @@ export const UserIdentificationCard = memo((props: IProps) => {
                             IconComponent={TbUser}
                             iconSize={20}
                             iconVariant="soft"
-                            subtitle={user.id.toString()}
-                            title={user.username}
+                            title={user.id.toString()}
+                            subtitle={user.username}
                             titleOrder={5}
                             withCopy
                         />
@@ -157,39 +162,75 @@ export const UserIdentificationCard = memo((props: IProps) => {
                                 <ActionIcon
                                     color="teal"
                                     onClick={() => {
-                                        const subscriptionQrCode = renderSVG(user.subscriptionUrl, {
-                                            whiteColor: '#161B22',
-                                            blackColor: '#3CC9DB'
+                                        showModal('users_subscriptionQrCodeModal', {
+                                            subscriptionUrl: user.subscriptionUrl,
+                                            username: user.username
                                         })
+                                    }}
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <TbQrcode size={22} />
+                                </ActionIcon>
+                            </Tooltip>
+
+                            <Tooltip
+                                label={t('get-user-subscription-links.feature.connection-keys')}
+                            >
+                                <ActionIcon
+                                    color="teal"
+                                    onClick={() => {
+                                        showModal('users_connectionKeysDrawer', {
+                                            userId: user.id,
+                                            shortUuid: user.shortUuid
+                                        })
+                                    }}
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <PiLinkBreak size="22px" />
+                                </ActionIcon>
+                            </Tooltip>
+
+                            <Tooltip label="Metadata">
+                                <ActionIcon
+                                    color="teal"
+                                    disabled={!metadata}
+                                    loading={isMetadataLoading}
+                                    onClick={() => {
+                                        if (!metadata) return
                                         modals.open({
                                             centered: true,
+                                            size: 'auto',
                                             title: (
                                                 <BaseOverlayHeader
                                                     iconColor="teal"
-                                                    IconComponent={PiQrCode}
+                                                    IconComponent={TbJson}
                                                     iconVariant="soft"
-                                                    title={t(
-                                                        'view-user-modal.widget.subscription-qr-code'
-                                                    )}
+                                                    title="Metadata"
                                                 />
                                             ),
                                             children: (
-                                                <div
-                                                    dangerouslySetInnerHTML={{
-                                                        __html: subscriptionQrCode
-                                                    }}
-                                                />
+                                                <Box>
+                                                    <JsonEditor
+                                                        collapse={3}
+                                                        data={metadata.metadata as object}
+                                                        indent={4}
+                                                        maxWidth="100%"
+                                                        rootName=""
+                                                        theme={githubDarkTheme}
+                                                        viewOnly
+                                                    />
+                                                </Box>
                                             )
                                         })
                                     }}
                                     size="lg"
                                     variant="soft"
                                 >
-                                    <PiQrCode size={22} />
+                                    <TbJson size={22} />
                                 </ActionIcon>
                             </Tooltip>
-
-                            <GetUserSubscriptionLinksFeature uuid={user.uuid} />
                         </Group>
 
                         <Divider opacity={0.3} orientation="vertical" />
@@ -198,10 +239,11 @@ export const UserIdentificationCard = memo((props: IProps) => {
                             <Tooltip label={t('view-user-modal.widget.detailed-info')}>
                                 <ActionIcon
                                     color="cyan"
-                                    onClick={async () => {
-                                        await actions.setDrawerUserUuid(user.uuid)
-                                        actions.changeDetailedUserInfoDrawerState(true)
-                                    }}
+                                    onClick={() =>
+                                        showModal('users_detailedUserInfoDrawer', {
+                                            userId: user.id
+                                        })
+                                    }
                                     size="lg"
                                     variant="soft"
                                 >
@@ -213,8 +255,8 @@ export const UserIdentificationCard = memo((props: IProps) => {
                                 <ActionIcon
                                     color="cyan"
                                     onClick={() => {
-                                        openModalWithData(MODALS.USER_ACCESSIBLE_NODES_DRAWER, {
-                                            userUuid: user.uuid
+                                        showModal('users_userAccessibleNodesModal', {
+                                            userId: user.id
                                         })
                                     }}
                                     size="lg"
@@ -228,16 +270,87 @@ export const UserIdentificationCard = memo((props: IProps) => {
                         <Divider opacity={0.3} orientation="vertical" />
 
                         <Group gap={5} justify="center">
-                            <GetUserUsageFeature
-                                onClose={trafficStatisticsModalHandlers.close}
-                                onOpen={trafficStatisticsModalHandlers.open}
-                                opened={trafficStatisticsModalOpened}
-                                userUuid={user.uuid}
-                            />
-                            <GetUserTorrentBlockerReportsFeature userUuid={user.uuid} />
-                            <GetUserSubscriptionRequestHistoryFeature userUuid={user.uuid} />
-                            <GetHwidUserDevicesFeature userUuid={user.uuid} />
-                            <GetUserActiveSessionsFeature userUuid={user.uuid} />
+                            <Tooltip label={t('common.usage-stats')}>
+                                <ActionIcon
+                                    color="indigo"
+                                    onClick={() => {
+                                        showModal('users_userUsageModal', {
+                                            userId: user.id
+                                        })
+                                    }}
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <TbChartArcs size="24px" />
+                                </ActionIcon>
+                            </Tooltip>
+                            <Tooltip
+                                label={t(
+                                    'get-user-torrent-blocker-reports.feature.blocker-reports'
+                                )}
+                            >
+                                <ActionIcon
+                                    color="indigo"
+                                    onClick={() =>
+                                        showModal('users_userTorrentBlockerReportsModal', {
+                                            userId: user.id
+                                        })
+                                    }
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <TbFlame size="22px" />
+                                </ActionIcon>
+                            </Tooltip>
+
+                            <Tooltip
+                                label={t(
+                                    'get-user-subscription-request-history.feature.request-history'
+                                )}
+                            >
+                                <ActionIcon
+                                    color="indigo"
+                                    onClick={() =>
+                                        showModal('users_userSubscriptionRequestsModal', {
+                                            userId: user.id
+                                        })
+                                    }
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <TbTimeline size="22px" />
+                                </ActionIcon>
+                            </Tooltip>
+
+                            <Tooltip label={t('get-hwid-user-devices.feature.hwid-devices')}>
+                                <ActionIcon
+                                    color="indigo"
+                                    onClick={() => {
+                                        showModal('users_userHwidDevicesModal', {
+                                            userId: user.id
+                                        })
+                                    }}
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <TbDevices size="22px" />
+                                </ActionIcon>
+                            </Tooltip>
+
+                            <Tooltip label={t('common.active-sessions')}>
+                                <ActionIcon
+                                    color="indigo"
+                                    onClick={() => {
+                                        showModal('users_userActiveSessionDrawer', {
+                                            userId: user.id
+                                        })
+                                    }}
+                                    size="lg"
+                                    variant="soft"
+                                >
+                                    <TbRadar size="22px" />
+                                </ActionIcon>
+                            </Tooltip>
                         </Group>
                     </Group>
                 </SectionCard.Section>
@@ -359,6 +472,12 @@ export const UserIdentificationCard = memo((props: IProps) => {
                                 bg="rgba(6, 182, 212, 0.08)"
                                 p="xs"
                                 radius="md"
+                                onClick={() => {
+                                    showModal('nodes_editNodeModal', {
+                                        nodeUuid: lastConnectedNode.uuid
+                                    })
+                                }}
+                                style={{ cursor: 'pointer' }}
                             >
                                 <Tooltip
                                     label={t(

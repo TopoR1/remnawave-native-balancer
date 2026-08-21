@@ -1,4 +1,4 @@
-import { useGetApiTokens, useGetRemnawaveSettings } from '@shared/api/hooks'
+import { useGetApiTokens, useGetRemnawaveSettings, useGetScopes } from '@shared/api/hooks'
 import { LoadingScreen } from '@shared/ui/loading-screen'
 
 import { RemnawaveSettingsPageComponent } from '../components'
@@ -7,8 +7,16 @@ export const RemnawaveSettingsConnector = () => {
     const { data: remnawaveSettings, isLoading: isRemnawaveSettingsLoading } =
         useGetRemnawaveSettings()
     const { data: apiTokensData, isLoading: isApiTokensLoading } = useGetApiTokens()
+    const { data: scopes, isLoading: isScopesLoading } = useGetScopes()
 
-    if (isRemnawaveSettingsLoading || isApiTokensLoading || !remnawaveSettings || !apiTokensData) {
+    if (
+        isRemnawaveSettingsLoading ||
+        isApiTokensLoading ||
+        isScopesLoading ||
+        !remnawaveSettings ||
+        !apiTokensData ||
+        !scopes
+    ) {
         return <LoadingScreen />
     }
 

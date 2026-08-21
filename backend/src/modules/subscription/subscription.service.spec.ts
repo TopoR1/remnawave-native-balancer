@@ -4,17 +4,17 @@ import { beforeEach, describe, it } from 'node:test';
 
 import { ok } from '@common/types';
 
-import { GetCachedSubscriptionSettingsQuery } from '@modules/subscription-settings/queries/get-cached-subscrtipion-settings';
-import { GetCachedRemnawaveSettingsQuery } from '@modules/remnawave-settings/queries/get-cached-remnawave-settings';
-import { GetUserByUniqueFieldQuery } from '@modules/users/queries/get-user-by-unique-field';
 import { HostBalancerService } from '@modules/host-balancers';
 import { GetHostsForUserQuery } from '@modules/hosts/queries/get-hosts-for-user';
+import { GetCachedRemnawaveSettingsQuery } from '@modules/remnawave-settings/queries/get-cached-remnawave-settings';
+import { GetCachedSubscriptionSettingsQuery } from '@modules/subscription-settings/queries/get-cached-subscrtipion-settings';
+import { GetUserByUniqueFieldQuery } from '@modules/users/queries/get-user-by-unique-field';
 
 import { HostWithRawInbound } from '../hosts/entities/host-with-inbound-tag.entity';
 import { SubscriptionService } from './subscription.service';
 
 const HOST_UUID = '11111111-1111-4111-8111-111111111111';
-const USER_UUID = '22222222-2222-4222-8222-222222222222';
+const USER_ID = 100n;
 const BALANCER_UUID = '33333333-3333-4333-8333-333333333333';
 const TARGET_UUID = '44444444-4444-4444-8444-444444444444';
 const TARGET_UUID_2 = '66666666-6666-4666-8666-666666666666';
@@ -24,10 +24,9 @@ const INBOUND_UUID = '77777777-7777-4777-8777-777777777777';
 
 function createUser(overrides = {}) {
     return {
-        uuid: USER_UUID,
+        id: USER_ID,
         shortUuid: 'short-user',
         username: 'alice',
-        tId: 100n,
         status: 'ACTIVE',
         trafficLimitBytes: 10_000_000n,
         trafficLimitStrategy: 'NO_RESET',
@@ -106,20 +105,22 @@ function createHost(overrides = {}) {
         alpn: null,
         fingerprint: null,
         securityLayer: 'DEFAULT',
-        xHttpExtraParams: null,
+        xhttpExtraParams: null,
         muxParams: null,
         sockoptParams: null,
         finalMask: null,
         isDisabled: false,
         serverDescription: null,
-        allowInsecure: false,
-        tag: null,
+        pinnedPeerCertSha256: null,
+        verifyPeerCertByName: null,
+        tags: [],
         isHidden: false,
         overrideSniFromAddress: false,
         keepSniBlank: false,
         vlessRouteId: null,
         shuffleHost: false,
         mihomoX25519: false,
+        mihomoIpVersion: null,
         configProfileUuid: null,
         configProfileInboundUuid: INBOUND_UUID,
         xrayJsonTemplateUuid: null,
@@ -175,7 +176,7 @@ function createAssignment(overrides = {}) {
     return {
         uuid: '88888888-8888-4888-8888-888888888888',
         hostUuid: HOST_UUID,
-        userUuid: USER_UUID,
+        userId: USER_ID,
         targetUuid: TARGET_UUID,
         reason: null,
         lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -351,7 +352,7 @@ function createService({
         queryBus,
         {
             get: (key: string, defaultValue?: string) =>
-                key === 'HOST_BALANCER_ENABLED' ? String(enabled) : defaultValue,
+                key === 'HOST_BALANCER_ENABLED' ? enabled : defaultValue,
             getOrThrow: () => 'sub.example.com',
         },
         {},

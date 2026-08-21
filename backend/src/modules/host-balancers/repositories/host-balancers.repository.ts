@@ -1,3 +1,5 @@
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
 import {
     HostBalancerAssignment,
     HostBalancerStrategy,
@@ -7,8 +9,6 @@ import {
     Prisma,
 } from '@prisma/client';
 
-import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
-import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
 
 import {
@@ -53,7 +53,7 @@ export type HostBalancerNodeState = {
 
 export type CreateHostBalancerDecisionDto = {
     hostUuid: string;
-    userUuid: string;
+    userId: bigint;
     targetUuid: string | null;
     strategy: HostBalancerStrategy;
     reason: string;
@@ -126,17 +126,19 @@ export class HostBalancersRepository {
     }
 
     public async findUser(userUuid: string) {
-        return this.prisma.tx.users.findUnique({
-            where: { uuid: userUuid },
-            select: { uuid: true, shortUuid: true },
+        const user = await this.prisma.tx.users.findFirst({
+            where: { vlessUuid: userUuid },
+            select: { id: true, vlessUuid: true, shortUuid: true },
         });
+        return user ? { id: user.id, uuid: user.vlessUuid, shortUuid: user.shortUuid } : null;
     }
 
     public async findUserByShortUuid(shortUuid: string) {
-        return this.prisma.tx.users.findUnique({
+        const user = await this.prisma.tx.users.findUnique({
             where: { shortUuid },
-            select: { uuid: true, shortUuid: true },
+            select: { id: true, vlessUuid: true, shortUuid: true },
         });
+        return user ? { id: user.id, uuid: user.vlessUuid, shortUuid: user.shortUuid } : null;
     }
 
     public async findByHostUuid(hostUuid: string): Promise<HostBalancerWithTargets | null> {
@@ -229,7 +231,7 @@ export class HostBalancersRepository {
     }
 
     public async findAssignmentsForUser(
-        userUuid: string,
+        userId: bigint,
         hostUuids: string[],
     ): Promise<Map<string, HostBalancerAssignment>> {
         if (hostUuids.length === 0) {
@@ -238,7 +240,7 @@ export class HostBalancersRepository {
 
         const assignments = await this.prisma.tx.hostBalancerAssignment.findMany({
             where: {
-                userUuid,
+                userId,
                 hostUuid: { in: hostUuids },
             },
         });
@@ -248,20 +250,20 @@ export class HostBalancersRepository {
 
     public async upsertAssignment(dto: {
         hostUuid: string;
-        userUuid: string;
+        userId: bigint;
         targetUuid: string;
         reason: string;
     }): Promise<HostBalancerAssignment> {
         return this.prisma.tx.hostBalancerAssignment.upsert({
             where: {
-                hostUuid_userUuid: {
+                hostUuid_userId: {
                     hostUuid: dto.hostUuid,
-                    userUuid: dto.userUuid,
+                    userId: dto.userId,
                 },
             },
             create: {
                 hostUuid: dto.hostUuid,
-                userUuid: dto.userUuid,
+                userId: dto.userId,
                 targetUuid: dto.targetUuid,
                 reason: dto.reason,
                 lastUsedAt: new Date(),
@@ -274,12 +276,12 @@ export class HostBalancersRepository {
         });
     }
 
-    public async touchAssignment(hostUuid: string, userUuid: string): Promise<void> {
+    public async touchAssignment(hostUuid: string, userId: bigint): Promise<void> {
         await this.prisma.tx.hostBalancerAssignment.update({
             where: {
-                hostUuid_userUuid: {
+                hostUuid_userId: {
                     hostUuid,
-                    userUuid,
+                    userId,
                 },
             },
             data: {
@@ -440,7 +442,7 @@ export class HostBalancersRepository {
         await this.prisma.tx.hostBalancerDecision.create({
             data: {
                 hostUuid: dto.hostUuid,
-                userUuid: dto.userUuid,
+                userId: dto.userId,
                 targetUuid: dto.targetUuid,
                 strategy: dto.strategy,
                 reason: dto.reason,
@@ -500,8 +502,8 @@ export class HostBalancersRepository {
             return {
                 uuid: row.uuid,
                 hostUuid: row.hostUuid,
-                userUuid: this.maskUuid(row.userUuid),
-                userUuidMasked: this.maskUuid(row.userUuid),
+                userUuid: row.userId.toString(),
+                userUuidMasked: row.userId.toString(),
                 targetUuid: row.targetUuid,
                 strategy: row.strategy,
                 reason: row.reason,
@@ -563,10 +565,7 @@ export class HostBalancersRepository {
 
     private isHostBalancerTargetStatus(value: unknown): value is HostBalancerTargetStatus {
         return (
-            value === 'ACTIVE' ||
-            value === 'DRAINING' ||
-            value === 'DISABLED' ||
-            value === 'DEAD'
+            value === 'ACTIVE' || value === 'DRAINING' || value === 'DISABLED' || value === 'DEAD'
         );
     }
 
@@ -635,8 +634,7 @@ export class HostBalancersRepository {
                         ? item['inboundPort']
                         : undefined,
                 overrideAddress:
-                    typeof item['overrideAddress'] === 'string' ||
-                    item['overrideAddress'] === null
+                    typeof item['overrideAddress'] === 'string' || item['overrideAddress'] === null
                         ? item['overrideAddress']
                         : undefined,
                 overridePort:
@@ -654,10 +652,9 @@ export class HostBalancersRepository {
                 status: this.isHostBalancerTargetStatus(item['status'])
                     ? item['status']
                     : undefined,
-                compatibilityStatus:
-                    this.isCompatibilityStatus(item['compatibilityStatus'])
-                        ? item['compatibilityStatus']
-                        : undefined,
+                compatibilityStatus: this.isCompatibilityStatus(item['compatibilityStatus'])
+                    ? item['compatibilityStatus']
+                    : undefined,
                 assignments:
                     typeof item['assignments'] === 'number' ? item['assignments'] : undefined,
                 assignmentsCount:
@@ -674,10 +671,9 @@ export class HostBalancersRepository {
                     typeof item['trafficBytes'] === 'string' || item['trafficBytes'] === null
                         ? item['trafficBytes']
                         : undefined,
-                trafficSource:
-                    this.isTrafficSource(item['trafficSource'])
-                        ? item['trafficSource']
-                        : undefined,
+                trafficSource: this.isTrafficSource(item['trafficSource'])
+                    ? item['trafficSource']
+                    : undefined,
                 weight: typeof item['weight'] === 'number' ? item['weight'] : undefined,
                 priority: typeof item['priority'] === 'number' ? item['priority'] : undefined,
                 score: typeof item['score'] === 'number' ? item['score'] : undefined,
@@ -727,9 +723,7 @@ export class HostBalancersRepository {
 
         return countryCode
             .toUpperCase()
-            .replace(/./g, (char) =>
-                String.fromCodePoint(127397 + char.charCodeAt(0)),
-            );
+            .replace(/./g, (char) => String.fromCodePoint(127397 + char.charCodeAt(0)));
     }
 
     private sanitizeDecisionDiagnostics(value: Record<string, unknown>): Record<string, unknown> {

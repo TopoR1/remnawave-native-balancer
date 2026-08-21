@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { REST_API, SUBSCRIPTION_PAGE_CONFIGS_ROUTES } from '../../api';
 import { getEndpointDetails } from '../../constants';
 
-export namespace DeleteSubscriptionPageConfigCommand {
+export namespace DeleteSubpageConfigCommand {
     export const url = REST_API.SUBSCRIPTION_PAGE_CONFIGS.DELETE;
     export const TSQ_url = url(':uuid');
 
@@ -11,19 +11,12 @@ export namespace DeleteSubscriptionPageConfigCommand {
         SUBSCRIPTION_PAGE_CONFIGS_ROUTES.DELETE(':uuid'),
         'delete',
         'Delete subscription page config',
+        { scope: 'delete', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuid: z.string().uuid(),
+    export const RequestParamSchema = z.object({
+        uuid: z.uuid(),
     });
 
-    export type Request = z.infer<typeof RequestSchema>;
-
-    export const ResponseSchema = z.object({
-        response: z.object({
-            isDeleted: z.boolean(),
-        }),
-    });
-
-    export type Response = z.infer<typeof ResponseSchema>;
+    export type RequestParam = z.infer<typeof RequestParamSchema>;
 }

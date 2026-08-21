@@ -1,6 +1,6 @@
-import { GetOneNodeCommand } from '@remnawave/backend-contract'
+import { GetNodeCommand } from '@remnawave/backend-contract'
 
 export interface IProps {
     handleClose: () => void
-    node: GetOneNodeCommand.Response['response']
+    node: GetNodeCommand.Response['response']
 }

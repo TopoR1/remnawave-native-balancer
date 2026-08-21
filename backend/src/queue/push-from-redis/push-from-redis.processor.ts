@@ -1,19 +1,20 @@
 import { Job } from 'bullmq';
 
-import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
+import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 
+import { TypedConfigService } from '@common/config/app-config';
 import { RawCacheService } from '@common/raw-cache';
-import { INTERNAL_CACHE_KEYS } from '@libs/contracts/constants';
+import { EXPORT_TO_STREAM_KEYS, INTERNAL_CACHE_KEYS } from '@libs/contracts/constants';
+import { USER_USAGE_STREAM_MESSAGE_VERSION } from '@libs/contracts/models';
 
 import { BulkUpsertUserHistoryEntryCommand } from '@modules/nodes-user-usage-history/commands/bulk-upsert-user-history-entry';
 import { NodesUserUsageHistoryEntity } from '@modules/nodes-user-usage-history/entities';
 
-import { IRecordUserUsageFromRedisPayload } from './interfaces';
-import { PushFromRedisJobNames } from './enums';
 import { QUEUES_NAMES } from '../queue.enum';
+import { PushFromRedisJobNames } from './enums';
+import { IRecordUserUsageFromRedisPayload } from './interfaces';
 
 @Processor(QUEUES_NAMES.PUSH_TO_DB, {
     concurrency: 10,
@@ -25,17 +26,21 @@ import { QUEUES_NAMES } from '../queue.enum';
 export class PushFromRedisQueueProcessor extends WorkerHost implements OnApplicationBootstrap {
     private readonly logger = new Logger(PushFromRedisQueueProcessor.name);
     private readonly disableUserUsageRecords: boolean;
+    private readonly exportToStreamEnabled: boolean;
+    private readonly exportToStreamMaxLen: number;
 
     constructor(
         private readonly commandBus: CommandBus,
         private readonly rawCacheService: RawCacheService,
-        private readonly configService: ConfigService,
+        private readonly configService: TypedConfigService,
     ) {
         super();
 
-        this.disableUserUsageRecords = this.configService.getOrThrow<boolean>(
+        this.disableUserUsageRecords = this.configService.getOrThrow(
             'SERVICE_DISABLE_USER_USAGE_RECORDS',
         );
+        this.exportToStreamEnabled = this.configService.getOrThrow('EXPORT_TO_STREAM_ENABLED');
+        this.exportToStreamMaxLen = this.configService.getOrThrow('EXPORT_TO_STREAM_MAXLEN');
     }
 
     onApplicationBootstrap() {
@@ -45,6 +50,12 @@ export class PushFromRedisQueueProcessor extends WorkerHost implements OnApplica
             );
         } else {
             this.logger.log('User usage records will be recorded to the database.');
+        }
+
+        if (this.exportToStreamEnabled) {
+            this.logger.log(
+                `[STREAM] key "${EXPORT_TO_STREAM_KEYS.PREFIX}${EXPORT_TO_STREAM_KEYS.USER_USAGE}", maxlen ~${this.exportToStreamMaxLen}.`,
+            );
         }
     }
 
@@ -63,7 +74,7 @@ export class PushFromRedisQueueProcessor extends WorkerHost implements OnApplica
         const processingKey = `${redisKey}${INTERNAL_CACHE_KEYS.PROCESSING_POSTFIX}`;
 
         try {
-            if (this.disableUserUsageRecords) {
+            if (this.disableUserUsageRecords && !this.exportToStreamEnabled) {
                 return;
             }
 
@@ -78,7 +89,12 @@ export class PushFromRedisQueueProcessor extends WorkerHost implements OnApplica
             const nodeId = BigInt(redisKey.split(':')[1]);
 
             for await (const batch of this.scanAndBatch(processingKey, nodeId)) {
-                await this.commandBus.execute(new BulkUpsertUserHistoryEntryCommand(batch));
+                if (!this.disableUserUsageRecords) {
+                    await this.commandBus.execute(new BulkUpsertUserHistoryEntryCommand(batch));
+                }
+                if (this.exportToStreamEnabled) {
+                    await this.exportBatchToStream(nodeId, batch);
+                }
             }
 
             return;
@@ -89,6 +105,31 @@ export class PushFromRedisQueueProcessor extends WorkerHost implements OnApplica
             return;
         } finally {
             await this.rawCacheService.del(processingKey);
+        }
+    }
+
+    private async exportBatchToStream(
+        nodeId: bigint,
+        batch: NodesUserUsageHistoryEntity[],
+    ): Promise<void> {
+        try {
+            const parts: string[] = [];
+            for (const entry of batch) {
+                parts.push(`${entry.userId}:${entry.totalBytes}`);
+            }
+
+            await this.rawCacheService.xaddTrimmed(
+                EXPORT_TO_STREAM_KEYS.USER_USAGE,
+                this.exportToStreamMaxLen,
+                {
+                    v: USER_USAGE_STREAM_MESSAGE_VERSION,
+                    nodeId: nodeId.toString(),
+                    ts: new Date().toISOString(),
+                    records: parts.join(';'),
+                },
+            );
+        } catch (error) {
+            this.logger.error(`Error exporting usage batch to stream: ${error}`);
         }
     }
 

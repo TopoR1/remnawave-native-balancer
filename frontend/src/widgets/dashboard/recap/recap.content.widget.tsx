@@ -1,3 +1,5 @@
+import type { BgStyle, MaskableField } from './recap.constants'
+
 import {
     alpha,
     Button,
@@ -9,19 +11,17 @@ import {
     Switch,
     TextInput
 } from '@mantine/core'
-import { TbCheck, TbCopy, TbDownload, TbX } from 'react-icons/tb'
 import { notifications } from '@mantine/notifications'
-import { useTranslation } from 'react-i18next'
-import { useRef, useState } from 'react'
-import { motion } from 'motion/react'
 import dayjs from 'dayjs'
+import { motion } from 'motion/react'
+import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { TbCheck, TbCopy, TbDownload, TbX } from 'react-icons/tb'
 
-import { copyScreenshotToClipboard, downloadScreenshot } from '@shared/utils/copy-screenshot.util'
 import { useGetRecap } from '@shared/api/hooks/system/system.query.hooks'
-import { prettyBytesToAnyUtil } from '@shared/utils/bytes'
 import { Logo } from '@shared/ui/logo'
-
-import type { BgStyle, MaskableField } from './recap.constants'
+import { prettifyBytesUtil } from '@shared/utils/bytes'
+import { copyScreenshotToClipboard, downloadScreenshot } from '@shared/utils/copy-screenshot.util'
 
 import {
     BG_STYLES,
@@ -50,14 +50,18 @@ export function RecapContent() {
     const copy = async () => {
         setCopying(true)
         try {
-            if (!ref.current) throw new Error('ref')
             setCardKey((k) => k + 1)
 
-            await new Promise<void>((resolve) => {
-                requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-            })
-
-            await copyScreenshotToClipboard(ref.current)
+            await copyScreenshotToClipboard(
+                async () => {
+                    await new Promise<void>((resolve) => {
+                        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+                    })
+                    if (!ref.current) throw new Error('ref')
+                    return ref.current
+                },
+                `remnawave-recap-${dayjs().format('YYYY-MM-DD')}.png`
+            )
         } catch (error) {
             notifications.show({
                 color: 'red',
@@ -254,7 +258,7 @@ export function RecapContent() {
                                 <div className={classes.statValue}>
                                     {m(
                                         'totalTraffic',
-                                        prettyBytesToAnyUtil(recap.total.traffic, true)
+                                        prettifyBytesUtil(recap.total.traffic, true)
                                     )}
                                 </div>
                                 <div className={classes.statLabel}>traffic</div>
@@ -280,7 +284,7 @@ export function RecapContent() {
                                         <div className={classes.monthValue}>
                                             {m(
                                                 'monthTraffic',
-                                                prettyBytesToAnyUtil(recap.thisMonth.traffic)
+                                                prettifyBytesUtil(recap.thisMonth.traffic)
                                             )}
                                         </div>
                                         <div className={classes.monthLabel}>traffic</div>
@@ -315,7 +319,7 @@ export function RecapContent() {
                                         <div className={classes.infraValue}>
                                             {m(
                                                 'ram',
-                                                prettyBytesToAnyUtil(recap.total.nodesRam, true)
+                                                prettifyBytesUtil(recap.total.nodesRam, true)
                                             )}
                                         </div>
                                         <div className={classes.infraLabel}>RAM</div>

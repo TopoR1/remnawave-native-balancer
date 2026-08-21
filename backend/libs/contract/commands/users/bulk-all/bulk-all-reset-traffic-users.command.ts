@@ -1,7 +1,5 @@
-import { z } from 'zod';
-
-import { getEndpointDetails } from '../../../constants';
 import { REST_API, USERS_ROUTES } from '../../../api';
+import { getEndpointDetails } from '../../../constants';
 
 export namespace BulkAllResetTrafficUsersCommand {
     export const url = REST_API.USERS.BULK.ALL.RESET_TRAFFIC;
@@ -11,13 +9,6 @@ export namespace BulkAllResetTrafficUsersCommand {
         USERS_ROUTES.BULK.ALL.RESET_TRAFFIC,
         'post',
         'Reset user used traffic for all users',
+        { scope: 'bulk-all-reset-traffic', kind: 'write' },
     );
-
-    export const ResponseSchema = z.object({
-        response: z.object({
-            eventSent: z.boolean(),
-        }),
-    });
-
-    export type Response = z.infer<typeof ResponseSchema>;
 }

@@ -1,50 +1,46 @@
-import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import { customAlphabet } from 'nanoid';
 import dayjs from 'dayjs';
+import { customAlphabet } from 'nanoid';
+import { randomUUID } from 'node:crypto';
 
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Injectable, Logger } from '@nestjs/common';
 import { EventBus, QueryBus } from '@nestjs/cqrs';
-import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { mapDefined, wrapBigInt, wrapBigIntNullable } from '@common/utils';
+import { TypedConfigService } from '@common/config/app-config';
 import { fail, ok, TResult } from '@common/types';
+import { mapDefined, wrapBigInt, wrapBigIntNullable } from '@common/utils';
 import { ERRORS, USERS_STATUS, EVENTS } from '@libs/contracts/constants';
-import { GetAllUsersCommand } from '@libs/contracts/commands';
 
 import { UserEvent } from '@integration-modules/notifications/interfaces';
 
-import { GetUserSubscriptionRequestHistoryQuery } from '@modules/user-subscription-request-history/queries/get-user-subscription-request-history';
-import { RemoveUsersFromNodeEvent } from '@modules/nodes/events/remove-users-from-node';
-import { RemoveUserFromNodeEvent } from '@modules/nodes/events/remove-user-from-node';
-import { AddUsersToNodeEvent } from '@modules/nodes/events/add-users-to-node';
 import { AddUserToNodeEvent } from '@modules/nodes/events/add-user-to-node';
+import { AddUsersToNodeEvent } from '@modules/nodes/events/add-users-to-node';
+import { RemoveUserFromNodeEvent } from '@modules/nodes/events/remove-user-from-node';
+import { RemoveUsersFromNodeEvent } from '@modules/nodes/events/remove-users-from-node';
+import { GetUserSubscriptionRequestHistoryQuery } from '@modules/user-subscription-request-history/queries/get-user-subscription-request-history';
 
-import { NodesQueuesService } from '@queue/_nodes';
 import { UsersQueuesService } from '@queue/_users';
 
 import {
-    DeleteUserResponseModel,
-    BulkDeleteByStatusResponseModel,
-    BulkOperationResponseModel,
-    BulkAllResponseModel,
+    BulkAllUpdateUsersBodyDto,
+    BulkDeleteUsersByStatusBodyDto,
+    BulkUpdateUsersBodyDto,
+    CreateUserBodyDto,
+    GetUsersQueryDto,
+    GetUsersStreamQueryDto,
+    ResolveUserBodyDto,
+    RevokeUserSubscriptionBodyDto,
+    UpdateUserBodyDto,
+} from './dtos';
+import { BaseUserEntity, UserEntity } from './entities';
+import { IGetUserByUnique, IUpdateUserDto } from './interfaces';
+import {
     GetUserAccessibleNodesResponseModel,
     GetUserSubscriptionRequestHistoryResponseModel,
     ResolveUserResponseModel,
 } from './models';
-import {
-    CreateUserRequestDto,
-    UpdateUserRequestDto,
-    BulkDeleteUsersByStatusRequestDto,
-    BulkUpdateUsersRequestDto,
-    BulkAllUpdateUsersRequestDto,
-    RevokeUserSubscriptionBodyDto,
-    ResolveUserRequestBodyDto,
-} from './dtos';
-import { IGetUserByUnique, IGetUsersByTelegramIdOrEmail, IUpdateUserDto } from './interfaces';
 import { UsersRepository } from './repositories/users.repository';
-import { BaseUserEntity, UserEntity } from './entities';
 
 @Injectable()
 export class UsersService {
@@ -56,14 +52,13 @@ export class UsersService {
         private readonly eventBus: EventBus,
         private readonly eventEmitter: EventEmitter2,
         private readonly queryBus: QueryBus,
-        private readonly configService: ConfigService,
+        private readonly configService: TypedConfigService,
         private readonly usersQueuesService: UsersQueuesService,
-        private readonly nodesQueuesService: NodesQueuesService,
     ) {
-        this.shortUuidLength = this.configService.getOrThrow<number>('SHORT_UUID_LENGTH');
+        this.shortUuidLength = this.configService.getOrThrow('SHORT_UUID_LENGTH');
     }
 
-    public async createUser(dto: CreateUserRequestDto): Promise<TResult<UserEntity>> {
+    public async createUser(dto: CreateUserBodyDto): Promise<TResult<UserEntity>> {
         try {
             const userEntity = new BaseUserEntity({
                 username: dto.username,
@@ -82,20 +77,19 @@ export class UsersService {
                 description: dto.description,
                 hwidDeviceLimit: dto.hwidDeviceLimit,
                 tag: dto.tag,
-                uuid: dto.uuid,
                 externalSquadUuid: dto.externalSquadUuid,
             });
 
-            const { tId } = await this.userRepository.create(userEntity, dto.activeInternalSquads);
+            const { id } = await this.userRepository.create(userEntity, dto.activeInternalSquads);
 
-            const result = await this.getUserByUniqueFields({ tId });
+            const result = await this.getUserByUniqueFields({ id });
 
             if (!result.isOk) return fail(ERRORS.CREATE_USER_ERROR);
 
             const { response: user } = result;
 
             if (user.status === USERS_STATUS.ACTIVE) {
-                this.eventBus.publish(new AddUserToNodeEvent(user.uuid));
+                this.eventBus.publish(new AddUserToNodeEvent(user.id));
             }
 
             this.eventEmitter.emit(
@@ -131,11 +125,11 @@ export class UsersService {
         }
     }
 
-    public async updateUser(dto: UpdateUserRequestDto): Promise<TResult<UserEntity>> {
+    public async updateUser(dto: UpdateUserBodyDto): Promise<TResult<UserEntity>> {
         try {
             const {
                 username,
-                uuid,
+                id,
                 trafficLimitBytes,
                 telegramId,
                 activeInternalSquads: newActiveInternalSquadsUuids,
@@ -143,17 +137,21 @@ export class UsersService {
                 ...rest
             } = dto;
 
-            const userCriteria = uuid ? { uuid } : { username };
-
-            const user = await this.userRepository.findUniqueByCriteria(userCriteria, {
-                activeInternalSquads: true,
-            });
+            const user = await this.userRepository.findUniqueByCriteria(
+                {
+                    username,
+                    id: wrapBigInt(id),
+                },
+                {
+                    activeInternalSquads: true,
+                },
+            );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
 
             const newUserEntity = new BaseUserEntity({
                 ...rest,
-                tId: user.tId,
+                id: user.id,
                 trafficLimitBytes: wrapBigInt(trafficLimitBytes),
                 telegramId: wrapBigIntNullable(telegramId),
                 lastTriggeredThreshold: trafficLimitBytes !== undefined ? 0 : undefined,
@@ -226,12 +224,12 @@ export class UsersService {
             }
 
             if (updatedUser.status === USERS_STATUS.ACTIVE && addToNode && !removeFromNode) {
-                this.eventBus.publish(new AddUserToNodeEvent(updatedUser.uuid));
+                this.eventBus.publish(new AddUserToNodeEvent(updatedUser.id));
             }
 
             if (removeFromNode) {
                 this.eventBus.publish(
-                    new RemoveUserFromNodeEvent(updatedUser.tId, updatedUser.vlessUuid),
+                    new RemoveUserFromNodeEvent(updatedUser.id, updatedUser.vlessUuid),
                 );
             }
 
@@ -251,7 +249,7 @@ export class UsersService {
         }
     }
 
-    public async getAllUsers(dto: GetAllUsersCommand.RequestQuery): Promise<
+    public async getAllUsers(dto: GetUsersQueryDto): Promise<
         TResult<{
             total: number;
             users: UserEntity[];
@@ -267,13 +265,29 @@ export class UsersService {
         }
     }
 
+    public async getUsersStream(dto: GetUsersStreamQueryDto): Promise<
+        TResult<{
+            users: UserEntity[];
+            nextCursor: string | null;
+            hasMore: boolean;
+        }>
+    > {
+        try {
+            const result = await this.userRepository.getUsersStream(dto);
+
+            return ok(result);
+        } catch (error) {
+            this.logger.error(error);
+            return fail(ERRORS.GET_ALL_USERS_ERROR);
+        }
+    }
+
     public async getUserByUniqueFields(dto: IGetUserByUnique): Promise<TResult<UserEntity>> {
         try {
             const result = await this.userRepository.findUniqueByCriteria({
                 username: dto.username || undefined,
                 shortUuid: dto.shortUuid || undefined,
-                uuid: dto.uuid || undefined,
-                tId: dto.tId || undefined,
+                id: dto.id || undefined,
             });
 
             if (!result) return fail(ERRORS.GET_USER_BY_UNIQUE_FIELDS_NOT_FOUND);
@@ -285,31 +299,14 @@ export class UsersService {
         }
     }
 
-    public async getUsersByNonUniqueFields(
-        dto: IGetUsersByTelegramIdOrEmail,
-    ): Promise<TResult<UserEntity[]>> {
-        try {
-            const result = await this.userRepository.findByNonUniqueCriteria({
-                email: dto.email || undefined,
-                telegramId: dto.telegramId ? BigInt(dto.telegramId) : undefined,
-                tag: dto.tag || undefined,
-            });
-
-            return ok(result);
-        } catch (error) {
-            this.logger.error(error);
-            return fail(ERRORS.GET_USER_BY_ERROR);
-        }
-    }
-
     public async revokeUserSubscription(
-        userUuid: string,
+        userId: number,
         dto?: RevokeUserSubscriptionBodyDto,
     ): Promise<TResult<UserEntity>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
-                { uuid: userUuid },
-                ['uuid', 'vlessUuid', 'shortUuid'],
+                { id: BigInt(userId) },
+                ['id', 'vlessUuid', 'shortUuid'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
@@ -323,7 +320,7 @@ export class UsersService {
             }
 
             const updateResult = await this.userRepository.revokeUserSubscription({
-                uuid: user.uuid,
+                id: user.id,
                 shortUuid,
                 trojanPassword: this.createPassword(),
                 vlessUuid: this.createUuid(),
@@ -334,12 +331,12 @@ export class UsersService {
 
             if (!updateResult) return fail(ERRORS.REVOKE_USER_SUBSCRIPTION_ERROR);
 
-            const updatedUser = await this.userRepository.findUniqueByCriteria({ uuid: user.uuid });
+            const updatedUser = await this.userRepository.findUniqueByCriteria({ id: user.id });
 
             if (!updatedUser) return fail(ERRORS.USER_NOT_FOUND);
 
             if (updatedUser.status === USERS_STATUS.ACTIVE) {
-                this.eventBus.publish(new AddUserToNodeEvent(updatedUser.uuid, user.vlessUuid));
+                this.eventBus.publish(new AddUserToNodeEvent(updatedUser.id, user.vlessUuid));
             }
 
             this.eventEmitter.emit(
@@ -357,10 +354,10 @@ export class UsersService {
         }
     }
 
-    public async deleteUser(userUuid: string): Promise<TResult<DeleteUserResponseModel>> {
+    public async deleteUser(userId: number): Promise<TResult<boolean>> {
         try {
             const user = await this.userRepository.findUniqueByCriteria(
-                { uuid: userUuid },
+                { id: BigInt(userId) },
                 {
                     activeInternalSquads: true,
                 },
@@ -368,9 +365,9 @@ export class UsersService {
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
 
-            const result = await this.userRepository.deleteByUUID(user.uuid);
+            await this.userRepository.deleteById(user.id);
 
-            this.eventBus.publish(new RemoveUserFromNodeEvent(user.tId, user.vlessUuid));
+            this.eventBus.publish(new RemoveUserFromNodeEvent(user.id, user.vlessUuid));
 
             this.eventEmitter.emit(
                 EVENTS.USER.DELETED,
@@ -379,18 +376,18 @@ export class UsersService {
                     event: EVENTS.USER.DELETED,
                 }),
             );
-            return ok(new DeleteUserResponseModel(result));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.DELETE_USER_ERROR);
         }
     }
 
-    public async disableUser(userUuid: string): Promise<TResult<UserEntity>> {
+    public async disableUser(userId: number): Promise<TResult<UserEntity>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
-                { uuid: userUuid },
-                ['uuid', 'status'],
+                { id: BigInt(userId) },
+                ['id', 'status'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
@@ -399,14 +396,14 @@ export class UsersService {
                 return fail(ERRORS.USER_ALREADY_DISABLED);
             }
 
-            await this.userRepository.updateUserStatus(user.uuid, USERS_STATUS.DISABLED);
+            await this.userRepository.updateUserStatus(user.id, USERS_STATUS.DISABLED);
 
-            const updatedUser = await this.userRepository.findUniqueByCriteria({ uuid: user.uuid });
+            const updatedUser = await this.userRepository.findUniqueByCriteria({ id: user.id });
 
             if (!updatedUser) return fail(ERRORS.USER_NOT_FOUND);
 
             this.eventBus.publish(
-                new RemoveUserFromNodeEvent(updatedUser.tId, updatedUser.vlessUuid),
+                new RemoveUserFromNodeEvent(updatedUser.id, updatedUser.vlessUuid),
             );
             this.eventEmitter.emit(
                 EVENTS.USER.DISABLED,
@@ -423,11 +420,11 @@ export class UsersService {
         }
     }
 
-    public async enableUser(userUuid: string): Promise<TResult<UserEntity>> {
+    public async enableUser(userId: number): Promise<TResult<UserEntity>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
-                { uuid: userUuid },
-                ['uuid', 'status'],
+                { id: BigInt(userId) },
+                ['id', 'status'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
@@ -436,13 +433,13 @@ export class UsersService {
                 return fail(ERRORS.USER_ALREADY_ENABLED);
             }
 
-            await this.userRepository.updateUserStatus(user.uuid, USERS_STATUS.ACTIVE);
+            await this.userRepository.updateUserStatus(user.id, USERS_STATUS.ACTIVE);
 
-            const updatedUser = await this.userRepository.findUniqueByCriteria({ uuid: user.uuid });
+            const updatedUser = await this.userRepository.findUniqueByCriteria({ id: user.id });
 
             if (!updatedUser) return fail(ERRORS.USER_NOT_FOUND);
 
-            this.eventBus.publish(new AddUserToNodeEvent(user.uuid));
+            this.eventBus.publish(new AddUserToNodeEvent(user.id));
 
             this.eventEmitter.emit(
                 EVENTS.USER.ENABLED,
@@ -459,11 +456,60 @@ export class UsersService {
         }
     }
 
-    public async resetUserTraffic(userUuid: string): Promise<TResult<UserEntity>> {
+    public async extendUserExpirationDate(
+        userId: number,
+        days: number,
+    ): Promise<TResult<UserEntity>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
-                { uuid: userUuid },
-                ['uuid', 'status', 'tId'],
+                { id: BigInt(userId) },
+                ['id', 'status', 'expireAt'],
+            );
+
+            if (!user) return fail(ERRORS.USER_NOT_FOUND);
+
+            const now = dayjs.utc();
+            const currentExpire = dayjs.utc(user.expireAt);
+            const base = currentExpire.isAfter(now) ? currentExpire : now;
+            const newExpireDate = base.add(days, 'day').toDate();
+
+            const newStatus =
+                user.status === USERS_STATUS.EXPIRED ? USERS_STATUS.ACTIVE : user.status;
+
+            await this.userRepository.update({
+                id: user.id,
+                expireAt: newExpireDate,
+                status: newStatus,
+            });
+
+            const updatedUser = await this.userRepository.findUniqueByCriteria({ id: user.id });
+
+            if (!updatedUser) return fail(ERRORS.USER_NOT_FOUND);
+
+            if (user.status === USERS_STATUS.EXPIRED && newStatus === USERS_STATUS.ACTIVE) {
+                this.eventBus.publish(new AddUserToNodeEvent(user.id));
+            }
+
+            this.eventEmitter.emit(
+                EVENTS.USER.MODIFIED,
+                new UserEvent({
+                    user: updatedUser,
+                    event: EVENTS.USER.MODIFIED,
+                }),
+            );
+
+            return ok(updatedUser);
+        } catch (error) {
+            this.logger.error(error);
+            return fail(ERRORS.UPDATE_USER_ERROR);
+        }
+    }
+
+    public async resetUserTraffic(userId: number): Promise<TResult<UserEntity>> {
+        try {
+            const user = await this.userRepository.getPartialUserByUniqueFields(
+                { id: BigInt(userId) },
+                ['id', 'status'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
@@ -471,17 +517,13 @@ export class UsersService {
             let status = undefined;
             if (user.status === USERS_STATUS.LIMITED) {
                 status = USERS_STATUS.ACTIVE;
-                this.eventBus.publish(new AddUserToNodeEvent(user.uuid));
+                this.eventBus.publish(new AddUserToNodeEvent(user.id));
             }
 
-            await this.userRepository.updateStatusAndTrafficAndResetAt(
-                user.uuid,
-                new Date(),
-                status,
-            );
+            await this.userRepository.updateStatusAndTrafficAndResetAt(user.id, new Date(), status);
 
             const newUser = await this.userRepository.findUniqueByCriteria(
-                { uuid: userUuid },
+                { id: user.id },
                 {
                     activeInternalSquads: true,
                 },
@@ -515,72 +557,76 @@ export class UsersService {
     }
 
     public async bulkDeleteUsersByStatus(
-        dto: BulkDeleteUsersByStatusRequestDto,
-    ): Promise<TResult<BulkDeleteByStatusResponseModel>> {
+        dto: BulkDeleteUsersByStatusBodyDto,
+    ): Promise<TResult<boolean>> {
         try {
-            const affectedUsers = await this.userRepository.countByStatus(dto.status);
-
             await this.usersQueuesService.bulkDeleteByStatus(dto.status);
 
-            return ok(new BulkDeleteByStatusResponseModel(affectedUsers));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_DELETE_USERS_BY_STATUS_ERROR);
         }
     }
 
-    public async bulkDeleteUsersByUuid(
-        uuids: string[],
-    ): Promise<TResult<BulkDeleteByStatusResponseModel>> {
+    public async bulkDeleteUsersByUserId(userIds: number[]): Promise<TResult<boolean>> {
         try {
-            if (uuids.length === 0) {
-                return ok(new BulkOperationResponseModel(0));
+            if (userIds.length === 0) {
+                return ok(true);
             }
 
-            const usersIdsAndHashes = await this.userRepository.getIdsAndHashesByUserUuids(uuids);
+            const users = await this.userRepository.getUsersByUserIds(userIds);
 
-            const result = await this.userRepository.deleteManyByUuid(uuids);
+            await this.userRepository.deleteManyByUserIds(users.map((user) => user.id));
 
-            await this.eventBus.publish(new RemoveUsersFromNodeEvent(usersIdsAndHashes));
+            await this.eventBus.publish(
+                new RemoveUsersFromNodeEvent(
+                    users.map((user) => ({ id: user.id, vlessUuid: user.vlessUuid })),
+                ),
+            );
 
-            return ok(new BulkOperationResponseModel(result));
+            for (const user of users) {
+                this.eventEmitter.emit(
+                    EVENTS.USER.DELETED,
+                    new UserEvent({
+                        user,
+                        event: EVENTS.USER.DELETED,
+                    }),
+                );
+            }
+
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
-            return fail(ERRORS.BULK_DELETE_USERS_BY_UUID_ERROR);
+            return fail(ERRORS.BULK_DELETE_USERS_BY_USER_IDS_ERROR);
         }
     }
 
-    public async bulkRevokeUsersSubscription(
-        uuids: string[],
-    ): Promise<TResult<BulkOperationResponseModel>> {
+    public async bulkRevokeUsersSubscription(userIds: number[]): Promise<TResult<boolean>> {
         try {
             // handled one by one
-            await this.usersQueuesService.revokeUsersSubscriptionBulk(uuids);
+            await this.usersQueuesService.revokeUsersSubscriptionBulk(userIds);
 
-            return ok(new BulkOperationResponseModel(uuids.length));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_REVOKE_USERS_SUBSCRIPTION_ERROR);
         }
     }
 
-    public async bulkResetUserTraffic(
-        uuids: string[],
-    ): Promise<TResult<BulkOperationResponseModel>> {
+    public async bulkResetUserTraffic(userIds: number[]): Promise<TResult<boolean>> {
         try {
             // handled one by one
-            await this.usersQueuesService.resetUserTrafficBulk(uuids);
+            await this.usersQueuesService.resetUserTrafficBulk(userIds);
 
-            return ok(new BulkOperationResponseModel(uuids.length));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_RESET_USER_TRAFFIC_ERROR);
         }
     }
 
-    public async bulkUpdateUsers(
-        dto: BulkUpdateUsersRequestDto,
-    ): Promise<TResult<BulkOperationResponseModel>> {
+    public async bulkUpdateUsers(dto: BulkUpdateUsersBodyDto): Promise<TResult<boolean>> {
         try {
             if (
                 dto.fields.status === USERS_STATUS.EXPIRED ||
@@ -591,11 +637,11 @@ export class UsersService {
 
             // handled one by one
             await this.usersQueuesService.updateUsersBulk({
-                uuids: dto.uuids,
+                userIds: dto.userIds,
                 fields: dto.fields,
             });
 
-            return ok(new BulkOperationResponseModel(dto.uuids.length));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_UPDATE_USERS_ERROR);
@@ -603,28 +649,29 @@ export class UsersService {
     }
 
     public async bulkUpdateUsersInternalSquads(
-        usersUuids: string[],
+        userIds: number[],
         internalSquadsUuids: string[],
-    ): Promise<TResult<BulkOperationResponseModel>> {
+    ): Promise<TResult<boolean>> {
         try {
-            const userIds = await this.userRepository.getUserIdsByUuids(usersUuids);
+            const validatedUserIds = await this.userRepository.validateUserIds(userIds);
 
-            await this.userRepository.removeUsersFromInternalSquads(userIds);
+            await this.userRepository.removeUsersFromInternalSquads(validatedUserIds);
 
-            await this.userRepository.addUsersToInternalSquads(userIds, internalSquadsUuids);
+            await this.userRepository.addUsersToInternalSquads(
+                validatedUserIds,
+                internalSquadsUuids,
+            );
 
-            await this.eventBus.publish(new AddUsersToNodeEvent(userIds));
+            await this.eventBus.publish(new AddUsersToNodeEvent(validatedUserIds));
 
-            return ok(new BulkOperationResponseModel(userIds.length));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_ADD_INBOUNDS_TO_USERS_ERROR);
         }
     }
 
-    public async bulkUpdateAllUsers(
-        dto: BulkAllUpdateUsersRequestDto,
-    ): Promise<TResult<BulkAllResponseModel>> {
+    public async bulkUpdateAllUsers(dto: BulkAllUpdateUsersBodyDto): Promise<TResult<boolean>> {
         try {
             if (dto.status === USERS_STATUS.EXPIRED || dto.status === USERS_STATUS.LIMITED) {
                 return fail(ERRORS.INVALID_USER_STATUS_ERROR);
@@ -632,18 +679,18 @@ export class UsersService {
 
             await this.usersQueuesService.bulkUpdateAllUsers(dto);
 
-            return ok(new BulkAllResponseModel(true));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_UPDATE_ALL_USERS_ERROR);
         }
     }
 
-    public async bulkAllResetUserTraffic(): Promise<TResult<BulkAllResponseModel>> {
+    public async bulkAllResetUserTraffic(): Promise<TResult<boolean>> {
         try {
             await this.usersQueuesService.resetAllUserTraffic();
 
-            return ok(new BulkAllResponseModel(true));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_RESET_USER_TRAFFIC_ERROR);
@@ -662,19 +709,19 @@ export class UsersService {
     }
 
     public async getUserAccessibleNodes(
-        userUuid: string,
+        userId: number,
     ): Promise<TResult<GetUserAccessibleNodesResponseModel>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
-                { uuid: userUuid },
-                ['tId'],
+                { id: BigInt(userId) },
+                ['id'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
 
-            const result = await this.userRepository.getUserAccessibleNodes(user.tId);
+            const result = await this.userRepository.getUserAccessibleNodes(user.id);
 
-            return ok(new GetUserAccessibleNodesResponseModel(result, userUuid));
+            return ok(new GetUserAccessibleNodesResponseModel(result, user.id));
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_USER_ACCESSIBLE_NODES_ERROR);
@@ -682,18 +729,18 @@ export class UsersService {
     }
 
     public async getUserSubscriptionRequestHistory(
-        userUuid: string,
+        userId: number,
     ): Promise<TResult<GetUserSubscriptionRequestHistoryResponseModel>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
-                { uuid: userUuid },
-                ['uuid'],
+                { id: BigInt(userId) },
+                ['id'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
 
             const requestHistory = await this.queryBus.execute(
-                new GetUserSubscriptionRequestHistoryQuery(user.uuid),
+                new GetUserSubscriptionRequestHistoryQuery(user.id),
             );
 
             if (!requestHistory.isOk) {
@@ -704,10 +751,12 @@ export class UsersService {
                 new GetUserSubscriptionRequestHistoryResponseModel(
                     requestHistory.response.map((history) => ({
                         id: Number(history.id),
-                        userUuid: history.userUuid,
+                        userId: Number(history.userId),
                         requestAt: history.requestAt,
                         requestIp: history.requestIp,
                         userAgent: history.userAgent,
+                        srrRuleName: history.srrRuleName,
+                        srrResponseType: history.srrResponseType,
                     })),
                 ),
             );
@@ -718,65 +767,59 @@ export class UsersService {
     }
 
     public async bulkExtendExpirationDate(dto: {
-        uuids: string[];
+        userIds: number[];
         extendDays: number;
-    }): Promise<TResult<BulkOperationResponseModel>> {
+    }): Promise<TResult<boolean>> {
         try {
-            const affectedRows = await this.userRepository.bulkExtendExpirationDateByUuids(
-                dto.uuids,
+            const affectedRows = await this.userRepository.bulkExtendExpirationDateByUserIds(
+                dto.userIds,
                 dto.extendDays,
             );
 
             if (affectedRows === 0) {
-                return ok(new BulkOperationResponseModel(0));
+                return ok(true);
             }
 
-            const uuids = await this.userRepository.bulkSyncExpiredUsersByUuids(dto.uuids);
+            const userIds = await this.userRepository.bulkSyncExpiredUsersByUserIds(dto.userIds);
 
-            for (const uuid of uuids) {
-                this.eventBus.publish(new AddUserToNodeEvent(uuid));
+            for (const userId of userIds) {
+                this.eventBus.publish(new AddUserToNodeEvent(userId));
             }
 
-            return ok(new BulkOperationResponseModel(affectedRows));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_EXTEND_EXPIRATION_DATE_ERROR);
         }
     }
 
-    public async bulkAllExtendExpirationDate(
-        extendDays: number,
-    ): Promise<TResult<BulkAllResponseModel>> {
+    public async bulkAllExtendExpirationDate(extendDays: number): Promise<TResult<boolean>> {
         try {
             await this.usersQueuesService.bulkAllExtendExpirationDate(extendDays);
 
-            return ok(new BulkAllResponseModel(true));
+            return ok(true);
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.BULK_EXTEND_EXPIRATION_DATE_ERROR);
         }
     }
 
-    public async resolveUser(
-        dto: ResolveUserRequestBodyDto,
-    ): Promise<TResult<ResolveUserResponseModel>> {
+    public async resolveUser(dto: ResolveUserBodyDto): Promise<TResult<ResolveUserResponseModel>> {
         try {
             const user = await this.userRepository.getPartialUserByUniqueFields(
                 {
-                    uuid: dto.uuid,
-                    tId: mapDefined(dto.id, (id) => wrapBigInt(id)),
+                    id: mapDefined(dto.id, (id) => wrapBigInt(id)),
                     shortUuid: dto.shortUuid,
                     username: dto.username,
                 },
-                ['uuid', 'tId', 'shortUuid', 'username'],
+                ['id', 'shortUuid', 'username'],
             );
 
             if (!user) return fail(ERRORS.USER_NOT_FOUND);
 
             return ok(
                 new ResolveUserResponseModel({
-                    uuid: user.uuid,
-                    id: Number(user.tId),
+                    id: Number(user.id),
                     shortUuid: user.shortUuid,
                     username: user.username,
                 }),

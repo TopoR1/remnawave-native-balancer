@@ -1,6 +1,5 @@
+import { RestartNodeCommand } from '@contract/commands';
 import { createZodDto } from 'nestjs-zod';
 
-import { RestartNodeCommand } from '@contract/commands';
-
-export class RestartNodeRequestDto extends createZodDto(RestartNodeCommand.RequestSchema) {}
-export class RestartNodeResponseDto extends createZodDto(RestartNodeCommand.ResponseSchema) {}
+export class RestartNodeParamDto extends createZodDto(RestartNodeCommand.RequestParamSchema) {}
+export class RestartNodeBodyDto extends createZodDto(RestartNodeCommand.RequestBodySchema) {}

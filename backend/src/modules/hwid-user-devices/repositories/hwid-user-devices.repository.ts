@@ -1,27 +1,30 @@
+import { Transactional, TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
 import { sql } from 'kysely';
 
-import { TransactionalAdapterPrisma } from '@nestjs-cls/transactional-adapter-prisma';
-import { TransactionHost } from '@nestjs-cls/transactional';
 import { Injectable } from '@nestjs/common';
 
-import { ICrudWithStringId } from '@common/types/crud-port';
 import { TxKyselyService } from '@common/database';
 import { paginateQuery } from '@common/helpers';
-import { GetAllHwidDevicesCommand } from '@libs/contracts/commands';
+import { ICrudWithStringId } from '@common/types/crud-port';
 
+import { GetHwidDevicesQueryDto } from '../dtos';
 import { HwidUserDeviceEntity } from '../entities/hwid-user-device.entity';
 import { HwidUserDevicesConverter } from '../hwid-user-devices.converter';
 
 const HWID_FILTER_COLUMN_MAP = {
-    userUuid: sql`"user_uuid"::text`,
+    userId: sql`CAST(user_id AS TEXT)`,
     hwid: sql.ref('hwid_user_devices.hwid'),
     platform: sql.ref('hwid_user_devices.platform'),
     userAgent: sql.ref('hwid_user_devices.user_agent'),
     osVersion: sql.ref('hwid_user_devices.os_version'),
     deviceModel: sql.ref('hwid_user_devices.device_model'),
+    requestIp: sql.ref('hwid_user_devices.request_ip'),
 } as const;
 
 type AllowedHwidFilterId = keyof typeof HWID_FILTER_COLUMN_MAP;
+
+const HWID_LOCK_PREFIX = 900000000n;
 
 @Injectable()
 export class HwidUserDevicesRepository implements Omit<
@@ -46,7 +49,7 @@ export class HwidUserDevicesRepository implements Omit<
     public async upsert(entity: HwidUserDeviceEntity): Promise<HwidUserDeviceEntity> {
         const model = this.converter.fromEntityToPrismaModel(entity);
         const result = await this.prisma.tx.hwidUserDevices.upsert({
-            where: { hwid_userUuid: { hwid: entity.hwid, userUuid: entity.userUuid } },
+            where: { hwid_userId: { hwid: entity.hwid, userId: entity.userId } },
             update: { ...model, updatedAt: new Date() },
             create: model,
         });
@@ -80,29 +83,46 @@ export class HwidUserDevicesRepository implements Omit<
         return this.converter.fromPrismaModelToEntity(result);
     }
 
-    public async countByUserUuid(userUuid: string): Promise<number> {
+    public async countByUserId(userId: bigint): Promise<number> {
         return await this.prisma.tx.hwidUserDevices.count({
-            where: { userUuid },
+            where: { userId },
         });
     }
 
-    public async checkHwidExists(hwid: string, userUuid: string): Promise<boolean> {
-        const count = await this.prisma.tx.hwidUserDevices.count({
-            where: { hwid, userUuid },
+    public async countCreatedInRange(start: Date, endExclusive: Date): Promise<number> {
+        return await this.prisma.tx.hwidUserDevices.count({
+            where: { createdAt: { gte: start, lt: endExclusive } },
         });
-        return count > 0;
     }
 
-    public async deleteByHwidAndUserUuid(hwid: string, userUuid: string): Promise<boolean> {
+    public async checkHwidExists(hwid: string, userId: bigint): Promise<boolean> {
+        const result = await this.qb.kysely
+            .selectNoFrom((eb) =>
+                eb
+                    .exists(
+                        eb
+                            .selectFrom('hwidUserDevices')
+                            .select(sql`1`.as('one'))
+                            .where('hwid', '=', hwid)
+                            .where('userId', '=', userId),
+                    )
+                    .as('exists'),
+            )
+            .executeTakeFirstOrThrow();
+
+        return !!result.exists;
+    }
+
+    public async deleteByHwidAndUserId(hwid: string, userId: bigint): Promise<boolean> {
         const result = await this.prisma.tx.hwidUserDevices.delete({
-            where: { hwid_userUuid: { hwid, userUuid } },
+            where: { hwid_userId: { hwid, userId } },
         });
         return !!result;
     }
 
-    public async deleteByUserUuid(userUuid: string): Promise<boolean> {
+    public async deleteByUserId(userId: bigint): Promise<boolean> {
         const result = await this.prisma.tx.hwidUserDevices.deleteMany({
-            where: { userUuid },
+            where: { userId },
         });
         return !!result;
     }
@@ -113,7 +133,7 @@ export class HwidUserDevicesRepository implements Omit<
         filters,
         filterModes,
         sorting,
-    }: GetAllHwidDevicesCommand.RequestQuery): Promise<[HwidUserDeviceEntity[], number]> {
+    }: GetHwidDevicesQueryDto): Promise<[HwidUserDeviceEntity[], number]> {
         let qb = this.qb.kysely.selectFrom('hwidUserDevices').selectAll();
 
         if (filters?.length) {
@@ -137,8 +157,8 @@ export class HwidUserDevicesRepository implements Omit<
 
     private applyHwidFilters(
         qb: any,
-        filters: GetAllHwidDevicesCommand.RequestQuery['filters'],
-        filterModes?: GetAllHwidDevicesCommand.RequestQuery['filterModes'],
+        filters: GetHwidDevicesQueryDto['filters'],
+        filterModes?: GetHwidDevicesQueryDto['filterModes'],
     ) {
         for (const filter of filters ?? []) {
             if (!(filter.id in HWID_FILTER_COLUMN_MAP)) continue;
@@ -148,6 +168,16 @@ export class HwidUserDevicesRepository implements Omit<
 
             if (filter.id === 'createdAt' || filter.id === 'expireAt') {
                 qb = qb.where(column, '=', new Date(filter.value as string));
+                continue;
+            }
+
+            if (filter.id === 'userId') {
+                try {
+                    BigInt(filter.value as string);
+                    qb = qb.where(column, 'like', `%${filter.value}%`);
+                } catch {
+                    continue;
+                }
                 continue;
             }
 
@@ -170,31 +200,27 @@ export class HwidUserDevicesRepository implements Omit<
     }
 
     public async getHwidDevicesStats(): Promise<{
-        byPlatform: { platform: string; count: number }[];
-        byApp: { app: string; count: number }[];
+        byPlatform: {
+            platform: string;
+            count: number;
+            byApp: { app: string; count: number }[];
+        }[];
         stats: {
             totalUniqueDevices: number;
             totalHwidDevices: number;
             averageHwidDevicesPerUser: number;
         };
     }> {
-        const platformStats = await this.qb.kysely
-            .selectFrom('hwidUserDevices')
-            .select(['platform', (eb) => eb.fn.count('hwid').as('count')])
-            .where('platform', 'is not', null)
-            .groupBy('platform')
-            .orderBy('count', 'desc')
-            .execute();
-
-        const appStats = await this.qb.kysely
+        const platformAppStats = await this.qb.kysely
             .selectFrom('hwidUserDevices')
             .select([
+                'platform',
                 sql<string>`SPLIT_PART("user_agent", '/', 1)`.as('app'),
                 (eb) => eb.fn.count('hwid').as('count'),
             ])
+            .where('platform', 'is not', null)
             .where('userAgent', 'is not', null)
-            .groupBy(sql`SPLIT_PART("user_agent", '/', 1)`)
-            .orderBy('count', 'desc')
+            .groupBy(['platform', sql`SPLIT_PART("user_agent", '/', 1)`])
             .execute();
 
         const totalStats = await this.qb.kysely
@@ -202,9 +228,39 @@ export class HwidUserDevicesRepository implements Omit<
             .select([
                 (eb) => eb.fn.count('hwid').as('totalHwidDevices'),
                 (eb) => eb.fn.count(sql`DISTINCT hwid`).as('totalUniqueDevices'),
-                (eb) => eb.fn.count(sql`DISTINCT "user_uuid"`).as('totalUsers'),
+                (eb) => eb.fn.count(sql`DISTINCT "user_id"`).as('totalUsers'),
             ])
             .executeTakeFirstOrThrow();
+
+        const platformMap = new Map<string, { count: number; apps: Map<string, number> }>();
+
+        for (const row of platformAppStats) {
+            const platform = row.platform || 'Unknown';
+            const count = Number(row.count);
+
+            let entry = platformMap.get(platform);
+            if (!entry) {
+                entry = { count: 0, apps: new Map() };
+                platformMap.set(platform, entry);
+            }
+
+            entry.count += count;
+
+            const app = row.app;
+            if (!app.startsWith('https:')) {
+                entry.apps.set(app, (entry.apps.get(app) ?? 0) + count);
+            }
+        }
+
+        const byPlatform = Array.from(platformMap.entries())
+            .map(([platform, entry]) => ({
+                platform,
+                count: entry.count,
+                byApp: Array.from(entry.apps.entries())
+                    .map(([app, count]) => ({ app, count }))
+                    .sort((a, b) => b.count - a.count),
+            }))
+            .sort((a, b) => b.count - a.count);
 
         let averageHwidDevicesPerUser = 0;
         if (Number(totalStats.totalUsers) > 0) {
@@ -213,16 +269,7 @@ export class HwidUserDevicesRepository implements Omit<
         }
 
         return {
-            byPlatform: platformStats.map((stat) => ({
-                platform: stat.platform || 'Unknown',
-                count: Number(stat.count),
-            })),
-            byApp: appStats
-                .filter((stat) => !stat.app.startsWith('https:'))
-                .map((stat) => ({
-                    app: stat.app,
-                    count: Number(stat.count),
-                })),
+            byPlatform,
             stats: {
                 totalUniqueDevices: Number(totalStats.totalUniqueDevices),
                 totalHwidDevices: Number(totalStats.totalHwidDevices),
@@ -234,32 +281,59 @@ export class HwidUserDevicesRepository implements Omit<
     public async getTopUsersByHwidDevices({ start, size }: { start: number; size: number }) {
         const query = this.qb.kysely
             .selectFrom('hwidUserDevices as d')
-            .innerJoin('users as u', 'u.uuid', 'd.userUuid')
-            .select([
-                'u.uuid as userUuid',
-                'u.tId as id',
-                'u.username',
-                (eb) => eb.fn.count('d.hwid').as('devicesCount'),
-            ])
-            .groupBy(['u.uuid', 'u.tId', 'u.username'])
+            .innerJoin('users as u', 'u.id', 'd.userId')
+            .select(['u.id as id', 'u.username', (eb) => eb.fn.count('d.hwid').as('devicesCount')])
+            .groupBy(['u.id', 'u.username'])
             .orderBy('devicesCount', 'desc')
+            .orderBy('u.id', 'asc')
             .offset(start)
             .limit(size);
 
         const countQuery = this.qb.kysely
             .selectFrom('hwidUserDevices')
-            .select((eb) => eb.fn.count(eb.fn('distinct', ['userUuid'])).as('count'))
+            .select((eb) => eb.fn.count(eb.fn('distinct', ['userId'])).as('count'))
             .executeTakeFirstOrThrow();
 
         const [users, { count }] = await Promise.all([query.execute(), countQuery]);
 
         return {
             users: users.map((u) => ({
-                ...u,
+                username: u.username,
                 id: Number(u.id),
                 devicesCount: Number(u.devicesCount),
             })),
             total: Number(count),
         };
+    }
+
+    @Transactional()
+    public async createWithAdvisoryLock(
+        entity: HwidUserDeviceEntity,
+        deviceLimit: number,
+    ): Promise<{
+        hwidDevice: HwidUserDeviceEntity | null;
+    }> {
+        await this.prisma.tx.$executeRaw`
+                SELECT pg_advisory_xact_lock(${HWID_LOCK_PREFIX + entity.userId})
+            `;
+
+        const hwids = await this.qb.kysely
+            .selectFrom('hwidUserDevices')
+            .select('hwid')
+            .where('userId', '=', entity.userId)
+            .limit(deviceLimit)
+            .execute();
+
+        if (hwids.length >= deviceLimit) {
+            return { hwidDevice: null };
+        }
+
+        const model = this.converter.fromEntityToPrismaModel(entity);
+
+        const result = await this.prisma.tx.hwidUserDevices.create({
+            data: model,
+        });
+
+        return { hwidDevice: this.converter.fromPrismaModelToEntity(result) };
     }
 }

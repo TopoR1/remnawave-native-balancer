@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { getEndpointDetails } from '../../constants';
 import { AUTH_ROUTES, REST_API } from '../../api';
+import { getEndpointDetails } from '../../constants';
 
 export namespace RegisterCommand {
     export const url = REST_API.AUTH.REGISTER;
@@ -11,10 +11,11 @@ export namespace RegisterCommand {
         AUTH_ROUTES.REGISTER,
         'post',
         'Register as superadmin',
+        { scope: 'register', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        username: z.string(),
+    export const RequestBodySchema = z.object({
+        username: z.string().describe('Username of the user'),
         password: z
             .string()
             .min(24, 'Password must contain at least 24 characters')
@@ -24,13 +25,12 @@ export namespace RegisterCommand {
             ),
     });
 
-    export type Request = z.infer<typeof RequestSchema>;
-
     export const ResponseSchema = z.object({
         response: z.object({
             accessToken: z.string(),
         }),
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

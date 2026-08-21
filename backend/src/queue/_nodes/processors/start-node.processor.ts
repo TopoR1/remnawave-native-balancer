@@ -2,21 +2,23 @@ import { Job } from 'bullmq';
 import semver from 'semver';
 
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
+import { CommandBus, QueryBus } from '@nestjs/cqrs';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { formatExecutionTime, getTime } from '@common/utils/get-elapsed-time';
 import { AxiosService } from '@common/axios/axios.service';
 import { RawCacheService } from '@common/raw-cache';
+import { formatExecutionTime, getTime } from '@common/utils/get-elapsed-time';
 import { CACHE_KEYS, CACHE_KEYS_TTL, EVENTS } from '@libs/contracts/constants';
 
 import { NodeEvent } from '@integration-modules/notifications/interfaces';
 
-import { GetPreparedConfigWithUsersQuery } from '@modules/users/queries/get-prepared-config-with-users';
+import { GetResolvedIntegrationsQuery } from '@modules/node-integrations/queries/get-resolved-integrations';
+import { mergeNodeIntegrations } from '@modules/node-integrations/utils';
 import { GetPluginByUuidQuery } from '@modules/node-plugins/queries/get-plugin-by-uuid';
-import { GetNodeByUuidQuery } from '@modules/nodes/queries/get-node-by-uuid';
 import { UpdateNodeCommand } from '@modules/nodes/commands/update-node';
+import { GetNodeByUuidQuery } from '@modules/nodes/queries/get-node-by-uuid';
+import { GetPreparedConfigWithUsersQuery } from '@modules/users/queries/get-prepared-config-with-users';
 
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
@@ -40,9 +42,9 @@ export class StartNodeProcessor extends WorkerHost {
         super();
     }
 
-    async process(job: Job<{ nodeUuid: string }>) {
+    async process(job: Job<{ nodeUuid: string; force?: boolean }>) {
         try {
-            const { nodeUuid } = job.data;
+            const { nodeUuid, force } = job.data;
 
             const nodeCheckup = await this.queryBus.execute(new GetNodeByUuidQuery(nodeUuid));
 
@@ -95,7 +97,11 @@ export class StartNodeProcessor extends WorkerHost {
                 }),
             );
 
-            const xrayStatusResponse = await this.axios.getNodeHealth(node.address, node.port);
+            const xrayStatusResponse = await this.axios.getNodeHealth({
+                address: node.address,
+                port: node.port,
+                proxyUrl: node.proxyUrl,
+            });
 
             if (!xrayStatusResponse.isOk) {
                 await this.commandBus.execute(
@@ -160,8 +166,11 @@ export class StartNodeProcessor extends WorkerHost {
                 {
                     plugin,
                 },
-                node.address,
-                node.port,
+                {
+                    address: node.address,
+                    port: node.port,
+                    proxyUrl: node.proxyUrl,
+                },
             );
 
             if (!syncNodePluginsResponse.isOk) {
@@ -195,15 +204,43 @@ export class StartNodeProcessor extends WorkerHost {
                 throw new Error('Failed to get config for node');
             }
 
+            const integrationsResult = await this.queryBus.execute(
+                new GetResolvedIntegrationsQuery(node.integrationUuids),
+            );
+
+            if (!integrationsResult.isOk) {
+                throw new Error('Failed to resolve integrations for node');
+            }
+
+            const nodeIntegrations = mergeNodeIntegrations(
+                node.integrationUuids
+                    .map((uuid) => integrationsResult.response.get(uuid))
+                    .filter((integration) => integration !== undefined),
+            );
+
             const reqStartTime = getTime();
 
             const startNodeResult = await this.axios.startXray(
                 {
                     xrayConfig: config.response.config as unknown as Record<string, unknown>,
-                    internals: { hashes: config.response.hashesPayload, forceRestart: false },
+                    internals: {
+                        hashes: config.response.hashesPayload,
+                        forceRestart: force ?? false,
+                        metadata: {
+                            uuid: node.uuid,
+                            name: node.name,
+                            countryCode: node.countryCode,
+                            id: Number(node.id),
+                            tags: node.tags,
+                        },
+                        integrations: nodeIntegrations,
+                    },
                 },
-                node.address,
-                node.port,
+                {
+                    address: node.address,
+                    port: node.port,
+                    proxyUrl: node.proxyUrl,
+                },
             );
 
             this.logger.log(`Started node in ${formatExecutionTime(reqStartTime)}`);
@@ -222,7 +259,7 @@ export class StartNodeProcessor extends WorkerHost {
                 return;
             }
 
-            const nodeResponse = startNodeResult.response.response;
+            const nodeResponse = startNodeResult.response;
 
             await this.rawCacheService.setMany([
                 {
@@ -261,7 +298,7 @@ export class StartNodeProcessor extends WorkerHost {
                 return;
             }
 
-            if (!node.isConnected) {
+            if (!node.isConnected && nodeResponse.isStarted) {
                 this.eventEmitter.emit(
                     EVENTS.NODE.CONNECTION_RESTORED,
                     new NodeEvent(updateNodeResult.response, EVENTS.NODE.CONNECTION_RESTORED),

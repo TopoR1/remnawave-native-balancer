@@ -1,10 +1,10 @@
 import { Stack, Text } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { TbCheck } from 'react-icons/tb'
 import { TFunction } from 'i18next'
+import { TbCheck } from 'react-icons/tb'
 
-import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 import { CopyableCodeBlock } from '@shared/ui/copyable-code-block'
+import { BaseOverlayHeader } from '@shared/ui/overlays/base-overlay-header'
 
 const DOCKER_COMMAND = 'docker restart remnawave-subscription-page'
 

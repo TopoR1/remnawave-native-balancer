@@ -242,6 +242,6 @@ export const HostBalancerDecisionSchema = z.object({
     selectedTarget: HostBalancerDecisionDiagnosticsTargetSchema.nullable(),
     warnings: z.array(z.string()),
     finalHostOverrides: HostBalancerDecisionFinalOverridesSchema,
-    diagnostics: z.record(z.unknown()),
+    diagnostics: z.record(z.string(), z.unknown()),
     createdAt: DateTimeSchema,
 });

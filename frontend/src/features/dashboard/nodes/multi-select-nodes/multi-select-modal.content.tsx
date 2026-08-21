@@ -1,19 +1,15 @@
-import {
-    GetAllNodesCommand,
-    NODES_BULK_ACTIONS,
-    TNodesBulkActions
-} from '@remnawave/backend-contract'
-import { TbCancel, TbRefresh, TbRocket } from 'react-icons/tb'
-import { useTranslation } from 'react-i18next'
-import { modals } from '@mantine/modals'
-import { PiPulse } from 'react-icons/pi'
 import { Stack } from '@mantine/core'
+import { modals } from '@mantine/modals'
+import { GetNodesCommand, NODES_BULK_ACTIONS, TNodesBulkActions } from '@remnawave/backend-contract'
+import { useTranslation } from 'react-i18next'
+import { PiPulse } from 'react-icons/pi'
+import { TbCancel, TbRefresh, TbRocket } from 'react-icons/tb'
 
 import { QueryKeys, useBulkNodesActions } from '@shared/api/hooks'
 import { queryClient } from '@shared/api/query-client'
 import { ActionCardShared } from '@shared/ui'
 
-type NodeType = GetAllNodesCommand.Response['response'][number]
+type NodeType = GetNodesCommand.Response['response'][number]
 
 interface IProps {
     selectedRecords: NodeType[]

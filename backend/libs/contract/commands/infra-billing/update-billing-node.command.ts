@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { InfraBillingAvailableNodeSchema, InfraBillingNodeSchema } from '../../models';
 import { INFRA_BILLING_ROUTES, REST_API } from '../../api';
 import { getEndpointDetails } from '../../constants';
+import { InfraBillingAvailableNodeSchema, InfraBillingNodeSchema } from '../../models';
 
 export namespace UpdateInfraBillingNodeCommand {
     export const url = REST_API.INFRA_BILLING.UPDATE_BILLING_NODE;
@@ -12,19 +12,15 @@ export namespace UpdateInfraBillingNodeCommand {
         INFRA_BILLING_ROUTES.UPDATE_BILLING_NODE,
         'patch',
         'Update infra billing nodes',
+        { scope: 'update-billing-node', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuids: z.array(z.string().uuid()),
-        nextBillingAt: z
-            .string({
-                invalid_type_error: 'Invalid date format',
-            })
-            .datetime({ message: 'Invalid date format', offset: true, local: true })
+    export const RequestBodySchema = z.object({
+        uuids: z.array(z.uuid()),
+        nextBillingAt: z.iso
+            .datetime({ offset: true, local: true })
             .transform((str) => new Date(str)),
     });
-
-    export type Request = z.infer<typeof RequestSchema>;
 
     export const ResponseSchema = z.object({
         response: z.object({
@@ -40,5 +36,6 @@ export namespace UpdateInfraBillingNodeCommand {
         }),
     });
 
+    export type RequestBody = z.infer<typeof RequestBodySchema>;
     export type Response = z.infer<typeof ResponseSchema>;
 }

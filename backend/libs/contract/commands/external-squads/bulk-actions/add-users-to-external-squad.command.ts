@@ -11,19 +11,12 @@ export namespace AddUsersToExternalSquadCommand {
         EXTERNAL_SQUADS_ROUTES.BULK_ACTIONS.ADD_USERS(':uuid'),
         'post',
         'Add all users to external squad',
+        { scope: 'add-users', kind: 'write' },
     );
 
-    export const RequestSchema = z.object({
-        uuid: z.string().uuid(),
+    export const RequestParamSchema = z.object({
+        uuid: z.uuid().describe('UUID of the external squad'),
     });
 
-    export type Request = z.infer<typeof RequestSchema>;
-
-    export const ResponseSchema = z.object({
-        response: z.object({
-            eventSent: z.boolean(),
-        }),
-    });
-
-    export type Response = z.infer<typeof ResponseSchema>;
+    export type RequestParam = z.infer<typeof RequestParamSchema>;
 }

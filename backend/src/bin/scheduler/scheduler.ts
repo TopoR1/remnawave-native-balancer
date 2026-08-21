@@ -2,27 +2,25 @@
     return this.toString();
 };
 
-import { utilities as nestWinstonModuleUtilities, WinstonModule } from 'nest-winston';
+process.title = 'rw-scheduler';
+
+import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import timezone from 'dayjs/plugin/timezone';
-import { createLogger } from 'winston';
-import compression from 'compression';
-import * as winston from 'winston';
 import utc from 'dayjs/plugin/utc';
 import { json } from 'express';
 import helmet from 'helmet';
-import dayjs from 'dayjs';
+import { utilities as nestWinstonModuleUtilities, WinstonModule } from 'nest-winston';
+import { createLogger } from 'winston';
+import * as winston from 'winston';
 
-import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { TypedConfigService } from '@common/config/app-config';
 import { NotFoundExceptionFilter } from '@common/exception/not-found-exception.filter';
-import { getRedisConnectionOptions } from '@common/utils/get-redis-connection-options';
 import { WorkerRoutesGuard } from '@common/guards/worker-routes/worker-routes.guard';
 import { customLogFilter } from '@common/utils/filter-logs/filter-logs';
 import { isDevOrDebugLogsEnabled } from '@common/utils/startup-app';
-import { AxiosService } from '@common/axios';
 import { BULLBOARD_ROOT, HEALTH_ROOT, METRICS_ROOT } from '@libs/contracts/api';
 
 import { SchedulerRootModule } from './scheduler.root.module';
@@ -52,7 +50,7 @@ const logger = createLogger({
         }),
         // winston.format.ms(),
         winston.format.align(),
-        nestWinstonModuleUtilities.format.nestLike(`Scheduler: #${instanedId}`, {
+        nestWinstonModuleUtilities.format.nestLike(`cron-${instanedId}`, {
             colors: true,
             prettyPrint: true,
             processId: false,
@@ -71,7 +69,7 @@ async function bootstrap(): Promise<void> {
 
     app.use(json({ limit: '100mb' }));
 
-    const config = app.get(ConfigService);
+    const config = app.get(TypedConfigService);
 
     app.use(
         helmet({
@@ -87,36 +85,19 @@ async function bootstrap(): Promise<void> {
         }),
     );
 
-    app.use(compression());
-
     app.useGlobalFilters(new NotFoundExceptionFilter());
 
     app.useGlobalGuards(
         new WorkerRoutesGuard({ allowedPaths: [METRICS_ROOT, BULLBOARD_ROOT, HEALTH_ROOT] }),
     );
 
-    app.connectMicroservice<MicroserviceOptions>({
-        transport: Transport.REDIS,
-        options: {
-            ...getRedisConnectionOptions(
-                config.get<string>('REDIS_SOCKET'),
-                config.get<string>('REDIS_HOST'),
-                config.get<number>('REDIS_PORT'),
-                'ioredis',
-            ),
-            db: config.getOrThrow<number>('REDIS_DB'),
-            password: config.get<string | undefined>('REDIS_PASSWORD'),
-            keyPrefix: 'nmicro:',
-        },
-    });
-
-    await app.startAllMicroservices();
-
     app.enableShutdownHooks();
 
-    await app.listen(Number(config.getOrThrow<string>('METRICS_PORT')));
+    await app.listen(config.getOrThrow('METRICS_PORT'));
 
-    const axiosService = app.get(AxiosService);
-    await axiosService.setJwt();
+    if (import.meta.webpackHot) {
+        import.meta.webpackHot.accept();
+        import.meta.webpackHot.dispose(() => app.close());
+    }
 }
 void bootstrap();

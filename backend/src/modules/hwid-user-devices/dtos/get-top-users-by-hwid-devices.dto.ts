@@ -1,8 +1,7 @@
+import { GetTopUsersByHwidDevicesCommand } from '@contract/commands';
 import { createZodDto } from 'nestjs-zod';
 
-import { GetTopUsersByHwidDevicesCommand } from '@contract/commands';
-
-export class GetTopUsersByHwidDevicesRequestQueryDto extends createZodDto(
+export class GetTopUsersByHwidDevicesQueryDto extends createZodDto(
     GetTopUsersByHwidDevicesCommand.RequestQuerySchema,
 ) {}
 

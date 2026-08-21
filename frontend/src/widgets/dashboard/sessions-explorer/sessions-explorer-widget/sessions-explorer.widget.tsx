@@ -13,6 +13,10 @@ import {
     Tooltip,
     Transition
 } from '@mantine/core'
+import { useDebouncedValue, useWindowScroll } from '@mantine/hooks'
+import { useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { PiEmptyDuotone } from 'react-icons/pi'
 import {
     TbAlertTriangle,
     TbArrowUp,
@@ -26,21 +30,17 @@ import {
     TbUser,
     TbX
 } from 'react-icons/tb'
-import { useDebouncedValue, useWindowScroll } from '@mantine/hooks'
 import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso'
-import { useMemo, useRef, useState } from 'react'
-import { PiEmptyDuotone } from 'react-icons/pi'
-import { useTranslation } from 'react-i18next'
 
+import { useGetNodes } from '@shared/api/hooks'
 import { MetricCardShared } from '@shared/ui/metrics/metric-card'
 import { PageHeaderShared } from '@shared/ui/page-header'
 import { SectionCard } from '@shared/ui/section-card'
-import { useGetNodes } from '@shared/api/hooks'
 
 import { SessionsExplorerVirtualizedGridComponents } from './grid-components'
-import { SessionsExplorerProgress } from './sessions-explorer-progress'
-import { SessionsExplorerIdle } from './sessions-explorer-idle'
 import { SessionsExplorerCard } from './sessions-explorer-card'
+import { SessionsExplorerIdle } from './sessions-explorer-idle'
+import { SessionsExplorerProgress } from './sessions-explorer-progress'
 import { useSessionsExplorer } from './use-sessions-explorer'
 
 export function SessionsExplorerWidget() {
@@ -122,7 +122,7 @@ export function SessionsExplorerWidget() {
                             size="sm"
                             variant="soft"
                         >
-                            {t('active-sessions-drawer.widget.try-again')}
+                            {t('common.try-again')}
                         </Button>
                     </Stack>
                 </Center>

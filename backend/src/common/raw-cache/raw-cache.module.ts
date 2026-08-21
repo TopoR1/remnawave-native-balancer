@@ -1,10 +1,11 @@
 import { RedisModule, RedisModuleOptions } from '@songkeys/nestjs-redis';
 
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Global, Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { getRedisConnectionOptions } from '@common/utils/get-redis-connection-options';
 
+import { MemoryCacheService } from './memory-cache.service';
 import { RawCacheService } from './raw-cache.service';
 
 @Global()
@@ -23,6 +24,7 @@ import { RawCacheService } from './raw-cache.service';
                         ),
                         db: configService.getOrThrow<number>('REDIS_DB'),
                         password: configService.get<string | undefined>('REDIS_PASSWORD'),
+                        username: configService.get<string | undefined>('REDIS_USERNAME'),
                         keyPrefix: 'ioraw:',
                     },
                 } satisfies RedisModuleOptions;
@@ -30,7 +32,7 @@ import { RawCacheService } from './raw-cache.service';
             inject: [ConfigService],
         }),
     ],
-    providers: [RawCacheService],
+    providers: [RawCacheService, MemoryCacheService],
     exports: [RawCacheService],
 })
 export class RawCacheModule {}
